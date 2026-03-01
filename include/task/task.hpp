@@ -1617,42 +1617,45 @@ struct Task<ReturnType(CallArgs...), Copyable, N, IsTrivial, Mutable, Extended, 
         : storage_{.invoker =
                        InvokerFactory<N, Mutable, ReturnType, CallArgs...>::template getInvoker<
                            PayloadArgsT<F, BoundArgs...>, F, BoundArgs...>()} {
-        using PayloadType = PayloadArgsT<F, BoundArgs...>;
-        static_assert(PayloadNoRvalueRef<PayloadType>::value);
-        static_assert(
-            !Copyable || std::is_copy_constructible_v<PayloadType>,
-            "Given payload is not copy constructible. Check types or create a unique task");
-        static_assert(
-            std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
-            "Given payload is not constructible, move constructible or destructible");
-        static_assert(sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
-                      "Size exceeds buffer. Increase Stack size or activate option to allow heap "
-                      "storage (template option, or via FlexTask aliases)");
-        static_assert(alignof(PayloadType) <= Align,
-                      "Alignment requirement too high for buffer. Increase template alignment");
-        if constexpr (IsTrivial) {
-            static_assert(TrivialUse<PayloadType, Copyable>::value,
-                          "Payload needs to be trivially move & copy constructible, and "
-                          "trivially destructible to be allowed within a Trivial Task");
-        }
-        storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
-        if constexpr (sizeof(PayloadType) <= N) {
-            new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
-        } else {
-            static_assert(alignof(void*) <= Align,
-                          "Alignment requirement too high to store heap pointer. Increase "
-                          "template alignment");
-            static_assert(AllowHeap);
-            if constexpr (Align <= alignof(std::max_align_t)) {
-                void* heapPtr = ::operator new(sizeof(PayloadType));
-                auto* payload =  // NOLINT
-                    new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
-                new (storage_.data.data()) PayloadType*(payload);
+        if constexpr (sizeof...(BoundArgs) > 0) {
+            using PayloadType = PayloadArgsT<F, BoundArgs...>;
+            static_assert(PayloadNoRvalueRef<PayloadType>::value);
+            static_assert(
+                !Copyable || std::is_copy_constructible_v<PayloadType>,
+                "Given payload is not copy constructible. Check types or create a unique task");
+            static_assert(
+                std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
+                "Given payload is not constructible, move constructible or destructible");
+            static_assert(
+                sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
+                "Size exceeds buffer. Increase Stack size or activate option to allow heap "
+                "storage (template option, or via FlexTask aliases)");
+            static_assert(alignof(PayloadType) <= Align,
+                          "Alignment requirement too high for buffer. Increase template alignment");
+            if constexpr (IsTrivial) {
+                static_assert(TrivialUse<PayloadType, Copyable>::value,
+                              "Payload needs to be trivially move & copy constructible, and "
+                              "trivially destructible to be allowed within a Trivial Task");
+            }
+            storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
+            if constexpr (sizeof(PayloadType) <= N) {
+                new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
             } else {
-                void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
-                auto* payload =  // NOLINT
-                    new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
-                new (storage_.data.data()) PayloadType*(payload);
+                static_assert(alignof(void*) <= Align,
+                              "Alignment requirement too high to store heap pointer. Increase "
+                              "template alignment");
+                static_assert(AllowHeap);
+                if constexpr (Align <= alignof(std::max_align_t)) {
+                    void* heapPtr = ::operator new(sizeof(PayloadType));
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                } else {
+                    void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                }
             }
         }
     }
@@ -1778,42 +1781,45 @@ struct Task<ReturnType(CallArgs...), Copyable, N, IsTrivial, Mutable, Extended, 
               (!std::is_rvalue_reference_v<BoundArgs> && !std::is_lvalue_reference_v<BoundArgs> &&
                std::is_rvalue_reference_v<decltype(args)>)) &&
              ...));
-        using PayloadType = PayloadImplArgs<F, BoundArgs...>;
-        static_assert(PayloadNoRvalueRef<PayloadType>::value);
-        static_assert(sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
-                      "Size exceeds buffer. Increase Stack size or activate option to allow heap "
-                      "storage (template option, or via FlexTask aliases)");
-        static_assert(alignof(PayloadType) <= Align,
-                      "Alignment requirement too high for buffer. Increase template alignment");
-        static_assert(
-            !Copyable || std::is_copy_constructible_v<PayloadType>,
-            "Given payload is not copy constructible. Check types or create a unique task");
-        static_assert(
-            std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
-            "Given payload is not constructible, move constructible or destructible");
-        if constexpr (IsTrivial) {
-            static_assert(TrivialUse<PayloadType, Copyable>::value,
-                          "Payload needs to be trivially move & copy constructible, and "
-                          "trivially destructible to be allowed within a Trivial Task");
-        }
-        storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
-        if constexpr (sizeof(PayloadType) <= N) {
-            new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
-        } else {
-            static_assert(AllowHeap);
-            static_assert(alignof(void*) <= Align,
-                          "Alignment requirement too high to store heap pointer. Increase "
-                          "template alignment");
-            if constexpr (Align <= alignof(std::max_align_t)) {
-                void* heapPtr = ::operator new(sizeof(PayloadType));
-                auto* payload =  // NOLINT
-                    new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
-                new (storage_.data.data()) PayloadType*(payload);
+        if constexpr (sizeof...(BoundArgs) > 0) {
+            using PayloadType = PayloadImplArgs<F, BoundArgs...>;
+            static_assert(PayloadNoRvalueRef<PayloadType>::value);
+            static_assert(
+                sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
+                "Size exceeds buffer. Increase Stack size or activate option to allow heap "
+                "storage (template option, or via FlexTask aliases)");
+            static_assert(alignof(PayloadType) <= Align,
+                          "Alignment requirement too high for buffer. Increase template alignment");
+            static_assert(
+                !Copyable || std::is_copy_constructible_v<PayloadType>,
+                "Given payload is not copy constructible. Check types or create a unique task");
+            static_assert(
+                std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
+                "Given payload is not constructible, move constructible or destructible");
+            if constexpr (IsTrivial) {
+                static_assert(TrivialUse<PayloadType, Copyable>::value,
+                              "Payload needs to be trivially move & copy constructible, and "
+                              "trivially destructible to be allowed within a Trivial Task");
+            }
+            storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
+            if constexpr (sizeof(PayloadType) <= N) {
+                new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
             } else {
-                void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
-                auto* payload =  // NOLINT
-                    new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
-                new (storage_.data.data()) PayloadType*(payload);
+                static_assert(AllowHeap);
+                static_assert(alignof(void*) <= Align,
+                              "Alignment requirement too high to store heap pointer. Increase "
+                              "template alignment");
+                if constexpr (Align <= alignof(std::max_align_t)) {
+                    void* heapPtr = ::operator new(sizeof(PayloadType));
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                } else {
+                    void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                }
             }
         }
     }
