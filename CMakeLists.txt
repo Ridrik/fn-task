@@ -22,6 +22,7 @@ target_include_directories(task INTERFACE
 
 
 option(TASK_INSTALL "Generate install rules for task" ${PROJECT_IS_TOP_LEVEL})
+option(TASK_TESTS "Generate test targets and related external modules" ${PROJECT_IS_TOP_LEVEL})
 
 if(TASK_INSTALL)
     install(TARGETS task
@@ -48,5 +49,8 @@ if(TASK_INSTALL)
         "${CMAKE_CURRENT_BINARY_DIR}/taskConfigVersion.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/task
     )
+endif()
+
+if(TASK_TESTS)
     add_subdirectory(tests)
 endif()

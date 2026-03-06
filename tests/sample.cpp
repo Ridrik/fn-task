@@ -1,8 +1,8 @@
-
 #include <iostream>
 #include <memory>
 #include <string>
 
+#include "task/named_task.hpp"
 #include "task/task.hpp"
 
 bool foo(std::string /*name*/, std::string& /*data*/, int /*version*/) {
@@ -10,9 +10,10 @@ bool foo(std::string /*name*/, std::string& /*data*/, int /*version*/) {
 }
 
 int main() {
-    // Task takes a callable and optionally capture arguments, which are expected to be part of the
-    // erased callable. It automatically detects the task signature, mutability, copiability, and
-    // size. Here, integer is captured (bind_front like), hence signature is Task<void(std::string)>
+    // Task takes a callable and optionally capture arguments, which are expected to be part of
+    // the erased callable. It automatically detects the task signature, mutability,
+    // copiability, and size. Here, integer is captured (bind_front like), hence signature is
+    // Task<void(std::string)>
     auto task =
         fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; }, 0);
     static_assert(task.matchesSignature<void(std::string)>());
@@ -67,7 +68,7 @@ int main() {
     constexpr int kVersion{1};
     // fn::Task allows binding compile time callables, making it as lightweight as possible (without
     // captured arguments, no buffer even exists!)
-    auto bindTask = fn::makeTask<foo>(kVersion);
+    auto bindTask = fn::makeTask<foo>();
     auto data = std::string{"Some data"};
-    bindTask("My name", data);
+    bindTask("My name", data, 1);
 }

@@ -13,235 +13,14 @@
 #include <type_traits>
 #include <utility>
 
-namespace fn {
+#include "task/function_traits.hpp"
+#include "task/named_task.hpp"
+#include "task/payload.hpp"
 
-#if defined(__GNUC__)
-#define FORCE_INLINE [[gnu::always_inline]] inline
-#elif defined(__clang__)
-#define FORCE_INLINE [[clang::always_inline]] inline
-#elif defined(_MSC_VER)
-#define FORCE_INLINE __forceinline
-#else
-#define FORCE_INLINE inline
-#endif
+namespace fn {
 
 template <typename... T>
 struct AlwaysFalse : std::false_type {};
-
-template <typename T>
-struct RefToConstRef {
-    using Type = T;
-};
-
-template <typename U>
-struct RefToConstRef<std::reference_wrapper<U>> {
-    using Type = std::reference_wrapper<const U>;
-};
-
-template <typename... Ts>
-struct PayloadTuple;
-
-template <typename>
-struct IsPayloadTuple : std::false_type {};
-
-template <typename... Ts>
-struct IsPayloadTuple<PayloadTuple<Ts...>> : std::true_type {};
-
-template <typename>
-struct IsRefPayloadTuple : std::false_type {};
-
-template <typename... Ts>
-    requires((std::is_reference_v<Ts> && ...))
-struct IsRefPayloadTuple<PayloadTuple<Ts...>> : std::true_type {};
-
-template <>
-struct PayloadTuple<> {
-    template <auto F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/,
-                                                ArgsSoFar&&... args) {
-        return F(std::forward<ArgsSoFar>(args)...);
-    }
-
-    template <auto F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyAsArgs(ArgsSoFar&&... args) && {
-        return F(std::forward<ArgsSoFar>(args)...);
-    }
-
-    template <auto F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyFront([[maybe_unused]] this auto&& /*self*/,
-                                                     auto&& callArgs, ArgsSoFar&&... args)
-        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
-                 std::is_rvalue_reference_v<decltype(callArgs)>)
-    {
-        return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
-            std::forward<ArgsSoFar>(args)...);
-    }
-
-    template <typename F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/, F&& f,
-                                                ArgsSoFar&&... args) {
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
-    }
-
-    template <typename F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
-    }
-
-    template <typename F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyFront([[maybe_unused]] this auto&& /*self*/, F&& f,
-                                                     auto&& callArgs, ArgsSoFar&&... args)
-        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
-                 std::is_rvalue_reference_v<decltype(callArgs)>)
-    {
-        return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
-            std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
-    }
-};
-
-template <typename T, typename... Ts>
-struct PayloadTuple<T, Ts...> {
-    T head;
-    [[no_unique_address]] PayloadTuple<Ts...> tail{};
-
-    template <auto F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, ArgsSoFar&&... args) {
-        using Self = decltype(self);
-        if constexpr (sizeof...(Ts) == 0) {
-            return F(std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
-        } else {
-            return std::forward_like<Self>(self.tail).template apply<F>(
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
-        }
-    }
-
-    template <auto F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyAsArgs(ArgsSoFar&&... args) && {
-        if constexpr (sizeof...(Ts) == 0) {
-            return F(std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
-        } else {
-            return std::move(tail).template applyAsArgs<F>(std::forward<ArgsSoFar>(args)...,
-                                                           std::forward<T>(head));
-        }
-    }
-
-    template <auto F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyFront(this auto&& self, auto&& callArgs,
-                                                     ArgsSoFar&&... args)
-        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
-                 std::is_rvalue_reference_v<decltype(callArgs)>)
-    {
-        using Self = decltype(self);
-        if constexpr (sizeof...(Ts) == 0) {
-            return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
-        } else {
-            return std::forward_like<Self>(self.tail).template applyFront<F>(
-                std::forward<decltype(callArgs)>(callArgs), std::forward<ArgsSoFar>(args)...,
-                std::forward_like<Self>(self.head));
-        }
-    }
-
-    template <typename F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, F&& f, ArgsSoFar&&... args) {
-        using Self = decltype(self);
-        if constexpr (sizeof...(Ts) == 0) {
-            return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                               std::forward_like<Self>(self.head));
-        } else {
-            return std::forward_like<Self>(self.tail).apply(std::forward<F>(f),
-                                                            std::forward<ArgsSoFar>(args)...,
-                                                            std::forward_like<Self>(self.head));
-        }
-    }
-
-    template <typename F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
-        if constexpr (sizeof...(Ts) == 0) {
-            return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                               std::forward<T>(head));
-        } else {
-            return std::move(tail).applyAsArgs(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                                               std::forward<T>(head));
-        }
-    }
-
-    template <typename F, typename... ArgsSoFar>
-    FORCE_INLINE constexpr decltype(auto) applyFront(this auto&& self, F&& f, auto&& callArgs,
-                                                     ArgsSoFar&&... args)
-        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
-                 std::is_rvalue_reference_v<decltype(callArgs)>)
-    {
-        using Self = decltype(self);
-        if constexpr (sizeof...(Ts) == 0) {
-            return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
-                std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                std::forward_like<Self>(self.head));
-        } else {
-            return std::forward_like<Self>(self.tail).template applyFront<F>(
-                std::forward<F>(f), std::forward<decltype(callArgs)>(callArgs),
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
-        }
-    }
-};
-
-template <typename F, typename... Args>
-struct PayloadImpl {
-    F f;
-    [[no_unique_address]] PayloadTuple<Args...> args;
-
-    FORCE_INLINE constexpr auto invoke(this auto&& self, auto&&... t) -> decltype(auto) {
-        using Self = decltype(self);
-        return std::forward_like<Self>(self.args).apply(std::forward_like<Self>(self.f),
-                                                        std::forward<decltype(t)>(t)...);
-    }
-
-    FORCE_INLINE constexpr auto invokeFront(this auto&& self, auto&&... t) -> decltype(auto) {
-        using Self = decltype(self);
-        return std::forward_like<Self>(self.args).applyFront(
-            std::forward_like<Self>(self.f),
-            PayloadTuple<decltype(t)...>{std::forward<decltype(t)>(t)...});
-    }
-};
-
-template <auto F, typename... Args>
-struct PayloadImplArgs {
-    using F_Type = decltype(F);
-    [[no_unique_address]] PayloadTuple<Args...> args;
-
-    FORCE_INLINE constexpr auto invoke(this auto&& self, auto&&... t) -> decltype(auto) {
-        using Self = decltype(self);
-        return std::forward_like<Self>(self.args).template apply<F>(
-            std::forward<decltype(t)>(t)...);
-    }
-
-    FORCE_INLINE constexpr auto invokeFront(this auto&& self, auto&&... t) -> decltype(auto) {
-        using Self = decltype(self);
-        return std::forward_like<Self>(self.args).template applyFront<F>(
-            PayloadTuple<decltype(t)...>{std::forward<decltype(t)>(t)...});
-    }
-};
-
-template <typename... Args>
-struct PayloadNoRvalueRef : std::false_type {};
-
-template <typename... Args>
-    requires((!std::is_rvalue_reference_v<Args>) && ...)
-struct PayloadNoRvalueRef<PayloadTuple<Args...>> : std::true_type {};
-
-template <typename F, typename... Args>
-    requires(!std::is_rvalue_reference_v<F> && PayloadNoRvalueRef<PayloadTuple<Args...>>::value)
-struct PayloadNoRvalueRef<PayloadImpl<F, Args...>> : std::true_type {};
-
-template <auto F, typename... Args>
-    requires(PayloadNoRvalueRef<PayloadTuple<Args...>>::value)
-struct PayloadNoRvalueRef<PayloadImplArgs<F, Args...>> : std::true_type {};
-
-template <typename F, typename... Args>
-using PayloadT = PayloadImpl<std::decay_t<F>, std::unwrap_ref_decay_t<Args>...>;
-
-template <auto F, typename... Args>
-using PayloadArgsT = PayloadImplArgs<F, std::unwrap_ref_decay_t<Args>...>;
 
 enum class Op : std::uint8_t { kDestroy, kClone, kMove, kAssign, kMoveAssign };
 
@@ -1313,21 +1092,6 @@ struct IsFunctionTag : std::false_type {};
 template <auto F>
 struct IsFunctionTag<FunctionTag<F>> : std::true_type {};
 
-template <typename, bool Copyable = true>
-struct TrivialUse : std::false_type {};
-
-// Captured arguments of type-erased callable are not copy-assigned or move-assigned, and instead
-// are destroyed followed by the copy/move constructor. Therefore, to be safe to simply memcpy
-// and not need manager pointers, one checks copy/move constructor and destructor triviallity
-template <typename Pl>
-    requires(std::is_trivially_copy_constructible_v<Pl> &&
-             std::is_trivially_move_constructible_v<Pl> && std::is_trivially_destructible_v<Pl>)
-struct TrivialUse<Pl, true> : std::true_type {};
-
-template <typename Pl>
-    requires(std::is_trivially_move_constructible_v<Pl> && std::is_trivially_destructible_v<Pl>)
-struct TrivialUse<Pl, false> : std::true_type {};
-
 struct RefTag {};
 
 template <typename ReturnType, typename... CallArgs, bool Copyable, std::size_t N, bool IsTrivial,
@@ -1617,8 +1381,8 @@ struct Task<ReturnType(CallArgs...), Copyable, N, IsTrivial, Mutable, Extended, 
         : storage_{.invoker =
                        InvokerFactory<N, Mutable, ReturnType, CallArgs...>::template getInvoker<
                            PayloadArgsT<F, BoundArgs...>, F, BoundArgs...>()} {
-        if constexpr (sizeof...(BoundArgs) > 0) {
-            using PayloadType = PayloadArgsT<F, BoundArgs...>;
+        using PayloadType = PayloadArgsT<F, BoundArgs...>;
+        if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
             static_assert(
                 !Copyable || std::is_copy_constructible_v<PayloadType>,
@@ -1781,8 +1545,8 @@ struct Task<ReturnType(CallArgs...), Copyable, N, IsTrivial, Mutable, Extended, 
               (!std::is_rvalue_reference_v<BoundArgs> && !std::is_lvalue_reference_v<BoundArgs> &&
                std::is_rvalue_reference_v<decltype(args)>)) &&
              ...));
-        if constexpr (sizeof...(BoundArgs) > 0) {
-            using PayloadType = PayloadImplArgs<F, BoundArgs...>;
+        using PayloadType = PayloadImplArgs<F, BoundArgs...>;
+        if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
             static_assert(
                 sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
@@ -1974,68 +1738,6 @@ static_assert(TrivialTask<void(), true, false, 0>::getSize() == sizeof(void*));
 template <typename Signature, bool Copyable = true>
 using TrivialTaskCapturelessMut = TrivialTask<Signature, Copyable, true, 1>;
 
-template <typename T>
-struct FunctionTraits {
-    static constexpr bool kValid{false};
-};
-
-template <typename T>
-    requires(std::is_class_v<T> && requires { &T::operator(); })
-struct FunctionTraits<T> : FunctionTraits<decltype(&T::operator())> {};
-
-/*template <typename T>
-struct FunctionTraits<T, std::void_t<decltype(&T::operator())>>
-    : FunctionTraits<decltype(&T::operator())> {};*/
-
-template <typename Ret, typename... Args>
-struct FunctionTraits<Ret (*)(Args...)> {
-    static constexpr bool kValid{true};
-    using return_type = Ret;
-    using args_tuple = std::tuple<Args...>;
-};
-
-template <typename Ret, typename... Args>
-struct FunctionTraits<Ret (*)(Args...) noexcept> {
-    static constexpr bool kValid{true};
-    using return_type = Ret;
-    using args_tuple = std::tuple<Args...>;
-};
-
-template <typename Class, typename Ret, typename... Args>
-struct FunctionTraits<Ret (Class::*)(Args...)> {
-    static constexpr bool kValid{true};
-    using return_type = Ret;
-    using args_tuple = std::tuple<Args...>;
-};
-
-template <typename Class, typename Ret, typename... Args>
-struct FunctionTraits<Ret (Class::*)(Args...) const> {
-    static constexpr bool kValid{true};
-    using return_type = Ret;
-    using args_tuple = std::tuple<Args...>;
-};
-
-template <size_t N, typename Tuple, typename Indices = std::make_index_sequence<N>>
-struct slice_first;
-
-template <size_t N, typename... Args, size_t... Is>
-struct slice_first<N, std::tuple<Args...>, std::index_sequence<Is...>> {
-    using type = std::tuple<std::tuple_element_t<Is, std::tuple<Args...>>...>;
-};
-
-template <size_t N, typename Tuple, typename Indices = std::make_index_sequence<N>>
-struct slice_last;
-
-template <size_t N, typename... Args, size_t... Is>
-struct slice_last<N, std::tuple<Args...>, std::index_sequence<Is...>> {
-    static constexpr size_t kTotal = sizeof...(Args);
-    static_assert(N <= kTotal, "Slice size N cannot exceed total tuple size.");
-    using type = std::tuple<std::tuple_element_t<Is + (kTotal - N), std::tuple<Args...>>...>;
-};
-
-template <typename T>
-concept HasFunctionTraits = requires { FunctionTraits<T>::kValid; };
-
 template <typename F, typename... BoundArgs>
     requires(HasFunctionTraits<std::decay_t<F>>)
 struct TaskTypeDeductor {
@@ -2043,7 +1745,8 @@ struct TaskTypeDeductor {
         using Traits = FunctionTraits<std::decay_t<F>>;
         using AllArgs = typename Traits::args_tuple;
 
-        static constexpr size_t kRemainingCount = std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
+        static constexpr std::size_t kRemainingCount =
+            std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
 
         using SlicedTuple = typename slice_first<kRemainingCount, AllArgs>::type;
         using SlicedTupleReverse = typename slice_last<kRemainingCount, AllArgs>::type;
@@ -2134,7 +1837,8 @@ struct TaskTypeDeductorAuto {
         using Traits = FunctionTraits<std::decay_t<decltype(F)>>;
         using AllArgs = typename Traits::args_tuple;
 
-        static constexpr size_t kRemainingCount = std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
+        static constexpr std::size_t kRemainingCount =
+            std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
 
         using SlicedTuple = typename slice_first<kRemainingCount, AllArgs>::type;
         using SlicedTupleReverse = typename slice_last<kRemainingCount, AllArgs>::type;
