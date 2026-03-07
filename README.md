@@ -198,11 +198,12 @@ One can observe the better performance of `fn::NamedTask` at the nanosecond leve
 
 ## 🧩 Third-Party Components and Licenses
 
-**fn-task** makes use of `nanobench` for its performance benchmarks.
+**fn-task** does not use external libraries for its implementation, but makes use of the following components for testing purposes:
 
 | Component | Purpose | License |
 | ---------- | -------- | -------- |
 | [**nanobench**](https://github.com/martinus/nanobench) | Microbenchmarking functionality for C++ | MIT |
+| [**fault**](https://github.com/Ridrik/fault) | Crash handler, Panic and Assertion library | MIT |
 
 ---
 

@@ -9,10 +9,18 @@ add_library(task INTERFACE)
 add_library(fn::task ALIAS task)
 
 target_compile_features(task INTERFACE cxx_std_23)
+
+set(TASK_HEADERS
+    include/task/task.hpp
+    include/task/named_task.hpp
+    include/task/payload.hpp
+    include/task/function_traits.hpp
+)
+
 target_sources(task INTERFACE 
     FILE_SET HEADERS
     BASE_DIRS include
-    FILES include/task/task.hpp
+    FILES ${TASK_HEADERS} 
 )
 
 target_include_directories(task INTERFACE

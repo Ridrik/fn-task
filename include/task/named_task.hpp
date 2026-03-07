@@ -3,60 +3,10 @@
 
 #include <type_traits>
 
-#include "task/function_traits.hpp"
-#include "task/payload.hpp"
+#include <task/function_traits.hpp>
+#include <task/payload.hpp>
 
 namespace fn {
-
-/*template <typename Signature, typename F, typename... BoundArgs>
-struct NamedTask;
-
-template <typename ReturnType, typename... CallArgs, typename F, typename... BoundArgs>
-struct NamedTask<ReturnType(CallArgs...), F, BoundArgs...> {
-    PayloadT<F, BoundArgs...> payload{};
-
-    template <bool Front = false>
-    FORCE_INLINE ReturnType invoke(this auto&& self, CallArgs... args) {
-        using Self = decltype(self);
-        if constexpr (Front) {
-            return std::forward_like<Self>(self.payload)
-                .invokeFront(std::forward<CallArgs>(args)...);
-        } else {
-            return std::forward_like<Self>(self.payload).invoke(std::forward<CallArgs>(args)...);
-        }
-    }
-
-    template <bool Front = false>
-    FORCE_INLINE ReturnType operator()(this auto&& self, CallArgs... args) {
-        using Self = decltype(self);
-        return std::forward<Self>(self).invoke(std::forward<CallArgs>(args)...);
-    }
-};
-
-template <typename Signature, auto F, typename... BoundArgs>
-struct StaticNamedTask;
-
-template <typename ReturnType, typename... CallArgs, auto F, typename... BoundArgs>
-struct StaticNamedTask<ReturnType(CallArgs...), F, BoundArgs...> {
-    PayloadArgsT<F, BoundArgs...> payload{};
-
-    template <bool Front = false>
-    FORCE_INLINE ReturnType invoke(this auto&& self, CallArgs... args) {
-        using Self = decltype(self);
-        if constexpr (Front) {
-            return std::forward_like<Self>(self.payload)
-                .invokeFront(std::forward<CallArgs>(args)...);
-        } else {
-            return std::forward_like<Self>(self.payload).invoke(std::forward<CallArgs>(args)...);
-        }
-    }
-
-    template <bool Front = false>
-    FORCE_INLINE ReturnType operator()(this auto&& self, CallArgs... args) {
-        using Self = decltype(self);
-        return std::forward<Self>(self).invoke(std::forward<CallArgs>(args)...);
-    }
-};*/
 
 template <auto F, typename... Args>
 struct StaticPayloadSelector {
@@ -67,37 +17,6 @@ template <typename F, typename... Args>
 struct TypePayloadSelector {
     using type = PayloadT<F, Args...>;
 };
-
-/*template <typename Signature, auto Functor, typename... BoundArgs>
-struct NamedTask;
-
-template <typename ReturnType, typename... CallArgs, auto Functor, typename... BoundArgs>
-struct NamedTask<ReturnType(CallArgs...), Functor, BoundArgs...> {
-    using PayloadType =
-        typename std::conditional_t<requires {
-            typename decltype(Functor)::type;
-        }, TypePayloadSelector<typename decltype(Functor)::type, BoundArgs...>,
-                                    StaticPayloadSelector<Functor, BoundArgs...>>::type;
-
-    PayloadType payload{};
-
-    template <bool Front = false>
-    FORCE_INLINE ReturnType invoke(this auto&& self, CallArgs... args) {
-        using Self = decltype(self);
-        if constexpr (Front) {
-            return std::forward_like<Self>(self.payload)
-                .invokeFront(std::forward<CallArgs>(args)...);
-        } else {
-            return std::forward_like<Self>(self.payload).invoke(std::forward<CallArgs>(args)...);
-        }
-    }
-
-    template <bool Front = false>
-    FORCE_INLINE ReturnType operator()(this auto&& self, CallArgs... args) {
-        return std::forward<decltype(self)>(self).template invoke<Front>(
-            std::forward<CallArgs>(args)...);
-    }
-};*/
 
 template <typename Derived, bool isFront, typename ReturnType, typename... CallArgs>
 struct TaskInvokeBase {

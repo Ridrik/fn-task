@@ -2,10 +2,9 @@
 #include <memory>
 #include <string>
 
-#include "task/named_task.hpp"
-#include "task/task.hpp"
+#include <task/task.hpp>
 
-bool foo(std::string /*name*/, std::string& /*data*/, int /*version*/) {
+bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) {
     return false;
 }
 
@@ -14,14 +13,14 @@ int main() {
     // the erased callable. It automatically detects the task signature, mutability,
     // copiability, and size. Here, integer is captured (bind_front like), hence signature is
     // Task<void(std::string)>
-    auto task =
-        fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; }, 0);
-    static_assert(decltype(task)::matchesSignature<void(std::string)>());
+    auto task = fn::makeTask(
+        [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; }, 0);
+    static_assert(decltype(task)::matchesSignature<void(const std::string&)>());
     task("Hello World");
     // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
-    auto task2 =
-        fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; },
-                     std::string("Hello World"));
+    auto task2 = fn::makeTask(
+        [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; },
+        std::string("Hello World"));
     static_assert(decltype(task2)::matchesSignature<void(int)>());
     task2(10);
     auto str = std::string{"Hello World"};
@@ -66,9 +65,9 @@ int main() {
     auto uniqueTask = fn::makeTask([](std::unique_ptr<int>& a) { return *a; },
                                    std::make_unique<int>(5));  // Makes it mutable
     // OR
-    auto _ = fn::UniqueTask<int()>{[](const std::unique_ptr<int>& a) { return *a; },
-                                   std::make_unique<int>(5)};
-    static_assert(!uniqueTask.isCopyable());
+    auto uniqueTask2 = fn::UniqueTask<int()>{[](const std::unique_ptr<int>& a) { return *a; },
+                                             std::make_unique<int>(5)};
+    static_assert(!decltype(uniqueTask)::isCopyable());
     // This would fail
     // auto _ =
     //    fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));

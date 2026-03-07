@@ -1,4 +1,12 @@
 
+add_library(aggregator OBJECT aggregator.cpp)
+target_link_libraries(aggregator PRIVATE fn::task)
+set_target_properties(aggregator PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
 add_executable(sample sample.cpp)
 target_link_libraries(sample PRIVATE fn::task)
 set_target_properties(sample PROPERTIES
