@@ -16,14 +16,22 @@ int main() {
     // Task<void(std::string)>
     auto task =
         fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; }, 0);
-    static_assert(task.matchesSignature<void(std::string)>());
+    static_assert(decltype(task)::matchesSignature<void(std::string)>());
     task("Hello World");
     // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
     auto task2 =
         fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; },
                      std::string("Hello World"));
-    static_assert(task2.matchesSignature<void(int)>());
+    static_assert(decltype(task2)::matchesSignature<void(int)>());
     task2(10);
+    auto str = std::string{"Hello World"};
+    // You can capture by reference, equivalently to '&str' in lambda
+    auto task2_half = fn::makeTask(
+        [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; },
+        std::cref(str));  // Or std::ref if one wishes to mutate
+    task2_half(10);
+    str = "Hi";
+    task2_half(10);
 
     // You can still use lambdas alone with captured list
     // Note: fn::Task has similar deduction guides as to fn::makeTask

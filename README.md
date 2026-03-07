@@ -16,7 +16,7 @@ In addition, `fn::NamedTask` is the opposite: a typed callable. Its type is dire
 * Allows taking references, similar to capturing lambda. Simply use std::ref or std::cref on a captured argument, storing a reference instead.
 * Referencing tasks: If you know all your arguments are references, you can use `fn::makeRefTask` instead. All l-values given will be stored via references. R-values given are still stored to avoid dangling
 * Movable arguments. If mutability is selected, inner callable may move the type-erased arguments in the body, perfect for one-shot Tasks.
-* Extensive deduction guides, both directly with `fn::Task{Args&&...}` or via factory functions `fn::makeTask`, `fn::makeTask<Signature>`, `fn::makeMutTask`, `fn::makeRefTask`, etc.
+* Extensive deduction guides, both directly with `fn::Task{Args&&...}` or via factory functions `fn::makeTask`, `fn::makeTask<Signature>`, `fn::makeRefTask`, `fn::makeMutTask`, `fn::makeRefTask`, etc.
 
 
 ---
@@ -193,6 +193,16 @@ One can observe the better performance of `fn::NamedTask` at the nanosecond leve
 ### 3. What's the meaning of template bool Extended?
 >The Extended option makes it so that the storage consists of 3 pointers (cloner, mover, deleter), as opposed to a single manager pointer that encodes all 3 operations, but with the need of an operation argument to decide which one to execute. It can provide a faster access to copy/move/delete (direct pointer known), though it also means extra pointers need to be copied themselves as well as the size increase (usually 16 bytes). It's meant as a playground for now, use it only if you want to conduct your own experiment. Note that the development of the `Extended` option needs to be completed to allow heap usage.
 
+
+---
+
+## 🧩 Third-Party Components and Licenses
+
+**fn-task** makes use of `nanobench` for its performance benchmarks.
+
+| Component | Purpose | License |
+| ---------- | -------- | -------- |
+| [**nanobench**](https://github.com/martinus/nanobench) | Microbenchmarking functionality for C++ | MIT |
 
 ---
 
