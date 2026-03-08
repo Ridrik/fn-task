@@ -1,10 +1,11 @@
 #ifndef TASK_NAMED_TASK_HPP
 #define TASK_NAMED_TASK_HPP
 
+#include <algorithm>
 #include <type_traits>
 
-#include <task/function_traits.hpp>
-#include <task/payload.hpp>
+#include "function_traits.hpp"
+#include "payload.hpp"
 
 namespace fn {
 
@@ -112,7 +113,7 @@ struct NamedTask<ReturnType(CallArgs...), F, BoundArgs...>
 
     NamedTask(F&& f, BoundArgs&&... args)
         requires(sizeof...(BoundArgs) > 0 || !std::is_same_v<std::remove_cvref_t<F>, NamedTask>)
-        : payload{std::forward<F>(f), {std::forward<BoundArgs>(args)...}} {}
+        : payload{.f = std::forward<F>(f), .args = {std::forward<BoundArgs>(args)...}} {}
 };
 
 template <auto F>
@@ -290,10 +291,10 @@ FORCE_INLINE auto makeNamedTask(BoundArgs&&... args) {
 }
 
 template <typename F>
-    requires(requires { typename FunctionTraits<F>::func_ptr; } &&
-             std::is_convertible_v<F, typename FunctionTraits<F>::func_ptr>)
+    requires(requires { typename FunctionTraits<std::decay_t<F>>::func_ptr; } &&
+             std::is_convertible_v<F, typename FunctionTraits<std::decay_t<F>>::func_ptr>)
 FORCE_INLINE auto toFuncPtr(F&& f) {
-    return typename FunctionTraits<F>::func_ptr{std::forward<F>(f)};
+    return typename FunctionTraits<std::decay_t<F>>::func_ptr{std::forward<F>(f)};
 }
 
 template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
@@ -301,9 +302,10 @@ template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
                                  std::is_convertible_v<F, typename FunctionTraits<F>::func_ptr>))
 FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
     if constexpr (StoreFuncAsPtr) {
-        return NamedTask<typename NamedTaskTypeDeductor<typename FunctionTraits<F>::func_ptr,
-                                                        BoundArgs...>::Signature,
-                         typename FunctionTraits<F>::func_ptr, BoundArgs...>{
+        return NamedTask<
+            typename NamedTaskTypeDeductor<typename FunctionTraits<std::decay_t<F>>::func_ptr,
+                                           BoundArgs...>::Signature,
+            typename FunctionTraits<std::decay_t<F>>::func_ptr, BoundArgs...>{
             std::forward<F>(f), std::forward<BoundArgs>(args)...};
     } else {
         return NamedTask<typename NamedTaskTypeDeductor<F, BoundArgs...>::Signature, F,

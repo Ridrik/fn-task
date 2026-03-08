@@ -2,9 +2,8 @@
 #include <memory>
 #include <string>
 
-#include "task/function_traits.hpp"
-#include "task/named_task.hpp"
-#include "task/task.hpp"
+#include <task/named_task.hpp>
+#include <task/task.hpp>
 
 bool foo(std::string /*name*/, std::string& /*data*/, int /*version*/) {
     return false;

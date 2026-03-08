@@ -54,7 +54,7 @@ struct FunctionTraits {
 };
 
 template <typename T>
-    requires(std::is_class_v<T> && requires { &T::operator(); })
+    requires(requires { &T::operator(); })
 struct FunctionTraits<T> : FunctionTraits<decltype(&T::operator())> {};
 
 template <typename Ret, typename... Args>
@@ -99,11 +99,11 @@ struct FunctionTraits<Ret (Class::*)(Args...) const> {
 
 template <typename T>
     requires requires { typename T::Signature; }
-struct FunctionTraits<T> {
-    static constexpr bool kValid{true};
+struct FunctionTraits<T> : FunctionTraits<typename T::Signature> {
+    /*static constexpr bool kValid{true};
     using return_type = typename FunctionTraits<typename T::Signature>::return_type;
     using args_tuple = typename FunctionTraits<typename T::Signature>::args_tuple;
-    using func_ptr = typename FunctionTraits<typename T::Signature>::func_ptr;
+    using func_ptr = typename FunctionTraits<typename T::Signature>::func_ptr;*/
 };
 
 template <typename T>
