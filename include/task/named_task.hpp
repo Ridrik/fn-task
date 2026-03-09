@@ -299,8 +299,9 @@ FORCE_INLINE auto toFuncPtr(F&& f) {
 }
 
 template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
-    requires(!StoreFuncAsPtr || (requires { typename FunctionTraits<F>::func_ptr; } &&
-                                 std::is_convertible_v<F, typename FunctionTraits<F>::func_ptr>))
+    requires(!StoreFuncAsPtr || (requires {
+        typename FunctionTraits<std::decay_t<F>>::func_ptr;
+    } && std::is_convertible_v<F, typename FunctionTraits<std::decay_t<F>>::func_ptr>))
 FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
     if constexpr (StoreFuncAsPtr) {
         return NamedTask<
