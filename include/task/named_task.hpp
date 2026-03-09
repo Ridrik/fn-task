@@ -111,7 +111,7 @@ struct NamedTask<ReturnType(CallArgs...), F, BoundArgs...>
         return *this;
     }
 
-    NamedTask(F&& f, BoundArgs&&... args)
+    NamedTask(F&& f, BoundArgs&&... args)  // NOLINT
         requires(sizeof...(BoundArgs) > 0 || !std::is_same_v<std::remove_cvref_t<F>, NamedTask>)
         : payload{.f = std::forward<F>(f), .args = {std::forward<BoundArgs>(args)...}} {}
 };

@@ -56,7 +56,7 @@ struct PayloadTuple<> {
         requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
                  std::is_rvalue_reference_v<decltype(callArgs)>)
     {
-        return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
+        return std::forward<decltype(callArgs)>(callArgs).template applyAsArgs<F>(
             std::forward<ArgsSoFar>(args)...);
     }
 
@@ -81,7 +81,7 @@ struct PayloadTuple<> {
         requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
                  std::is_rvalue_reference_v<decltype(callArgs)>)
     {
-        return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
+        return std::forward<decltype(callArgs)>(callArgs).template applyAsArgs<F>(
             std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
     }
 };
@@ -125,7 +125,7 @@ struct PayloadTuple<T, Ts...> {
     {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
-            return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
+            return std::forward<decltype(callArgs)>(callArgs).template applyAsArgs<F>(
                 std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyFront<F>(
@@ -171,7 +171,7 @@ struct PayloadTuple<T, Ts...> {
     {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
-            return std::forward<decltype(callArgs)>(callArgs).template apply<F>(
+            return std::forward<decltype(callArgs)>(callArgs).template applyAsArgs<F>(
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
                 std::forward_like<Self>(self.head));
         } else {

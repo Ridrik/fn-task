@@ -5,17 +5,17 @@ project(task VERSION 1.0.0 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+set(TASK_HEADERS
+    include/task/named_task.hpp
+    include/task/task.hpp
+    include/task/payload.hpp
+    include/task/function_traits.hpp
+)
+
 add_library(task INTERFACE)
 add_library(fn::task ALIAS task)
 
 target_compile_features(task INTERFACE cxx_std_23)
-
-set(TASK_HEADERS
-    include/task/task.hpp
-    include/task/named_task.hpp
-    include/task/payload.hpp
-    include/task/function_traits.hpp
-)
 
 target_sources(task INTERFACE 
     FILE_SET HEADERS
