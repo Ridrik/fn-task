@@ -107,7 +107,7 @@ struct FunctionTraits<T> : FunctionTraits<typename T::Signature> {
 };
 
 template <typename T>
-concept HasFunctionTraits = requires { FunctionTraits<T>::kValid; };
+concept HasFunctionTraits = FunctionTraits<T>::kValid;
 
 }  // namespace fn
 
