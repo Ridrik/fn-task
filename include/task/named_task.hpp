@@ -285,6 +285,7 @@ NamedTask(F&&, BoundArgs&&...)
     -> NamedTask<typename NamedTaskTypeDeductor<F, BoundArgs...>::Signature, F, BoundArgs...>;
 
 template <auto F, typename... BoundArgs>
+    requires HasFunctionTraits<decltype(F)> && NamedTaskTypeDeductorAuto<F, BoundArgs...>::kIsValid
 FORCE_INLINE auto makeNamedTask(BoundArgs&&... args) {
     return NamedTask<typename NamedTaskTypeDeductorAuto<F, BoundArgs...>::Signature, StaticFn<F>,
                      BoundArgs...>{std::forward<BoundArgs>(args)...};
