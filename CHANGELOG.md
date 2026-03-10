@@ -1,4 +1,10 @@
-## v1.1.0 - March 2026
+## v1.1.2 - March 2026
+### Added
+- readme example for `fn::NamedTask`
+### Fixed
+- Fixed issue with static assert on invocation check for `fn::NamedTask`
+
+## v1.1.1 - March 2026
 ### Fixed
 - Fixed an issue related with front invocation, regarding proper forwarding of call arguments within a movable payload, so as to preserve either lvalue or rvalue references.
 

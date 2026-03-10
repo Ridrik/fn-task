@@ -26,16 +26,16 @@ struct TaskInvokeBase {
         using DerivedRef = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>,
                                               const Derived, Derived>;
         auto&& derived = static_cast<DerivedRef&&>(self);
-        static_assert(IsPayload<decltype(derived.payload), Self, CallArgs...>::value);
+        using PayloadType = std::remove_cvref_t<decltype(derived.payload)>;
+        static_assert(IsPayload<PayloadType, Self, CallArgs...>::value);
         if constexpr (isFront) {
-            static_assert(
-                IsPayload<decltype(derived.payload), Self, CallArgs...>::kIsInvocableFront,
-                "F is not invocable with provided arguments. Check whether a different "
-                "attribute is needed (such as non-const NamedTask, r-value invocation)");
+            static_assert(IsPayload<PayloadType, Self, CallArgs...>::kIsInvocableFront,
+                          "F is not invocable with provided arguments. Check whether a different "
+                          "attribute is needed (such as non-const NamedTask, r-value invocation)");
             return std::forward_like<Self>(derived.payload)
                 .invokeFront(std::forward<CallArgs>(args)...);
         } else {
-            static_assert(IsPayload<decltype(derived.payload), Self, CallArgs...>::kIsInvocable,
+            static_assert(IsPayload<PayloadType, Self, CallArgs...>::kIsInvocable,
                           "F is not invocable with provided arguments. Check whether a different "
                           "attribute is needed (such as non-const NamedTask, r-value invocation)");
             return std::forward_like<Self>(derived.payload).invoke(std::forward<CallArgs>(args)...);
@@ -47,9 +47,10 @@ struct TaskInvokeBase {
         using DerivedRef = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>,
                                               const Derived, Derived>;
         auto&& derived = static_cast<DerivedRef&&>(self);
-        static_assert(IsPayload<decltype(derived.payload), Self, CallArgs...>::value);
-        static_assert(IsPayload<decltype(derived.payload), Self, CallArgs...>::kIsInvocableFront ||
-                          IsPayload<decltype(derived.payload), Self, CallArgs...>::kIsInvocable,
+        using PayloadType = std::remove_cvref_t<decltype(derived.payload)>;
+        static_assert(IsPayload<PayloadType, Self, CallArgs...>::value);
+        static_assert(IsPayload<PayloadType, Self, CallArgs...>::kIsInvocableFront ||
+                          IsPayload<PayloadType, Self, CallArgs...>::kIsInvocable,
                       "F is not invocable with provided arguments. Check whether a different "
                       "attribute is needed (such as non-const NamedTask, r-value invocation)");
         return std::forward_like<decltype(self)>(self).invoke(std::forward<CallArgs>(args)...);

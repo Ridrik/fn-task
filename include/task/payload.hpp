@@ -262,10 +262,20 @@ template <typename F, typename... BoundArgs, typename Self, typename... CallArgs
 struct IsPayload<PayloadImpl<F, BoundArgs...>, Self, CallArgs...> : std::true_type {
     using F_qual = ForwardLikeT<Self, F>;
     static constexpr bool kIsInvocable =
-        std::is_invocable_v<F_qual, ForwardLikeT<Self, BoundArgs>..., CallArgs...>;
+        std::is_invocable_v<F_qual, CallArgs..., ForwardLikeT<Self, BoundArgs>...>;
 
     static constexpr bool kIsInvocableFront =
+        std::is_invocable_v<F_qual, ForwardLikeT<Self, BoundArgs>..., CallArgs...>;
+};
+
+template <auto F, typename... BoundArgs, typename Self, typename... CallArgs>
+struct IsPayload<PayloadImplArgs<F, BoundArgs...>, Self, CallArgs...> : std::true_type {
+    using F_qual = ForwardLikeT<Self, decltype(F)>;
+    static constexpr bool kIsInvocable =
         std::is_invocable_v<F_qual, CallArgs..., ForwardLikeT<Self, BoundArgs>...>;
+
+    static constexpr bool kIsInvocableFront =
+        std::is_invocable_v<F_qual, ForwardLikeT<Self, BoundArgs>..., CallArgs...>;
 };
 
 }  // namespace fn
