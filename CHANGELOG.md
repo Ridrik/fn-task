@@ -1,3 +1,13 @@
+## v1.1.3 - March 2026
+### Added
+- Explicit named task for 'this' pointer as `void*`, via `fn::makeThisTask`. Example:
+ ```cpp
+ auto task = fn::makeThisTask([](const Payload& payload, void* ptr){
+    auto& self = *static_cast<MyModule>(self);
+  // Process payload with your module
+  }, myModulePtr);
+```
+
 ## v1.1.2 - March 2026
 ### Added
 - readme example for `fn::NamedTask`

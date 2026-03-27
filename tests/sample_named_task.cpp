@@ -39,6 +39,9 @@ int main() {
             // Call your module's entry point for Payload to process it.
         },
         static_cast<void*>(mPtr));
+    // Even more simply (Use this)
+    auto subTask = fn::makeThisTask(
+        [](Payload payload, void* ptr) { auto& self = *static_cast<MyModule*>(ptr); }, mPtr);
     static_assert(decltype(subscriberTask)::matchesSignature<void(Payload)>());
     subscriberTask(5.5);
 
@@ -54,7 +57,6 @@ int main() {
     // const auto compileFunc4 = fn::makeNamedTask<foo>("David", std::ref(str));
     // compileFunc4(2); // This fails, since namedTask is marked const, and captured argument needs
     // to be used as std::string&
-
     // This works
     const auto compileFunc4 = fn::makeNamedTask<bar>("David", std::cref(str));
     compileFunc4(2);

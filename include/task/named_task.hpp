@@ -316,6 +316,21 @@ FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
     }
 }
 
+template <typename T>
+concept ErasableToPointer = requires(T t) { static_cast<void*>(t); };
+
+template <typename F, typename BoundArg>
+    requires(requires { typename FunctionTraits<std::decay_t<F>>::func_ptr; } &&
+             std::is_convertible_v<F, typename FunctionTraits<std::decay_t<F>>::func_ptr>)
+FORCE_INLINE auto makeThisTask(F&& f, BoundArg&& arg)
+    requires ErasableToPointer<decltype(arg)>
+{
+    return NamedTask<typename NamedTaskTypeDeductor<
+                         typename FunctionTraits<std::decay_t<F>>::func_ptr, void*>::Signature,
+                     typename FunctionTraits<std::decay_t<F>>::func_ptr, void*>{
+        std::forward<F>(f), std::forward<BoundArg>(arg)};
+}
+
 }  // namespace fn
 
 #endif  // TASK_NAMED_TASK_HPP

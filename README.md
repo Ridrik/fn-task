@@ -31,7 +31,7 @@ include(FetchContent)
 FetchContent_Declare(
     task
     GIT_REPOSITORY [https://github.com/Ridrik/fn-task.git](https://github.com/Ridrik/fn-task.git)
-    GIT_TAG v1.1.2
+    GIT_TAG v1.1.3
 )
 FetchContent_MakeAvailable(task)
 
@@ -65,13 +65,13 @@ int main() {
     // size. Here, integer is captured (bind_front like), hence signature is Task<void(std::string)>
     auto task =
         fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; }, 0);
-    static_assert(task.matchesSignature<void(std::string)>());
+    static_assert(decltype(task)::matchesSignature<void(std::string)>());
     task("Hello World");
     // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
     auto task2 =
         fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; },
                      std::string("Hello World"));
-    static_assert(task2.matchesSignature<void(int)>());
+    static_assert(decltype(task2)::matchesSignature<void(int)>());
     task2(10);
 
     // You can still use lambdas alone with captured list
@@ -109,7 +109,7 @@ int main() {
     // OR
     auto _ = fn::UniqueTask<int()>{[](const std::unique_ptr<int>& a) { return *a; },
                                    std::make_unique<int>(5)};
-    static_assert(!uniqueTask.isCopyable());
+    static_assert(!decltype(uniqueTask)::isCopyable());
     // This would fail
     // auto _ =
     //    fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
@@ -167,6 +167,9 @@ int main() {
             // Call your module's entry point for Payload to process it.
         },
         static_cast<void*>(mPtr));
+    // Even more simply (Use this)
+    auto subTask = fn::makeThisTask(
+        [](Payload payload, void* ptr) { auto& self = *static_cast<MyModule*>(ptr); }, mPtr);
     static_assert(decltype(subscriberTask)::matchesSignature<void(Payload)>());
     subscriberTask(5.5);
 
@@ -182,7 +185,6 @@ int main() {
     // const auto compileFunc4 = fn::makeNamedTask<foo>("David", std::ref(str));
     // compileFunc4(2); // This fails, since namedTask is marked const, and captured argument needs
     // to be used as std::string&
-
     // This works
     const auto compileFunc4 = fn::makeNamedTask<bar>("David", std::cref(str));
     compileFunc4(2);
