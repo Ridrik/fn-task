@@ -1,0 +1,38 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "gcc-16.2-release",
+            "inherits": "gcc-release",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/opt/gcc-16.2/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/opt/gcc-16.2/bin/g++",
+                "CMAKE_BUILD_RPATH": "/opt/gcc-16.2/lib64",
+                "CMAKE_PREFIX_PATH": "/opt/gcc-16.2/",
+                "CMAKE_CXX_STANDARD": "26"
+            },
+            "environment": {
+                "LD_LIBRARY_PATH": "/opt/gcc-16.2/lib64:$penv{LD_LIBRARY_PATH}"
+            }
+        },
+        {
+            "name": "gcc-16.2-debug",
+            "inherits": "gcc-debug",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/opt/gcc-16.2/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/opt/gcc-16.2/bin/g++",
+                "CMAKE_BUILD_RPATH": "/opt/gcc-16.2/lib64",
+                "CMAKE_PREFIX_PATH": "/opt/gcc-16.2/",
+                "CMAKE_CXX_STANDARD": "26"
+            },
+            "environment": {
+                "LD_LIBRARY_PATH": "/opt/gcc-16.2/lib64:$penv{LD_LIBRARY_PATH}"
+            }
+        }
+    ]
+}

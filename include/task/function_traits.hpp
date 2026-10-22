@@ -1,7 +1,11 @@
 #ifndef TASK_FUNCTION_TRAITS_HPP
 #define TASK_FUNCTION_TRAITS_HPP
 
+#include <cstddef>
+#include <functional>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 
 namespace fn {
 

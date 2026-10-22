@@ -11,6 +11,8 @@ Checks: >
   -readability-magic-numbers,
   -readability-identifier-length,
   -readability-math-missing-parentheses,
+  -readability-trailing-comma,
+  -readability-redundant-typename,
   -modernize-use-trailing-return-type,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-avoid-magic-numbers,
@@ -37,3 +39,5 @@ CheckOptions:
   readability-identifier-naming.EnumConstantPrefix: k
   readability-identifier-naming.ConstexprVariableCase: CamelCase
   readability-identifier-naming.ConstexprVariablePrefix: k
+  misc-include-cleaner.MissingIncludes: true
+  misc-include-cleaner.UnusedIncludes: true

@@ -4,3 +4,7 @@ CompileFlags:
     - -I${workspaceFolder}/include
 Index:
   Background: Build          
+
+Diagnostics:
+  MissingIncludes: Strict
+  UnusedIncludes: Strict

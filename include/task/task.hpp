@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -493,7 +494,7 @@ struct Storage<Alignment, N, false, true, false, ReturnType(CallArgs...)> {
                             return;
                         }
                         if constexpr (!std::is_trivially_destructible_v<T>) {
-                            (srcPtr)->~T();
+                            srcPtr->~T();
                         }
                         if constexpr (Alignment <= alignof(std::max_align_t)) {
                             ::operator delete(srcPtr);
@@ -854,7 +855,7 @@ struct Storage<Alignment, N, false, false, false, ReturnType(CallArgs...)> {
                             return;
                         }
                         if constexpr (!std::is_trivially_destructible_v<T>) {
-                            (srcPtr)->~T();
+                            srcPtr->~T();
                         }
                         if constexpr (Alignment <= alignof(std::max_align_t)) {
                             ::operator delete(srcPtr);
@@ -1329,7 +1330,7 @@ struct Task<ReturnType(CallArgs...), Copyable, N, IsTrivial, Mutable, Extended, 
     }
 
     Task(Task&& other) noexcept
-        requires(IsTrivial)
+        requires IsTrivial
     = default;
 
     Task(Task&& other) noexcept
@@ -1340,7 +1341,7 @@ struct Task<ReturnType(CallArgs...), Copyable, N, IsTrivial, Mutable, Extended, 
     }
 
     Task& operator=(Task&& other) noexcept
-        requires(IsTrivial)
+        requires IsTrivial
     = default;
 
     Task& operator=(Task&& other) noexcept
@@ -1364,7 +1365,7 @@ struct Task<ReturnType(CallArgs...), Copyable, N, IsTrivial, Mutable, Extended, 
     constexpr Task(std::nullptr_t) {};
 
     constexpr ~Task() noexcept
-        requires(IsTrivial)
+        requires IsTrivial
     = default;
 
     constexpr ~Task() noexcept
