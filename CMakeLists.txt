@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21...4.1)
 
-project(task VERSION 1.1.3 LANGUAGES CXX)
+project(task VERSION 1.1.4 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
