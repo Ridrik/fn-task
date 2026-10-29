@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "payload.hpp"
+
 namespace fn {
 
 template <typename T>
@@ -55,6 +57,10 @@ struct slice_last<N, std::tuple<Args...>, std::index_sequence<Is...>> {
 template <typename T>
 struct FunctionTraits {
     static constexpr bool kValid{false};
+    static constexpr bool kIsNoExcept{false};
+    static constexpr bool kIsConst{false};
+    static constexpr bool kIsLValueRef{false};
+    static constexpr bool kIsRValueRef{false};
 };
 
 template <typename T>
@@ -66,15 +72,12 @@ struct FunctionTraits<Ret (*)(Args...)> {
     static constexpr bool kValid{true};
     using return_type = Ret;
     using args_tuple = std::tuple<Args...>;
+    using payload_tuple = PayloadTuple<Args...>;
     using func_ptr = Ret (*)(Args...);
-};
-
-template <typename Ret, typename... Args>
-struct FunctionTraits<Ret(Args...)> {
-    static constexpr bool kValid{true};
-    using return_type = Ret;
-    using args_tuple = std::tuple<Args...>;
-    using func_ptr = Ret (*)(Args...);
+    static constexpr bool kIsNoExcept{false};
+    static constexpr bool kIsConst{false};
+    static constexpr bool kIsLValueRef{false};
+    static constexpr bool kIsRValueRef{false};
 };
 
 template <typename Ret, typename... Args>
@@ -82,33 +85,142 @@ struct FunctionTraits<Ret (*)(Args...) noexcept> {
     static constexpr bool kValid{true};
     using return_type = Ret;
     using args_tuple = std::tuple<Args...>;
-    using func_ptr = Ret (*)(Args...);
+    using payload_tuple = PayloadTuple<Args...>;
+    using func_ptr = Ret (*)(Args...) noexcept;
+    static constexpr bool kIsNoExcept{true};
+    static constexpr bool kIsConst{false};
+    static constexpr bool kIsLValueRef{false};
+    static constexpr bool kIsRValueRef{false};
 };
 
-template <typename Class, typename Ret, typename... Args>
-struct FunctionTraits<Ret (Class::*)(Args...)> {
-    static constexpr bool kValid{true};
-    using return_type = Ret;
-    using args_tuple = std::tuple<Args...>;
-    using func_ptr = Ret (*)(Args...);
-};
+// NOLINTBEGIN
+#define DEFINE_FUNC_TRAITS(QUALIFIERS, IS_CONST, IS_VOLATILE, IS_LVAL, IS_RVAL) \
+    template <typename Ret, typename... Args>                                   \
+    struct FunctionTraits<Ret(Args...) QUALIFIERS> {                            \
+        static constexpr bool kValid{true};                                     \
+        using return_type = Ret;                                                \
+        using args_tuple = std::tuple<Args...>;                                 \
+        using payload_tuple = PayloadTuple<Args...>;                            \
+        using signature = Ret(Args...) QUALIFIERS;                              \
+        using base_signature = Ret(Args...);                                    \
+        using func_ptr = Ret (*)(Args...);                                      \
+        static constexpr bool kIsConst{IS_CONST};                               \
+        static constexpr bool kIsVolatile{IS_VOLATILE};                         \
+        static constexpr bool kIsLValueRef{IS_LVAL};                            \
+        static constexpr bool kIsRValueRef{IS_RVAL};                            \
+        static constexpr bool kIsNoExcept{false};                               \
+    }
 
-template <typename Class, typename Ret, typename... Args>
-struct FunctionTraits<Ret (Class::*)(Args...) const> {
-    static constexpr bool kValid{true};
-    using return_type = Ret;
-    using args_tuple = std::tuple<Args...>;
-    using func_ptr = Ret (*)(Args...);
-};
+#define DEFINE_FUNC_TRAITS_NOEXCEPT(QUALIFIERS, IS_CONST, IS_VOLATILE, IS_LVAL, IS_RVAL) \
+    template <typename Ret, typename... Args>                                            \
+    struct FunctionTraits<Ret(Args...) QUALIFIERS noexcept> {                            \
+        static constexpr bool kValid{true};                                              \
+        using return_type = Ret;                                                         \
+        using args_tuple = std::tuple<Args...>;                                          \
+        using payload_tuple = PayloadTuple<Args...>;                                     \
+        using signature = Ret(Args...) QUALIFIERS noexcept;                              \
+        using base_signature = Ret(Args...);                                             \
+        using func_ptr = Ret (*)(Args...) noexcept;                                      \
+        static constexpr bool kIsConst{IS_CONST};                                        \
+        static constexpr bool kIsVolatile{IS_VOLATILE};                                  \
+        static constexpr bool kIsLValueRef{IS_LVAL};                                     \
+        static constexpr bool kIsRValueRef{IS_RVAL};                                     \
+        static constexpr bool kIsNoExcept{true};                                         \
+    }
+// NOLINTEND
+
+DEFINE_FUNC_TRAITS(, true, false, false, false);
+DEFINE_FUNC_TRAITS(const, true, false, false, false);
+DEFINE_FUNC_TRAITS(volatile, false, true, false, false);
+DEFINE_FUNC_TRAITS(const volatile, true, true, false, false);
+DEFINE_FUNC_TRAITS(&, false, false, true, false);
+DEFINE_FUNC_TRAITS(const&, true, false, true, false);
+DEFINE_FUNC_TRAITS(volatile&, false, true, true, false);
+DEFINE_FUNC_TRAITS(const volatile&, true, true, true, false);
+DEFINE_FUNC_TRAITS(&&, false, false, false, true);
+DEFINE_FUNC_TRAITS(const&&, true, false, false, true);
+DEFINE_FUNC_TRAITS(volatile&&, false, true, false, true);
+DEFINE_FUNC_TRAITS(const volatile&&, true, true, false, true);
+
+// Noexcept Variants
+DEFINE_FUNC_TRAITS_NOEXCEPT(, true, false, false, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(const, true, false, false, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(volatile, false, true, false, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(const volatile, true, true, false, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(&, false, false, true, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(const&, true, false, true, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(volatile&, false, true, true, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(const volatile&, true, true, true, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(&&, false, false, false, true);
+DEFINE_FUNC_TRAITS_NOEXCEPT(const&&, true, false, false, true);
+DEFINE_FUNC_TRAITS_NOEXCEPT(volatile&&, false, true, false, true);
+DEFINE_FUNC_TRAITS_NOEXCEPT(const volatile&&, true, true, false, true);
+
+#undef DEFINE_FUNC_TRAITS
+#undef DEFINE_FUNC_TRAITS_NOEXCEPT
+
+// NOLINTBEGIN
+#define DEFINE_MEMBER_FUNCTION_TRAITS(QUALIFIERS, IS_CONST, IS_LVAL, IS_RVAL) \
+    template <typename Class, typename Ret, typename... Args>                 \
+    struct FunctionTraits<Ret (Class::*)(Args...) QUALIFIERS> {               \
+        static constexpr bool kValid{true};                                   \
+        using return_type = Ret;                                              \
+        using args_tuple = std::tuple<Args...>;                               \
+        using payload_tuple = PayloadTuple<Args...>;                          \
+        using func_ptr = Ret (*)(Args...);                                    \
+        static constexpr bool kIsNoExcept{false};                             \
+        static constexpr bool kIsConst{IS_CONST};                             \
+        static constexpr bool kIsLValueRef{IS_LVAL};                          \
+        static constexpr bool kIsRValueRef{IS_RVAL};                          \
+    }
+
+#define DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(QUALIFIERS, IS_CONST, IS_LVAL, IS_RVAL) \
+    template <typename Class, typename Ret, typename... Args>                          \
+    struct FunctionTraits<Ret (Class::*)(Args...) QUALIFIERS noexcept> {               \
+        static constexpr bool kValid{true};                                            \
+        using return_type = Ret;                                                       \
+        using args_tuple = std::tuple<Args...>;                                        \
+        using payload_tuple = PayloadTuple<Args...>;                                   \
+        using func_ptr = Ret (*)(Args...) noexcept;                                    \
+        static constexpr bool kIsNoExcept{true};                                       \
+        static constexpr bool kIsConst{IS_CONST};                                      \
+        static constexpr bool kIsLValueRef{IS_LVAL};                                   \
+        static constexpr bool kIsRValueRef{IS_RVAL};                                   \
+    }
+// NOLINTEND
+
+DEFINE_MEMBER_FUNCTION_TRAITS(, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(const, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(volatile, false, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(const volatile, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(&, false, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(const&, true, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(volatile&, false, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(const volatile&, true, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(&&, false, false, true);
+DEFINE_MEMBER_FUNCTION_TRAITS(const&&, true, false, true);
+DEFINE_MEMBER_FUNCTION_TRAITS(volatile&&, false, false, true);
+DEFINE_MEMBER_FUNCTION_TRAITS(const volatile&&, true, false, true);
+
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(volatile, false, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const volatile, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(&, false, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const&, true, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(volatile&, false, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const volatile&, true, true, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(&&, false, false, true);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const&&, true, false, true);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(volatile&&, false, false, true);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const volatile&&, true, false, true);
+
+#undef DEFINE_MEMBER_FUNCTION_TRAITS
+#undef DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT
 
 template <typename T>
     requires requires { typename T::Signature; }
-struct FunctionTraits<T> : FunctionTraits<typename T::Signature> {
-    /*static constexpr bool kValid{true};
-    using return_type = typename FunctionTraits<typename T::Signature>::return_type;
-    using args_tuple = typename FunctionTraits<typename T::Signature>::args_tuple;
-    using func_ptr = typename FunctionTraits<typename T::Signature>::func_ptr;*/
-};
+struct FunctionTraits<T> : FunctionTraits<typename T::Signature> {};
 
 template <typename T>
 concept HasFunctionTraits = FunctionTraits<T>::kValid;

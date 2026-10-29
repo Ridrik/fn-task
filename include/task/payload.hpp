@@ -243,18 +243,6 @@ using PayloadArgsT = PayloadImplArgs<F, std::unwrap_ref_decay_t<Args>...>;
 template <typename, typename, typename...>
 struct IsPayload : std::false_type {};
 
-/*template <typename F, typename... Args, typename Self, typename... CallArgs>
-struct IsPayload<PayloadImpl<F, Args...>, Self, CallArgs...> : std::true_type {
-    static constexpr bool kIsInvocable = requires(F f, CallArgs... callArgs) {
-        std::is_invocable_v<decltype(std::forward_like<Self>(f)),
-                            decltype(std::forward_like<Self>(callArgs))..., CallArgs...>;
-    };
-    static constexpr bool kIsInvocableFront = requires(F f, CallArgs... callArgs) {
-        std::is_invocable_v<decltype(std::forward_like<Self>(f)), CallArgs...,
-                            decltype(std::forward_like<Self>(callArgs))...>;
-    };
-};*/
-
 template <typename From, typename To>
 using ForwardLikeT = decltype(std::forward_like<From>(std::declval<To>()));
 
