@@ -1,3 +1,4 @@
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -13,6 +14,8 @@ int main() {
     // the erased callable. It automatically detects the task signature, mutability,
     // copiability, and size. Here, integer is captured (bind_front like), hence signature is
     // Task<void(std::string)>
+    auto kekersahah = fn::Task<void(), true, 16>{[](int a, float b) {}, 3, 5.0F};
+    auto kekersahah2 = fn::Task{[](int a, float b) {}, 3, 5.0F};
     auto task = fn::makeTask(
         [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; }, 0);
     static_assert(decltype(task)::matchesSignature<void(const std::string&)>());
@@ -50,16 +53,16 @@ int main() {
     auto task5 = fn::Task64<void(int)>{
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
 
-    // auto _ = fn::Task64<void(int&)>{
-    //    [name = std::string("Hello World")](int& age) mutable { name = "Hi"; }}; // Error,
+    auto _ = fn::Task64<void(int&) &>{
+        [name = std::string("Hello World")](int& age) mutable { name = "Hi"; }};  // Error,
     //    fn::Task are immutable by default
 
     // auto _ = fn::Task64<void(int&)>{[](int& age, std::string& name) mutable { name = "Hi"; },
     //                                 std::string("Hello World")}; Similar error
 
     // This works
-    auto _ = fn::TaskMut<void(int&)>{[](int& age, std::string& name) mutable { name = "Hi"; },
-                                     std::string("Hello World")};
+    auto _ = fn::Task64<void(int&) &>{[](int& age, std::string& name) mutable { name = "Hi"; },
+                                      std::string("Hello World")};
 
     // Deducts move only tasks
     auto uniqueTask = fn::makeTask([](std::unique_ptr<int>& a) { return *a; },
