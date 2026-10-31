@@ -5,17 +5,22 @@
 
 #include <task/task.hpp>
 
+#include "task/payload.hpp"
+
 bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) {
     return false;
 }
 
 int main() {
+    auto l = [](int& a, double&& b, float& c) { return 3; };
+    int ker{3};
+    auto res = fn::invoke_compatible(l, std::move(ker), 5.0, 1.0F);
+
     // Task takes a callable and optionally capture arguments, which are expected to be part of
     // the erased callable. It automatically detects the task signature, mutability,
     // copiability, and size. Here, integer is captured (bind_front like), hence signature is
     // Task<void(std::string)>
-    auto kekersahah = fn::Task<void(), true, 16>{[](int a, float b) {}, 3, 5.0F};
-    auto kekersahah2 = fn::Task{[](int a, float b) {}, 3, 5.0F};
+
     auto task = fn::makeTask(
         [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; }, 0);
     static_assert(decltype(task)::matchesSignature<void(const std::string&)>());
