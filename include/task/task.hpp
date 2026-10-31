@@ -552,8 +552,8 @@ struct InvokerType<Ret(Args...) &&, Task, N> {
                 static_assert(std::is_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
                 return (*static_cast<const PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<F, Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>...>) {
+            } else if constexpr (is_compatible_invocable_v<
+                                     F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 if constexpr (sizeof(PayloadType) <= N) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
@@ -561,8 +561,8 @@ struct InvokerType<Ret(Args...) &&, Task, N> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>...,
-                                                     Args...>) {
+            } else if constexpr (is_compatible_invocable_v<
+                                     F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>) {
                 if constexpr (sizeof(PayloadType) <= N) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
@@ -570,22 +570,23 @@ struct InvokerType<Ret(Args...) &&, Task, N> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<F, Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
-                    return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-                } else {
-                    return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
-                }
-            } else if constexpr (std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&...,
-                                                     Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
-                    return (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...);
-                } else {
-                    return (**static_cast<PayloadType**>(s))
-                        .invokeFront(std::forward<Args>(args)...);
-                }
-            } else {
+            } /* else if constexpr (is_compatible_invocable_v<
+                                      F, Args..., std::unwrap_ref_decay_t<BoundArgs>&...>) {
+                 if constexpr (sizeof(PayloadType) <= N) {
+                     return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
+                 } else {
+                     return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
+                 }
+             } else if constexpr (is_compatible_invocable_v<
+                                      F, std::unwrap_ref_decay_t<BoundArgs>&..., Args...>) {
+                 if constexpr (sizeof(PayloadType) <= N) {
+                     return
+             (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...); } else {
+                     return (**static_cast<PayloadType**>(s))
+                         .invokeFront(std::forward<Args>(args)...);
+                 }
+             }*/
+            else {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments!");
             }
@@ -600,8 +601,9 @@ struct InvokerType<Ret(Args...) &&, Task, N> {
                 static_assert(std::is_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<decltype(F), Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_v<
+                                     decltype(F), Args...,
+                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 if constexpr (sizeof(PayloadType) <= N) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
@@ -609,9 +611,9 @@ struct InvokerType<Ret(Args...) &&, Task, N> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<decltype(F),
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
+            } else if constexpr (is_compatible_invocable_v<decltype(F),
+                                                           std::unwrap_ref_decay_t<BoundArgs>&&...,
+                                                           Args...>) {
                 if constexpr (sizeof(PayloadType) <= N) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
@@ -2294,8 +2296,9 @@ struct TaskTypeDeductorAuto {
     static constexpr bool kCanUseTrivial = TrivialUse<PayloadType>::value;
     static constexpr bool kRefCanUseTrivial = TrivialUse<PayloadRefType>::value;
     static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    static constexpr auto kRefPayloadSize =
-        sizeof...(BoundArgs) > 0 ? sizeof(PayloadImplArgs<F, BoundArgs...>) : 0;
+    static constexpr auto kRefPayloadSize = sizeof...(BoundArgs) > 0
+                                                ? sizeof(PayloadImplArgs<F, BoundArgs...>)
+                                                : 0;
     using TypeTraits = StripBoundArgs::type;
     using Signature = typename TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;

@@ -1,7 +1,9 @@
 #ifndef TASK_PAYLOAD_HPP
 #define TASK_PAYLOAD_HPP
 
+#include <cstddef>
 #include <functional>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -16,6 +18,178 @@
 #endif
 
 namespace fn {
+
+namespace detail {
+
+// ------------------------------------------------------------
+// Type lists
+// ------------------------------------------------------------
+
+template <typename... Ts>
+struct type_list {};
+
+template <typename List, typename T>
+struct push_back;
+
+template <typename... Ts, typename T>
+struct push_back<type_list<Ts...>, T> {
+    using type = type_list<Ts..., T>;
+};
+
+template <typename List, typename T>
+using push_back_t = typename push_back<List, T>::type;
+
+// ------------------------------------------------------------
+// Permitted argument categories, in priority order
+// ------------------------------------------------------------
+
+template <typename T>
+struct invocation_options {
+   private:
+    using U = std::remove_reference_t<T>;
+    using C = std::add_const_t<U>;
+
+   public:
+    using type = std::conditional_t<
+        std::is_const_v<U>,
+
+        std::conditional_t<std::is_lvalue_reference_v<T>, std::tuple<U&>, std::tuple<U&&, U&>>,
+
+        std::conditional_t<std::is_lvalue_reference_v<T>, std::tuple<U&, C&>,
+                           std::tuple<U&&, C&&, U&, C&>>>;
+};
+
+template <typename T>
+    requires std::is_const_v<std::remove_reference_t<T>>
+struct invocation_options<T> {
+   private:
+    using U = std::remove_reference_t<T>;
+
+   public:
+    using type = std::conditional_t<std::is_lvalue_reference_v<T>, std::tuple<const U&>,
+                                    std::tuple<const U&&, const U&>>;
+};
+
+template <typename T>
+using invocation_options_t = typename invocation_options<T>::type;
+
+// ------------------------------------------------------------
+// Search machinery
+// ------------------------------------------------------------
+
+template <typename F, typename Remaining, typename Selected>
+struct search;
+
+// Try the next candidate when the current one isn't invocable.
+
+template <typename Candidate, typename F, typename Remaining, typename Selected, typename Options,
+          std::size_t I, bool = Candidate::kValid>
+struct choose_candidate;
+
+// Found a valid combination.
+template <typename Candidate, typename F, typename Remaining, typename Selected, typename Options,
+          std::size_t I>
+struct choose_candidate<Candidate, F, Remaining, Selected, Options, I, true> : Candidate {};
+
+// Forward declaration.
+template <typename F, typename Remaining, typename Selected, typename Options, std::size_t I>
+struct search_next;
+
+// No more alternatives.
+template <typename F, typename Remaining, typename Selected, typename Options, std::size_t I>
+    requires(I == std::tuple_size_v<Options>)
+struct search_next<F, Remaining, Selected, Options, I> {
+    static constexpr bool kValid = false;
+    static constexpr bool kNoThrow = false;
+    using types = Selected;
+};
+
+// Try alternative I.
+template <typename F, typename Remaining, typename Selected, typename Options, std::size_t I>
+    requires(I < std::tuple_size_v<Options>)
+struct search_next<F, Remaining, Selected, Options, I>
+    : choose_candidate<
+          search<F, Remaining, push_back_t<Selected, std::tuple_element_t<I, Options>>>, F,
+          Remaining, Selected, Options, I> {};
+
+// Try the next alternative.
+template <typename Candidate, typename F, typename Remaining, typename Selected, typename Options,
+          std::size_t I>
+struct choose_candidate<Candidate, F, Remaining, Selected, Options, I, false>
+    : search_next<F, Remaining, Selected, Options, I + 1> {};
+
+// All arguments have been selected.
+template <typename F, typename... Selected>
+struct search<F, type_list<>, type_list<Selected...>> {
+    static constexpr bool kValid = std::is_invocable_v<F, Selected...>;
+
+    static constexpr bool kNoThrow = std::is_nothrow_invocable_v<F, Selected...>;
+
+    using types = type_list<Selected...>;
+};
+
+// Select an alternative for the next argument.
+template <typename F, typename Arg, typename... Rest, typename... Selected>
+struct search<F, type_list<Arg, Rest...>, type_list<Selected...>>
+    : search_next<F, type_list<Rest...>, type_list<Selected...>, invocation_options_t<Arg>, 0> {};
+
+// ------------------------------------------------------------
+// Actual invocation
+// ------------------------------------------------------------
+
+template <typename F, typename Tuple, typename... Selected, std::size_t... I>
+constexpr decltype(auto) invoke_selected(
+    F&& f, Tuple& args, type_list<Selected...> /*unused*/,
+    std::index_sequence<I...> /*unused*/) noexcept(std::is_nothrow_invocable_v<F&&, Selected...>) {
+    return std::invoke(std::forward<F>(f), static_cast<Selected>(std::get<I>(args))...);
+}
+
+template <auto F, typename Tuple, typename... Selected, std::size_t... I>
+constexpr decltype(auto) invoke_selected(
+    Tuple& args, type_list<Selected...> /*unused*/,
+    std::index_sequence<I...> /*unused*/) noexcept(std::is_nothrow_invocable_v<decltype(F),
+                                                                               Selected...>) {
+    return std::invoke(F, static_cast<Selected>(std::get<I>(args))...);
+}
+
+}  // namespace detail
+
+// ============================================================
+// Public interface
+// ============================================================
+
+template <typename F, typename... Args>
+constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) noexcept(
+    detail::search<F&&, detail::type_list<Args&&...>, detail::type_list<>>::kNoThrow) {
+    using Selection = detail::search<F&&, detail::type_list<Args&&...>, detail::type_list<>>;
+
+    static_assert(Selection::kValid,
+                  "Callable is not invocable with any compatible cv/ref combination");
+
+    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+
+    return detail::invoke_selected(std::forward<F>(f), references, typename Selection::types{},
+                                   std::index_sequence_for<Args...>{});
+}
+
+template <auto F, typename... Args>
+constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
+    detail::search<decltype(F), detail::type_list<Args&&...>, detail::type_list<>>::nothrow) {
+    using Selection =
+        detail::search<decltype(F), detail::type_list<Args&&...>, detail::type_list<>>;
+
+    static_assert(Selection::kValid,
+                  "Callable is not invocable with any compatible cv/ref combination");
+
+    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+
+    return detail::invoke_selected<F>(references, typename Selection::types{},
+                                      std::index_sequence_for<Args...>{});
+}
+
+template <typename F, typename... Args>
+inline constexpr bool is_compatible_invocable_v =
+    detail::search<F&&, detail::type_list<Args&&...>, detail::type_list<>>::kValid;
 
 template <typename... Ts>
 struct PayloadTuple;
@@ -38,16 +212,18 @@ struct PayloadTuple<> {
     template <auto F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/,
                                                 ArgsSoFar&&... args) {
-        static_assert(std::is_invocable_v<decltype(F), decltype(args)...>,
+        return fn::invoke_compatible<F>(std::forward<ArgsSoFar>(args)...);
+        /*static_assert(std::is_invocable_v<decltype(F), decltype(args)...>,
                       "F is not callable with given arguments");
-        return F(std::forward<ArgsSoFar>(args)...);
+        return F(std::forward<ArgsSoFar>(args)...);*/
     }
 
     template <auto F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(ArgsSoFar&&... args) && {
-        static_assert(std::is_invocable_v<decltype(F), decltype(args)...>,
+        return fn::invoke_compatible<F>(std::forward<ArgsSoFar>(args)...);
+        /*static_assert(std::is_invocable_v<decltype(F), decltype(args)...>,
                       "F is not callable with given arguments");
-        return F(std::forward<ArgsSoFar>(args)...);
+        return F(std::forward<ArgsSoFar>(args)...);*/
     }
 
     template <auto F, typename... ArgsSoFar>
@@ -63,16 +239,18 @@ struct PayloadTuple<> {
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/, F&& f,
                                                 ArgsSoFar&&... args) {
-        static_assert(std::is_invocable_v<F, decltype(args)...>,
+        return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+        /*static_assert(std::is_invocable_v<F, decltype(args)...>,
                       "F is not callable with given arguments");
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);*/
     }
 
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
-        static_assert(std::is_invocable_v<F, decltype(args)...>,
+        return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+        /*static_assert(std::is_invocable_v<F, decltype(args)...>,
                       "F is not callable with given arguments");
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);*/
     }
 
     template <typename F, typename... ArgsSoFar>
@@ -95,10 +273,12 @@ struct PayloadTuple<T, Ts...> {
     FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, ArgsSoFar&&... args) {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
-            static_assert(std::is_invocable_v<decltype(F), decltype(args)...,
+            return fn::invoke_compatible<F>(std::forward<ArgsSoFar>(args)...,
+                                            std::forward_like<Self>(self.head));
+            /*static_assert(std::is_invocable_v<decltype(F), decltype(args)...,
                                               decltype(std::forward_like<Self>(self.head))>,
                           "F is not callable with given arguments");
-            return F(std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+            return F(std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));*/
         } else {
             return std::forward_like<Self>(self.tail).template apply<F>(
                 std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
@@ -108,9 +288,11 @@ struct PayloadTuple<T, Ts...> {
     template <auto F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(ArgsSoFar&&... args) && {
         if constexpr (sizeof...(Ts) == 0) {
-            static_assert(std::is_invocable_v<decltype(F), decltype(args)..., decltype(head)>,
+            return fn::invoke_compatible<F>(std::forward<ArgsSoFar>(args)...,
+                                            std::forward<T>(head));
+            /*static_assert(std::is_invocable_v<decltype(F), decltype(args)..., decltype(head)>,
                           "F is not callable with given arguments");
-            return F(std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
+            return F(std::forward<ArgsSoFar>(args)..., std::forward<T>(head));*/
         } else {
             return std::move(tail).template applyAsArgs<F>(std::forward<ArgsSoFar>(args)...,
                                                            std::forward<T>(head));
@@ -138,11 +320,13 @@ struct PayloadTuple<T, Ts...> {
     FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, F&& f, ArgsSoFar&&... args) {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
-            static_assert(std::is_invocable_v<decltype(f), decltype(args)...,
+            return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+                                         std::forward_like<Self>(self.head));
+            /*static_assert(std::is_invocable_v<decltype(f), decltype(args)...,
                                               decltype(std::forward_like<Self>(self.head))>,
                           "F is not callable with given arguments");
             return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                               std::forward_like<Self>(self.head));
+                               std::forward_like<Self>(self.head));*/
         } else {
             return std::forward_like<Self>(self.tail).apply(std::forward<F>(f),
                                                             std::forward<ArgsSoFar>(args)...,
@@ -153,10 +337,12 @@ struct PayloadTuple<T, Ts...> {
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
         if constexpr (sizeof...(Ts) == 0) {
-            static_assert(std::is_invocable_v<decltype(f), decltype(args)..., decltype(head)>,
+            return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+                                         std::forward<T>(head));
+            /*static_assert(std::is_invocable_v<decltype(f), decltype(args)..., decltype(head)>,
                           "F is not callable with given arguments");
             return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                               std::forward<T>(head));
+                               std::forward<T>(head));*/
         } else {
             return std::move(tail).applyAsArgs(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
                                                std::forward<T>(head));
