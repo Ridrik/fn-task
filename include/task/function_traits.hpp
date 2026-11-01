@@ -237,6 +237,9 @@ struct AddConst {
 template <typename SigFrom, typename SigTo>
 struct IsSignatureCompatible : std::false_type {};
 
+template <typename Sig>
+struct IsSignatureCompatible<Sig, Sig> : std::true_type {};
+
 template <typename SigFrom, typename SigBase>
     requires(std::is_same_v<SigBase, typename FunctionTraits<SigBase>::base_signature> &&
              std::is_same_v<SigBase, typename FunctionTraits<SigFrom>::base_signature>)
