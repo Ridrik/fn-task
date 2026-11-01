@@ -2,11 +2,20 @@
 #include "task/task.hpp"
 
 #include <chrono>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <ctime>
 #include <functional>
+#include <memory>
 #include <nanobench.h>
+#include <string_view>
+#include <utility>
 
 #include <fault/fault.hpp>
 
+#include "fault/core.hpp"
 #include "task/named_task.hpp"
 
 namespace {
@@ -61,9 +70,9 @@ fn::Task32<std::uint64_t()> giveTaskWithCapture(int i) {
     }
 }
 
-fn::Task<std::uint64_t(), true, 32, false, false, true> giveTaskWithCaptureExt(int i) {
+fn::Task<std::uint64_t(), true, 32, false, true> giveTaskWithCaptureExt(int i) {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
-    using R = fn::Task<std::uint64_t(), true, 32, false, false, true>;
+    using R = fn::Task<std::uint64_t(), true, 32, false, true>;
     switch (i) {
         case 0:
             return R{[](const std::shared_ptr<int>& ptr) -> std::uint64_t { return *ptr; }, p};
@@ -128,11 +137,11 @@ fn::FlexTask<std::uint64_t()> giveFlexTaskWithMoreCapture(int i) {
     }
 }
 
-fn::Task<std::uint64_t(), true, 64, false, false, true> giveTaskWithMoreCaptureExt(int i) {
+fn::Task<std::uint64_t(), true, 64, false, true> giveTaskWithMoreCaptureExt(int i) {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
     void* node{nullptr};
     std::string_view strView{"hello"};
-    using F = fn::Task<std::uint64_t(), true, 64, false, false, true>;
+    using F = fn::Task<std::uint64_t(), true, 64, false, true>;
     switch (i) {
         case 0:
             return F{[](const std::shared_ptr<int>& ptr, void* n,
@@ -458,8 +467,8 @@ void doBenchFunctionsJustRun() {
     fn::Task64<std::uint64_t()> task2 = giveTaskWithMoreCapture(0);
     const auto flexTask = giveFlexTaskWithMoreCapture(0);
     fn::TrivialTask64<std::uint64_t()> task3 = giveTask(0);
-    fn::Task<std::uint64_t(), true, 32, false, false, true> task4 = giveTaskWithCaptureExt(0);
-    fn::Task<std::uint64_t(), true, 64, false, false, true> task5 = giveTaskWithMoreCaptureExt(0);
+    fn::Task<std::uint64_t(), true, 32, false, true> task4 = giveTaskWithCaptureExt(0);
+    fn::Task<std::uint64_t(), true, 64, false, true> task5 = giveTaskWithMoreCaptureExt(0);
     b.run("std::function that captures std::shared_ptr, node pointer and string view",
           [&] { ankerl::nanobench::doNotOptimizeAway(f1()); });
     b.run("Task that captures std::shared_ptr, node pointer and string view", [&] {
@@ -516,8 +525,8 @@ void doBenchFunctions() {
     fn::Task32<std::uint64_t()> task1;
     fn::Task64<std::uint64_t()> task2;
     fn::TrivialTask64<std::uint64_t()> task3;
-    fn::Task<std::uint64_t(), true, 32, false, false, true> task4;
-    fn::Task<std::uint64_t(), true, 64, false, false, true> task5;
+    fn::Task<std::uint64_t(), true, 32, false, true> task4;
+    fn::Task<std::uint64_t(), true, 64, false, true> task5;
     b.run("std::function that captures std::shared_ptr, node pointer and string view",
           [&] { ankerl::nanobench::doNotOptimizeAway(f1 = giveFuncWithMoreCapture(rand() % 3)); });
     b.run("Task - Base from Base that captures std::shared_ptr, node pointer and string view", [&] {
@@ -562,19 +571,18 @@ void doBenchFunctions() {
 
 void doCompareOrder() {
     ankerl::nanobench::Bench b;
-    srand(time(0));
+    srand(time(nullptr));
     b.title("Simulating moving inplace functions")
         .unit("uint64_t")
         .minEpochIterations(50000000)
         .relative(true);
     b.performanceCounters(true);
 
-    constexpr auto kFunc = [](std::string_view c, int a, bool b) -> bool {
+    static constexpr auto kFunc = [](std::string_view c, int a, bool b) -> bool {
         return static_cast<bool>(a + b);
     };
-
     const auto f = fn::makeImmutTask<kFunc>(false);
-    const auto f2 = fn::makeImmutTask<bool(int, bool), kFunc>(std::string_view{});
+    const auto f2 = fn::makeImmutTask<bool(int, bool) const&, kFunc>(std::string_view{});
     b.run("Normal order", [&] { ankerl::nanobench::doNotOptimizeAway(f({}, 2)); });
     b.run("Reserve Order", [&] { ankerl::nanobench::doNotOptimizeAway(f2(0, false)); });
 }

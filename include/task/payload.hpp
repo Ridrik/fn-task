@@ -245,21 +245,40 @@ struct PayloadTuple<> {
             std::forward<ArgsSoFar>(args)...);
     }
 
+    template <auto F, typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) applyFrontCompatible(
+        [[maybe_unused]] this auto&& /*self*/, auto&& callArgs, ArgsSoFar&&... args)
+        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
+                 std::is_rvalue_reference_v<decltype(callArgs)>)
+    {
+        return std::forward<decltype(callArgs)>(callArgs).template applyAsArgsCompatible<F>(
+            std::forward<ArgsSoFar>(args)...);
+    }
+
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/, F&& f,
                                                 ArgsSoFar&&... args) {
-        return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
-        /*static_assert(std::is_invocable_v<F, decltype(args)...>,
+        static_assert(std::is_invocable_v<F, decltype(args)...>,
                       "F is not callable with given arguments");
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);*/
+        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+    }
+
+    template <typename F, typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) applyCompatible([[maybe_unused]] this auto&& /*self*/,
+                                                          F&& f, ArgsSoFar&&... args) {
+        return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
     }
 
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
-        return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
-        /*static_assert(std::is_invocable_v<F, decltype(args)...>,
+        static_assert(std::is_invocable_v<F, decltype(args)...>,
                       "F is not callable with given arguments");
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);*/
+        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+    }
+
+    template <typename F, typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) applyAsArgsCompatible(F&& f, ArgsSoFar&&... args) && {
+        return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
     }
 
     template <typename F, typename... ArgsSoFar>
@@ -269,6 +288,16 @@ struct PayloadTuple<> {
                  std::is_rvalue_reference_v<decltype(callArgs)>)
     {
         return std::forward<decltype(callArgs)>(callArgs).template applyAsArgs<F>(
+            std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+    }
+
+    template <typename F, typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) applyFrontCompatible(
+        [[maybe_unused]] this auto&& /*self*/, F&& f, auto&& callArgs, ArgsSoFar&&... args)
+        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
+                 std::is_rvalue_reference_v<decltype(callArgs)>)
+    {
+        return std::forward<decltype(callArgs)>(callArgs).template applyAsArgsCompatible<F>(
             std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
     }
 };
@@ -299,7 +328,7 @@ struct PayloadTuple<T, Ts...> {
             return fn::invoke_compatible<F>(std::forward<ArgsSoFar>(args)...,
                                             std::forward_like<Self>(self.head));
         } else {
-            return std::forward_like<Self>(self.tail).template apply<F>(
+            return std::forward_like<Self>(self.tail).template applyCompatible<F>(
                 std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
         }
     }
@@ -322,8 +351,8 @@ struct PayloadTuple<T, Ts...> {
             return fn::invoke_compatible<F>(std::forward<ArgsSoFar>(args)...,
                                             std::forward<T>(head));
         } else {
-            return std::move(tail).template applyAsArgs<F>(std::forward<ArgsSoFar>(args)...,
-                                                           std::forward<T>(head));
+            return std::move(tail).template applyAsArgsCompatible<F>(
+                std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
         }
     }
 
@@ -339,6 +368,23 @@ struct PayloadTuple<T, Ts...> {
                 std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyFront<F>(
+                std::forward<decltype(callArgs)>(callArgs), std::forward<ArgsSoFar>(args)...,
+                std::forward_like<Self>(self.head));
+        }
+    }
+
+    template <auto F, typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) applyFrontCompatible(this auto&& self, auto&& callArgs,
+                                                               ArgsSoFar&&... args)
+        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
+                 std::is_rvalue_reference_v<decltype(callArgs)>)
+    {
+        using Self = decltype(self);
+        if constexpr (sizeof...(Ts) == 0) {
+            return std::forward<decltype(callArgs)>(callArgs).template applyAsArgsCompatible<F>(
+                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+        } else {
+            return std::forward_like<Self>(self.tail).template applyFrontCompatible<F>(
                 std::forward<decltype(callArgs)>(callArgs), std::forward<ArgsSoFar>(args)...,
                 std::forward_like<Self>(self.head));
         }
@@ -368,9 +414,9 @@ struct PayloadTuple<T, Ts...> {
             return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
                                          std::forward_like<Self>(self.head));
         } else {
-            return std::forward_like<Self>(self.tail).apply(std::forward<F>(f),
-                                                            std::forward<ArgsSoFar>(args)...,
-                                                            std::forward_like<Self>(self.head));
+            return std::forward_like<Self>(self.tail).applyCompatible(
+                std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+                std::forward_like<Self>(self.head));
         }
     }
 
@@ -393,8 +439,8 @@ struct PayloadTuple<T, Ts...> {
             return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
                                          std::forward<T>(head));
         } else {
-            return std::move(tail).applyAsArgs(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                                               std::forward<T>(head));
+            return std::move(tail).applyAsArgsCompatible(
+                std::forward<F>(f), std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
         }
     }
 
@@ -411,6 +457,24 @@ struct PayloadTuple<T, Ts...> {
                 std::forward_like<Self>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyFront<F>(
+                std::forward<F>(f), std::forward<decltype(callArgs)>(callArgs),
+                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+        }
+    }
+
+    template <typename F, typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) applyFrontCompatible(this auto&& self, F&& f,
+                                                               auto&& callArgs, ArgsSoFar&&... args)
+        requires(IsRefPayloadTuple<std::remove_cvref_t<decltype(callArgs)>>::value &&
+                 std::is_rvalue_reference_v<decltype(callArgs)>)
+    {
+        using Self = decltype(self);
+        if constexpr (sizeof...(Ts) == 0) {
+            return std::forward<decltype(callArgs)>(callArgs).template applyAsArgsCompatible<F>(
+                std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+                std::forward_like<Self>(self.head));
+        } else {
+            return std::forward_like<Self>(self.tail).template applyFrontCompatible<F>(
                 std::forward<F>(f), std::forward<decltype(callArgs)>(callArgs),
                 std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
         }
@@ -440,6 +504,14 @@ struct PayloadImpl {
             std::forward_like<Self>(self.f),
             PayloadTuple<decltype(t)...>{std::forward<decltype(t)>(t)...});
     }
+
+    FORCE_INLINE constexpr auto invokeFrontCompatible(this auto&& self, auto&&... t)
+        -> decltype(auto) {
+        using Self = decltype(self);
+        return std::forward_like<Self>(self.args).applyFrontCompatible(
+            std::forward_like<Self>(self.f),
+            PayloadTuple<decltype(t)...>{std::forward<decltype(t)>(t)...});
+    }
 };
 
 template <auto F, typename... Args>
@@ -453,9 +525,22 @@ struct PayloadImplArgs {
             std::forward<decltype(t)>(t)...);
     }
 
+    FORCE_INLINE constexpr auto invokeCompatible(this auto&& self, auto&&... t) -> decltype(auto) {
+        using Self = decltype(self);
+        return std::forward_like<Self>(self.args).template applyCompatible<F>(
+            std::forward<decltype(t)>(t)...);
+    }
+
     FORCE_INLINE constexpr auto invokeFront(this auto&& self, auto&&... t) -> decltype(auto) {
         using Self = decltype(self);
         return std::forward_like<Self>(self.args).template applyFront<F>(
+            PayloadTuple<decltype(t)...>{std::forward<decltype(t)>(t)...});
+    }
+
+    FORCE_INLINE constexpr auto invokeFrontCompatible(this auto&& self, auto&&... t)
+        -> decltype(auto) {
+        using Self = decltype(self);
+        return std::forward_like<Self>(self.args).template applyFrontCompatible<F>(
             PayloadTuple<decltype(t)...>{std::forward<decltype(t)>(t)...});
     }
 };

@@ -103,6 +103,8 @@ struct FunctionTraits<Ret (*)(Args...) noexcept> {
         using payload_tuple = PayloadTuple<Args...>;                            \
         using signature = Ret(Args...) QUALIFIERS;                              \
         using base_signature = Ret(Args...);                                    \
+        using base_signature_noexcept = Ret(Args...) noexcept;                  \
+        using signature_no_except = Ret(Args...) QUALIFIERS noexcept;           \
         using func_ptr = Ret (*)(Args...);                                      \
         static constexpr bool kIsConst{IS_CONST};                               \
         static constexpr bool kIsVolatile{IS_VOLATILE};                         \
@@ -120,6 +122,8 @@ struct FunctionTraits<Ret (*)(Args...) noexcept> {
         using payload_tuple = PayloadTuple<Args...>;                                     \
         using signature = Ret(Args...) QUALIFIERS noexcept;                              \
         using base_signature = Ret(Args...);                                             \
+        using base_signature_noexcept = Ret(Args...) noexcept;                           \
+        using signature_no_except = Ret(Args...) QUALIFIERS noexcept;                    \
         using func_ptr = Ret (*)(Args...) noexcept;                                      \
         static constexpr bool kIsConst{IS_CONST};                                        \
         static constexpr bool kIsVolatile{IS_VOLATILE};                                  \
@@ -129,7 +133,7 @@ struct FunctionTraits<Ret (*)(Args...) noexcept> {
     }
 // NOLINTEND
 
-DEFINE_FUNC_TRAITS(, true, false, false, false);
+DEFINE_FUNC_TRAITS(, false, false, false, false);
 DEFINE_FUNC_TRAITS(const, true, false, false, false);
 DEFINE_FUNC_TRAITS(volatile, false, true, false, false);
 DEFINE_FUNC_TRAITS(const volatile, true, true, false, false);
@@ -143,7 +147,7 @@ DEFINE_FUNC_TRAITS(volatile&&, false, true, false, true);
 DEFINE_FUNC_TRAITS(const volatile&&, true, true, false, true);
 
 // Noexcept Variants
-DEFINE_FUNC_TRAITS_NOEXCEPT(, true, false, false, false);
+DEFINE_FUNC_TRAITS_NOEXCEPT(, false, false, false, false);
 DEFINE_FUNC_TRAITS_NOEXCEPT(const, true, false, false, false);
 DEFINE_FUNC_TRAITS_NOEXCEPT(volatile, false, true, false, false);
 DEFINE_FUNC_TRAITS_NOEXCEPT(const volatile, true, true, false, false);
@@ -224,6 +228,81 @@ struct FunctionTraits<T> : FunctionTraits<typename T::Signature> {};
 
 template <typename T>
 concept HasFunctionTraits = FunctionTraits<T>::kValid;
+
+template <typename T>
+struct AddConst {
+    using Type = T const;
+};
+
+template <typename SigFrom, typename SigTo>
+struct IsSignatureCompatible : std::false_type {};
+
+template <typename SigFrom, typename SigBase>
+    requires(std::is_same_v<SigBase, typename FunctionTraits<SigBase>::base_signature> &&
+             std::is_same_v<SigBase, typename FunctionTraits<SigFrom>::base_signature>)
+struct IsSignatureCompatible<SigFrom, SigBase> : std::true_type {};
+
+// Any signature with noexcept maps to base signature (qualifier-less) with noexcept
+template <typename SigFrom, typename SigBase>
+    requires(std::is_same_v<SigBase, typename FunctionTraits<SigBase>::base_signature_noexcept> &&
+             std::is_same_v<SigBase, typename FunctionTraits<SigFrom>::base_signature_noexcept> &&
+             FunctionTraits<SigFrom>::kIsNoExcept)
+struct IsSignatureCompatible<SigFrom, SigBase> : std::true_type {};
+
+// Any signature with noexcept maps to signature (without noexcept)
+template <typename SigFrom>
+    requires(!FunctionTraits<SigFrom>::kIsNoExcept)
+struct IsSignatureCompatible<typename FunctionTraits<SigFrom>::signature_no_except, SigFrom>
+    : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const&, R(Args...) const> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) const> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) const noexcept>
+    : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const, R(Args...) const&> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) const&> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) const & noexcept>
+    : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const&, R(Args...) &> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) &> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) & noexcept> : std::true_type {
+};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const, R(Args...) &> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) &> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) & noexcept> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const&&, R(Args...) &&> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const && noexcept, R(Args...) &&> : std::true_type {};
+
+template <typename R, typename... Args>
+struct IsSignatureCompatible<R(Args...) const && noexcept, R(Args...) && noexcept>
+    : std::true_type {};
 
 }  // namespace fn
 

@@ -7,29 +7,27 @@
 
 #include "task/payload.hpp"
 
-bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) {
+bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) noexcept {
     return false;
 }
 
 int main() {
-    auto l = [](int& a, double&& b, float& c) { return 3; };
-    int ker{3};
-    auto res = fn::invoke_compatible(l, std::move(ker), 5.0, 1.0F);
-
     // Task takes a callable and optionally capture arguments, which are expected to be part of
     // the erased callable. It automatically detects the task signature, mutability,
     // copiability, and size. Here, integer is captured (bind_front like), hence signature is
     // Task<void(std::string)>
 
     auto task = fn::makeTask(
-        [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; }, 0);
-    static_assert(decltype(task)::matchesSignature<void(const std::string&)>());
+        [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
+        0);
+    static_assert(decltype(task)::matchesSignature<void(const std::string&) const & noexcept>());
+    auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
     task("Hello World");
     // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
     auto task2 = fn::makeTask(
-        [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; },
+        [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
         std::string("Hello World"));
-    static_assert(decltype(task2)::matchesSignature<void(int)>());
+    static_assert(decltype(task2)::matchesSignature<void(int) const & noexcept>());
     task2(10);
     auto str = std::string{"Hello World"};
     // You can capture by reference, equivalently to '&str' in lambda
@@ -50,7 +48,7 @@ int main() {
     // If you want to allow heap (similar to std::function), you may use 'FlexTask' alias.
     auto task4 = fn::FlexTask<void(int)>{
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
-    auto flexTask = fn::makeFlexTask<void(int)>(
+    auto flexTask = fn::makeFlexTask<void(int) const&>(
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; });
 
     // Or, have it on the stack -> way faster copies and moves if you frequently transfer tasks (e.g
@@ -84,6 +82,9 @@ int main() {
     // fn::Task allows binding compile time callables, making it as lightweight as possible (without
     // captured arguments, no buffer even exists!)
     auto bindTask = fn::makeTask<foo>();
+    static_assert(
+        decltype(bindTask)::matchesSignature<bool(const std::string&, std::string&, int) const &
+                                             noexcept>());
     auto data = std::string{"Some data"};
     bindTask("My name", data, 1);
 }
