@@ -29,10 +29,10 @@ template <std::size_t Alignment, std::size_t N, bool IsTrivial, bool Extended = 
 struct Storage;
 
 template <typename Signature, typename Task = int, std::size_t N = 0>
-struct InvokerType;
+struct InvokerBuilder;
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) &, Task, N> {
+struct InvokerBuilder<Ret(Args...) &, Task, N> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
@@ -148,7 +148,7 @@ struct InvokerType<Ret(Args...) &, Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) & noexcept, Task, N> {
+struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
@@ -263,7 +263,7 @@ struct InvokerType<Ret(Args...) & noexcept, Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) const&, Task, N> {
+struct InvokerBuilder<Ret(Args...) const&, Task, N> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
@@ -399,7 +399,7 @@ struct InvokerType<Ret(Args...) const&, Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) const & noexcept, Task, N> {
+struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
@@ -541,7 +541,7 @@ struct InvokerType<Ret(Args...) const & noexcept, Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) &&, Task, N> {
+struct InvokerBuilder<Ret(Args...) &&, Task, N> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
@@ -662,7 +662,7 @@ struct InvokerType<Ret(Args...) &&, Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) && noexcept, Task, N> {
+struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
@@ -797,7 +797,7 @@ struct InvokerType<Ret(Args...) && noexcept, Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...), Task, N> {
+struct InvokerBuilder<Ret(Args...), Task, N> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
@@ -903,7 +903,7 @@ struct InvokerType<Ret(Args...), Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) noexcept, Task, N> {
+struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
@@ -1013,18 +1013,18 @@ struct InvokerType<Ret(Args...) noexcept, Task, N> {
     }
 };
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) const, Task, N> : public InvokerType<Ret(Args...) const&, Task, N> {
+struct InvokerBuilder<Ret(Args...) const, Task, N> : public InvokerBuilder<Ret(Args...) const&, Task, N> {
 };
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerType<Ret(Args...) const noexcept, Task, N>
-    : public InvokerType<Ret(Args...) const & noexcept, Task, N> {};
+struct InvokerBuilder<Ret(Args...) const noexcept, Task, N>
+    : public InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {};
 
 template <std::size_t Alignment, std::size_t N, typename Signature>
     requires(N > 0)
 struct Storage<Alignment, N, true, true, Signature> {
     alignas(Alignment) mutable std::array<std::byte, N> data{};
-    InvokerType<Signature>::Type invoker{nullptr};
+    InvokerBuilder<Signature>::Type invoker{nullptr};
 
     template <typename Payload, bool AllowHeap = false, bool Copyable = true>
     constexpr void doConstruct() noexcept {}
@@ -1036,7 +1036,7 @@ struct Storage<Alignment, N, true, true, Signature> {
 
 template <std::size_t Alignment, typename Signature>
 struct Storage<Alignment, 0, true, true, Signature> {
-    InvokerType<Signature>::TypeNoBuffer invoker{nullptr};
+    InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
     template <typename Payload, bool AllowHeap = false, bool Copyable = true>
     constexpr void doConstruct() noexcept {}
@@ -1050,7 +1050,7 @@ template <std::size_t Alignment, std::size_t N, typename Signature>
     requires(N > 0)
 struct Storage<Alignment, N, true, false, Signature> {
     alignas(Alignment) mutable std::array<std::byte, N> data{};
-    InvokerType<Signature>::Type invoker{nullptr};
+    InvokerBuilder<Signature>::Type invoker{nullptr};
 
     template <typename Payload, bool AllowHeap, bool Copyable = true>
     constexpr void doConstruct() noexcept {}
@@ -1062,7 +1062,7 @@ struct Storage<Alignment, N, true, false, Signature> {
 
 template <std::size_t Alignment, typename Signature>
 struct Storage<Alignment, 0, true, false, Signature> {
-    InvokerType<Signature>::TypeNoBuffer invoker{nullptr};
+    InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
     template <typename Payload, bool AllowHeap = false, bool Copyable = true>
     constexpr void doConstruct() noexcept {}
@@ -1076,7 +1076,7 @@ template <std::size_t Alignment, std::size_t N, typename Signature>
     requires(N > 0)
 struct Storage<Alignment, N, false, false, Signature> {
     alignas(Alignment) mutable std::array<std::byte, N> data{};
-    InvokerType<Signature>::Type invoker{nullptr};
+    InvokerBuilder<Signature>::Type invoker{nullptr};
     void (*manager)(Op op, void* src, void* dst){nullptr};
 
     constexpr void doDelete() noexcept {
@@ -1280,7 +1280,7 @@ struct Storage<Alignment, N, false, false, Signature> {
 
 template <std::size_t Alignment, typename Signature>
 struct Storage<Alignment, 0, false, false, Signature> {
-    InvokerType<Signature>::TypeNoBuffer invoker{nullptr};
+    InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
     template <Op op, std::size_t U, typename SigOther>
     constexpr void doConstructFromNonTrivial(Storage<Alignment, U, false, false, SigOther>&&
@@ -1310,7 +1310,7 @@ template <std::size_t Alignment, std::size_t N, typename Signature>
     requires(N > 0)
 struct Storage<Alignment, N, false, true, Signature> {
     alignas(Alignment) mutable std::array<std::byte, N> data;
-    InvokerType<Signature>::Type invoker{nullptr};
+    InvokerBuilder<Signature>::Type invoker{nullptr};
     void (*cloner)(void* dst, const void* src){nullptr};
     void (*mover)(void* dst, void* src){nullptr};
     void (*deleter)(void* data){nullptr};
@@ -1402,7 +1402,7 @@ struct Storage<Alignment, N, false, true, Signature> {
 
 template <std::size_t Alignment, typename Signature>
 struct Storage<Alignment, 0, false, true, Signature> {
-    InvokerType<Signature>::TypeNoBuffer invoker{nullptr};
+    InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
     template <Op op, std::size_t U, typename SigOther>
     constexpr void doConstructFromNonTrivial(Storage<Alignment, 0, false, true, SigOther>&&
@@ -1454,13 +1454,13 @@ struct RefTag {};
 template <typename Signature, bool Copyable, std::size_t N, bool IsTrivial, bool Extended,
           bool AllowHeap, std::size_t Align>
 struct Task
-    : public InvokerType<Signature,
+    : public InvokerBuilder<Signature,
                          Task<Signature, Copyable, N, IsTrivial, Extended, AllowHeap, Align>, N> {
     template <typename, bool, std::size_t, bool, bool, bool, std::size_t>
     friend struct Task;
 
     template <typename, typename, std::size_t>
-    friend struct InvokerType;
+    friend struct InvokerBuilder;
 
     static_assert(!IsTrivial || !AllowHeap, "Trivial Task should not allow heap usage");
     static_assert(N > 0 || IsTrivial, "0 buffer size is only allowed on trivial types");
@@ -1761,7 +1761,7 @@ struct Task
     constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
         : storage_{
               .invoker =
-                  InvokerType<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
+                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
                       PayloadArgsT<F, BoundArgs...>, F, BoundArgs...>()} {
         using PayloadType = PayloadArgsT<F, BoundArgs...>;
         if constexpr (!std::is_empty_v<PayloadType>) {
@@ -1813,7 +1813,7 @@ struct Task
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
               .invoker =
-                  InvokerType<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
+                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
                       PayloadT<decltype(f), BoundArgs...>, std::decay_t<decltype(f)>,
                       std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
@@ -1866,7 +1866,7 @@ struct Task
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value))
         : storage_{
               .invoker =
-                  InvokerType<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
+                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
                       PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
@@ -1922,7 +1922,7 @@ struct Task
                    [[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
         : storage_{
               .invoker =
-                  InvokerType<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
+                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
                       PayloadImplArgs<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
