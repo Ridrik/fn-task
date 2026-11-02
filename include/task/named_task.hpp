@@ -6,8 +6,9 @@
 #include <tuple>
 #include <type_traits>
 
-#include <task/function_traits.hpp>
-#include <task/payload.hpp>
+#include "function_traits.hpp"
+#include "payload.hpp"
+#include "task.hpp"
 
 namespace fn {
 
@@ -19,6 +20,109 @@ struct StaticPayloadSelector {
 template <typename F, typename... Args>
 struct TypePayloadSelector {
     using type = PayloadT<F, Args...>;
+};
+
+template <typename Task, typename Payload, typename Signature>
+struct NamedTaskInvoker;
+
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
+    static_assert(is_compatible_invocable_v<F, BoundArgs&&..., Args...> ||
+                  is_compatible_invocable_v<F, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = is_compatible_invocable_v<F, BoundArgs&&..., Args...>;
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
+        if constexpr (kIsFront) {
+            return std::move((static_cast<Task>(self)).payload)
+                .invokeFrontCompatible(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<Task>(self)).payload)
+                .invokeCompatible(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcept> {
+    static_assert(is_compatible_invocable_v<F, BoundArgs&&..., Args...> ||
+                  is_compatible_invocable_v<F, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = is_compatible_invocable_v<F, BoundArgs&&..., Args...>;
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
+        if constexpr (kIsFront) {
+            return std::move((static_cast<Task>(self)).payload)
+                .invokeFrontCompatible(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<Task>(self)).payload)
+                .invokeCompatible(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, bool IsFront, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const> {
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
+        if constexpr (IsFront) {
+            return (static_cast<const Task>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        } else {
+            return (static_cast<const Task>(self)).payload.invoke(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, bool IsFront, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const noexcept> {
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
+        if constexpr (IsFront) {
+            return (static_cast<const Task>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        } else {
+            return (static_cast<const Task>(self)).payload.invoke(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, bool IsFront, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const&> {
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
+        if constexpr (IsFront) {
+            return (static_cast<const Task&>(self))
+                .payload.invokeFront(std::forward<Args>(args)...);
+        } else {
+            return (static_cast<const Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, bool IsFront, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const & noexcept> {
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
+        if constexpr (IsFront) {
+            return (static_cast<const Task&>(self))
+                .payload.invokeFront(std::forward<Args>(args)...);
+        } else {
+            return (static_cast<const Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, bool IsFront, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, IsFront, Ret(Args...) &> {
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
+        if constexpr (IsFront) {
+            return (static_cast<Task&>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        } else {
+            return (static_cast<Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, bool IsFront, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, IsFront, Ret(Args...) & noexcept> {
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
+        if constexpr (IsFront) {
+            return (static_cast<Task&>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        } else {
+            return (static_cast<Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+        }
+    }
 };
 
 template <typename Derived, bool isFront, typename ReturnType, typename... CallArgs>
@@ -59,26 +163,13 @@ struct TaskInvokeBase {
     }
 };
 
-template <typename Signature, typename F, typename... Args>
-struct NamedTask;
-
-template <typename ReturnType, typename... CallArgs, typename F, typename... BoundArgs>
-struct NamedTask<ReturnType(CallArgs...), F, BoundArgs...>
-    : TaskInvokeBase<
-          NamedTask<ReturnType(CallArgs...), F, BoundArgs...>,
-          std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&..., CallArgs...> ||
-              std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., CallArgs...>,
-          ReturnType, CallArgs...> {
-    using Signature = ReturnType(CallArgs...);
+template <typename Signature, typename F, typename... BoundArgs>
+struct NamedTask : NamedTaskInvoker<NamedTask<Signature, F, BoundArgs...>, true, Signature> {
+   private:
     using CallableImpl = F;
-    PayloadT<CallableImpl, BoundArgs...> payload{};
-    static_assert(
-        std::is_invocable_v<F, CallArgs..., std::unwrap_ref_decay_t<BoundArgs>&...> ||
-            std::is_invocable_v<F, CallArgs..., std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-            std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&..., CallArgs...> ||
-            std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., CallArgs...>,
-        "Given Function is not invocable with provided signature and bound arguments");
+    mutable PayloadT<CallableImpl, BoundArgs...> payload_{};
 
+   public:
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
     }
@@ -102,14 +193,14 @@ struct NamedTask<ReturnType(CallArgs...), F, BoundArgs...>
 
     template <typename OtherF>
         requires(std::is_convertible_v<OtherF, CallableImpl>)
-    NamedTask& operator=(const NamedTask<ReturnType(CallArgs...), OtherF, BoundArgs...>& other) {
+    NamedTask& operator=(const NamedTask<Signature, OtherF, BoundArgs...>& other) {
         this->payload = other.payload;
         return *this;
     }
 
     template <typename OtherF>
         requires(std::is_convertible_v<OtherF, CallableImpl>)
-    NamedTask& operator=(NamedTask<ReturnType(CallArgs...), OtherF, BoundArgs...>&& other) {
+    NamedTask& operator=(NamedTask<Signature, OtherF, BoundArgs...>&& other) {
         this->payload = std::move(other).payload;
         return *this;
     }
@@ -122,25 +213,13 @@ struct NamedTask<ReturnType(CallArgs...), F, BoundArgs...>
 template <auto F>
 struct StaticFn {};
 
-template <typename ReturnType, typename... CallArgs, auto F, typename... BoundArgs>
-struct NamedTask<ReturnType(CallArgs...), StaticFn<F>, BoundArgs...>
-    : TaskInvokeBase<
-          NamedTask<ReturnType(CallArgs...), StaticFn<F>, BoundArgs...>,
-          std::is_invocable_v<decltype(F), std::unwrap_ref_decay_t<BoundArgs>&..., CallArgs...> ||
-              std::is_invocable_v<decltype(F), std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                  CallArgs...>,
-          ReturnType, CallArgs...> {
-    using Signature = ReturnType(CallArgs...);
-    PayloadArgsT<F, BoundArgs...> payload;
+template <typename Signature, auto F, typename... BoundArgs>
+struct NamedTask<Signature, StaticFn<F>, BoundArgs...>
+    : NamedTaskInvoker<NamedTask<Signature, decltype(F), BoundArgs...>, true, Signature> {
+   private:
+    mutable PayloadArgsT<F, BoundArgs...> payload;
 
-    static_assert(
-        std::is_invocable_v<decltype(F), CallArgs..., std::unwrap_ref_decay_t<BoundArgs>&...> ||
-            std::is_invocable_v<decltype(F), CallArgs...,
-                                std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-            std::is_invocable_v<decltype(F), std::unwrap_ref_decay_t<BoundArgs>&..., CallArgs...> ||
-            std::is_invocable_v<decltype(F), std::unwrap_ref_decay_t<BoundArgs>&&..., CallArgs...>,
-        "Given Function is not invocable with provided signature and bound arguments");
-
+   public:
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
     }
@@ -163,15 +242,13 @@ struct NamedTask<ReturnType(CallArgs...), StaticFn<F>, BoundArgs...>
     ~NamedTask() = default;
 
     template <auto OtherF>
-    NamedTask& operator=(
-        const NamedTask<ReturnType(CallArgs...), StaticFn<OtherF>, BoundArgs...>& other) {
+    NamedTask& operator=(const NamedTask<Signature, StaticFn<OtherF>, BoundArgs...>& other) {
         this->payload = other.payload;
         return *this;
     }
 
     template <auto OtherF>
-    NamedTask& operator=(
-        NamedTask<ReturnType(CallArgs...), StaticFn<OtherF>, BoundArgs...>&& other) {
+    NamedTask& operator=(NamedTask<Signature, StaticFn<OtherF>, BoundArgs...>&& other) {
         this->payload = std::move(other).payload;
         return *this;
     }
@@ -198,25 +275,76 @@ struct NamedTaskTypeDeductor {
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             static constexpr bool kIsValid =
-                std::is_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                std::is_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&...> ||
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...> ||
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&..., TsR...>;
-            static constexpr bool kIsReverse =
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...> ||
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&..., TsR...>;
+                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                                          std::unwrap_ref_decay_t<BoundArgs>&&...> ||
+                is_compatible_invocable_v<std::decay_t<F>, std::unwrap_ref_decay_t<BoundArgs>&&...,
+                                          TsR...>;
+            static constexpr bool kIsNormalOrder =
+                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                                          std::unwrap_ref_decay_t<BoundArgs>&&...>;
+            static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
-            using Signature = std::conditional_t<kIsReverse, Ret(TsR...), Ret(Ts...)>;
-            static constexpr bool kMutable =
-                (!kIsReverse &&
-                 !std::is_invocable_v<
-                     F, Ts...,
-                     const std::unwrap_ref_decay_t<typename RefToConstRef<BoundArgs>::Type>&...>) ||
-                (kIsReverse &&
-                 !std::is_invocable_v<
-                     F, const std::unwrap_ref_decay_t<typename RefToConstRef<BoundArgs>::Type>&...,
-                     TsR...>);
+            static constexpr bool kIsConst =
+                (kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                                     const std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&...>) ||
+                (!kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&,
+                                     const std::unwrap_reference_t<
+                                         typename RefToConstRef<std::decay_t<BoundArgs>>::Type>&...,
+                                     TsR...>);
+            static constexpr bool kIsRValRef =
+                (kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                                     std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&&...>) ||
+                (!kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&,
+                                     std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&&...,
+                                     TsR...>);
+            static constexpr bool kIsLValRef =
+                (kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                                     std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&...>) ||
+                (!kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&,
+                                     std::unwrap_reference_t<
+                                         typename RefToConstRef<std::decay_t<BoundArgs>>::Type>&...,
+                                     TsR...>);
+            static constexpr bool kIsQualifierLess = !kIsRValRef && !kIsLValRef && kIsConst;
+
+            using Signature = std::conditional_t<
+                Traits::kIsNoExcept,
+                // --- NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst, Ret(TsR...) const & noexcept,
+                        std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
+                                           std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                                              Ret(TsR...) noexcept>>>,
+                    std::conditional_t<
+                        kIsConst, Ret(Ts...) const & noexcept,
+                        std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
+                                           std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                                              Ret(Ts...) noexcept>>>>,
+                // --- NON-NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst, Ret(TsR...) const&,
+                        std::conditional_t<
+                            kIsRValRef, Ret(TsR...) &&,
+                            std::conditional_t<kIsLValRef, Ret(TsR...) &, Ret(TsR...)>>>,
+                    std::conditional_t<
+                        kIsConst, Ret(Ts...) const&,
+                        std::conditional_t<
+                            kIsRValRef, Ret(Ts...) &&,
+                            std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
         };
 
         using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
@@ -250,25 +378,76 @@ struct NamedTaskTypeDeductorAuto {
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             static constexpr bool kIsValid =
-                std::is_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                std::is_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&...> ||
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...> ||
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&..., TsR...>;
-            static constexpr bool kIsReverse =
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...> ||
-                std::is_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&..., TsR...>;
+                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                                          std::unwrap_ref_decay_t<BoundArgs>&&...> ||
+                is_compatible_invocable_v<std::decay_t<F>, std::unwrap_ref_decay_t<BoundArgs>&&...,
+                                          TsR...>;
+            static constexpr bool kIsNormalOrder =
+                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                                          std::unwrap_ref_decay_t<BoundArgs>&&...>;
+            static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
-            using Signature = std::conditional_t<kIsReverse, Ret(TsR...), Ret(Ts...)>;
-            static constexpr bool kMutable =
-                (!kIsReverse &&
-                 !std::is_invocable_v<
-                     F, Ts...,
-                     const std::unwrap_ref_decay_t<typename RefToConstRef<BoundArgs>::Type>&...>) ||
-                (kIsReverse &&
-                 !std::is_invocable_v<
-                     F, const std::unwrap_ref_decay_t<typename RefToConstRef<BoundArgs>::Type>&...,
-                     TsR...>);
+            static constexpr bool kIsConst =
+                (kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                                     const std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&...>) ||
+                (!kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&,
+                                     const std::unwrap_reference_t<
+                                         typename RefToConstRef<std::decay_t<BoundArgs>>::Type>&...,
+                                     TsR...>);
+            static constexpr bool kIsRValRef =
+                (kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                                     std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&&...>) ||
+                (!kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&,
+                                     std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&&...,
+                                     TsR...>);
+            static constexpr bool kIsLValRef =
+                (kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                                     std::unwrap_reference_t<typename RefToConstRef<
+                                         std::decay_t<BoundArgs>>::Type>&...>) ||
+                (!kIsNormalOrder &&
+                 std::is_invocable_v<const std::decay_t<F>&,
+                                     std::unwrap_reference_t<
+                                         typename RefToConstRef<std::decay_t<BoundArgs>>::Type>&...,
+                                     TsR...>);
+            static constexpr bool kIsQualifierLess = !kIsRValRef && !kIsLValRef && kIsConst;
+
+            using Signature = std::conditional_t<
+                Traits::kIsNoExcept,
+                // --- NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst, Ret(TsR...) const & noexcept,
+                        std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
+                                           std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                                              Ret(TsR...) noexcept>>>,
+                    std::conditional_t<
+                        kIsConst, Ret(Ts...) const & noexcept,
+                        std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
+                                           std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                                              Ret(Ts...) noexcept>>>>,
+                // --- NON-NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst, Ret(TsR...) const&,
+                        std::conditional_t<
+                            kIsRValRef, Ret(TsR...) &&,
+                            std::conditional_t<kIsLValRef, Ret(TsR...) &, Ret(TsR...)>>>,
+                    std::conditional_t<
+                        kIsConst, Ret(Ts...) const&,
+                        std::conditional_t<
+                            kIsRValRef, Ret(Ts...) &&,
+                            std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
         };
 
         using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;

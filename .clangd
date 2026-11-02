@@ -2,6 +2,10 @@ CompileFlags:
   Add: 
     - -std=c++23
     - -I${workspaceFolder}/include
+  Remove:
+    - -fmodules-ts
+    - -fdeps-format=p1689r5
+    - -fmodule-mapper=tests/CMakeFiles/task_nanobench.dir/task_nanobench.cpp.o.modmap
 Index:
   Background: Build          
 

@@ -188,7 +188,7 @@ constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
 }
 
 template <typename F, typename... Args>
-inline constexpr bool is_compatible_invocable_v = // NOLINT
+inline constexpr bool is_compatible_invocable_v =  // NOLINT
     detail::search<F&&, detail::type_list<Args&&...>, detail::type_list<>>::kValid;
 
 template <typename... Ts>
