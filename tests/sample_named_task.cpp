@@ -1,4 +1,5 @@
 
+#include <functional>
 #include <string>
 
 #include <task/named_task.hpp>
@@ -8,7 +9,11 @@ bool foo(std::string /*name*/, std::string& /*data*/, int /*version*/) {
     return false;
 }
 
-bool bar(std::string /*name*/, const std::string& /*data*/, int /*version*/) {
+bool bar(std::string /*name*/, const std::string& /*data*/, int /*version*/) noexcept {
+    return false;
+}
+
+bool bar_mimic(std::string /*name*/, const std::string& /*data*/, int /*version*/) {
     return false;
 }
 
@@ -41,8 +46,9 @@ int main() {
         static_cast<void*>(mPtr));
     // Even more simply (Use this)
     auto subTask = fn::makeThisTask(
-        [](Payload payload, void* ptr) { auto& self = *static_cast<MyModule*>(ptr); }, mPtr);
-    static_assert(decltype(subscriberTask)::matchesSignature<void(Payload)>());
+        [](Payload payload, void* ptr) noexcept { auto& self = *static_cast<MyModule*>(ptr); },
+        mPtr);
+    static_assert(decltype(subTask)::matchesSignature<void(Payload) const & noexcept>());
     subscriberTask(5.5);
 
     auto compileFunc = fn::makeNamedTask<foo>("David");
@@ -58,6 +64,9 @@ int main() {
     // compileFunc4(2); // This fails, since namedTask is marked const, and captured argument needs
     // to be used as std::string&
     // This works
-    const auto compileFunc4 = fn::makeNamedTask<bar>("David", std::cref(str));
+    const auto compileFunc4 = fn::makeNamedTask<bar>("David", std::ref(str));
+    auto compileFunc5 = fn::makeNamedTask<bar_mimic>("David", std::ref(str));
     compileFunc4(2);
+    compileFunc5 = compileFunc4;
+    auto compileFunc6 = decltype(compileFunc5){compileFunc4};
 }

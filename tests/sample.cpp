@@ -32,8 +32,16 @@ int main() {
     auto str = std::string{"Hello World"};
     // You can capture by reference, equivalently to '&str' in lambda
     auto task2_half = fn::makeTask(
-        [](int age, const std::string& name) { std::cout << "Name: {}" << name << '\n'; },
+        [](int age, std::reference_wrapper<const std::string> name) {
+            std::cout << "Name: {}" << name.get() << '\n';
+        },
         std::cref(str));  // Or std::ref if one wishes to mutate
+    using dasa = std::unwrap_ref_decay_t<decltype(std::cref(str))>;
+    static constexpr bool isWow =
+        std::is_invocable_v<decltype([](int age, std::reference_wrapper<const std::string> name) {
+                                std::cout << "Name: {}" << name.get() << '\n';
+                            }),
+                            int, dasa>;
     task2_half(10);
     str = "Hi";
     task2_half(10);

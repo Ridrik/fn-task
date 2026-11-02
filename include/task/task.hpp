@@ -1013,8 +1013,8 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
     }
 };
 template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) const, Task, N> : public InvokerBuilder<Ret(Args...) const&, Task, N> {
-};
+struct InvokerBuilder<Ret(Args...) const, Task, N>
+    : public InvokerBuilder<Ret(Args...) const&, Task, N> {};
 
 template <typename Task, std::size_t N, typename Ret, typename... Args>
 struct InvokerBuilder<Ret(Args...) const noexcept, Task, N>
@@ -1454,8 +1454,8 @@ struct RefTag {};
 template <typename Signature, bool Copyable, std::size_t N, bool IsTrivial, bool Extended,
           bool AllowHeap, std::size_t Align>
 struct Task
-    : public InvokerBuilder<Signature,
-                         Task<Signature, Copyable, N, IsTrivial, Extended, AllowHeap, Align>, N> {
+    : public InvokerBuilder<
+          Signature, Task<Signature, Copyable, N, IsTrivial, Extended, AllowHeap, Align>, N> {
     template <typename, bool, std::size_t, bool, bool, bool, std::size_t>
     friend struct Task;
 
@@ -1759,10 +1759,8 @@ struct Task
 
     template <auto F, typename... BoundArgs>
     constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
-        : storage_{
-              .invoker =
-                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
-                      PayloadArgsT<F, BoundArgs...>, F, BoundArgs...>()} {
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::
+                       template getInvoker<PayloadArgsT<F, BoundArgs...>, F, BoundArgs...>()} {
         using PayloadType = PayloadArgsT<F, BoundArgs...>;
         if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
@@ -1812,10 +1810,9 @@ struct Task
                  !IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
-              .invoker =
-                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
-                      PayloadT<decltype(f), BoundArgs...>, std::decay_t<decltype(f)>,
-                      std::decay_t<BoundArgs>...>()} {
+              .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::
+                  template getInvoker<PayloadT<decltype(f), BoundArgs...>,
+                                      std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
@@ -1864,10 +1861,8 @@ struct Task
     constexpr Task([[maybe_unused]] RefTag /*unused*/, F&& f, BoundArgs&&... args)  // NOLINT
         requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value))
-        : storage_{
-              .invoker =
-                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
-                      PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::
+                       template getInvoker<PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
                std::is_lvalue_reference_v<BoundArgs>) ||
@@ -1920,10 +1915,8 @@ struct Task
     template <auto F, typename... BoundArgs>
     constexpr Task([[maybe_unused]] RefTag /*unused*/,                               // NOLINT
                    [[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
-        : storage_{
-              .invoker =
-                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::template getInvoker<
-                      PayloadImplArgs<F, BoundArgs...>, F, BoundArgs...>()} {
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::
+                       template getInvoker<PayloadImplArgs<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
                std::is_lvalue_reference_v<BoundArgs>) ||
@@ -2286,9 +2279,8 @@ struct TaskTypeDeductorAuto {
     static constexpr bool kCanUseTrivial = TrivialUse<PayloadType>::value;
     static constexpr bool kRefCanUseTrivial = TrivialUse<PayloadRefType>::value;
     static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    static constexpr auto kRefPayloadSize = sizeof...(BoundArgs) > 0
-                                                ? sizeof(PayloadImplArgs<F, BoundArgs...>)
-                                                : 0;
+    static constexpr auto kRefPayloadSize =
+        sizeof...(BoundArgs) > 0 ? sizeof(PayloadImplArgs<F, BoundArgs...>) : 0;
     using TypeTraits = StripBoundArgs::type;
     using Signature = typename TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;

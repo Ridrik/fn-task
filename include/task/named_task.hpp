@@ -8,7 +8,6 @@
 
 #include "function_traits.hpp"
 #include "payload.hpp"
-#include "task.hpp"
 
 namespace fn {
 
@@ -32,10 +31,10 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
     static constexpr bool kIsFront = is_compatible_invocable_v<F, BoundArgs&&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
-            return std::move((static_cast<Task>(self)).payload)
+            return std::move((static_cast<Task>(self)).payload_)
                 .invokeFrontCompatible(std::forward<Args>(args)...);
         } else {
-            return std::move((static_cast<Task>(self)).payload)
+            return std::move((static_cast<Task>(self)).payload_)
                 .invokeCompatible(std::forward<Args>(args)...);
         }
     }
@@ -48,124 +47,141 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcep
     static constexpr bool kIsFront = is_compatible_invocable_v<F, BoundArgs&&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
-            return std::move((static_cast<Task>(self)).payload)
+            return std::move((static_cast<Task>(self)).payload_)
                 .invokeFrontCompatible(std::forward<Args>(args)...);
         } else {
-            return std::move((static_cast<Task>(self)).payload)
+            return std::move((static_cast<Task>(self)).payload_)
                 .invokeCompatible(std::forward<Args>(args)...);
         }
     }
 };
 
-template <typename Task, bool IsFront, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const> {
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const> {
+    static_assert(std::is_invocable_v<F, const BoundArgs..., Args...> ||
+                  std::is_invocable_v<F, Args..., const BoundArgs...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (IsFront) {
-            return (static_cast<const Task>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        if constexpr (kIsFront) {
+            return (static_cast<const Task>(self))
+                .payload_.invokeFront(std::forward<Args>(args)...);
         } else {
-            return (static_cast<const Task>(self)).payload.invoke(std::forward<Args>(args)...);
+            return (static_cast<const Task>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
 
-template <typename Task, bool IsFront, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const noexcept> {
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const noexcept> {
+    static_assert(std::is_invocable_v<F, const BoundArgs..., Args...> ||
+                  std::is_invocable_v<F, Args..., const BoundArgs...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (IsFront) {
-            return (static_cast<const Task>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        if constexpr (kIsFront) {
+            return (static_cast<const Task>(self))
+                .payload_.invokeFront(std::forward<Args>(args)...);
         } else {
-            return (static_cast<const Task>(self)).payload.invoke(std::forward<Args>(args)...);
+            return (static_cast<const Task>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
 
-template <typename Task, bool IsFront, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const&> {
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&> {
+    static_assert(std::is_invocable_v<F, const BoundArgs&..., Args...> ||
+                  std::is_invocable_v<F, Args..., const BoundArgs&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (IsFront) {
+        if constexpr (kIsFront) {
             return (static_cast<const Task&>(self))
-                .payload.invokeFront(std::forward<Args>(args)...);
+                .payload_.invokeFront(std::forward<Args>(args)...);
         } else {
-            return (static_cast<const Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
 
-template <typename Task, bool IsFront, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, IsFront, Ret(Args...) const & noexcept> {
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const & noexcept> {
+    static_assert(std::is_invocable_v<F, const BoundArgs&..., Args...> ||
+                  std::is_invocable_v<F, Args..., const BoundArgs&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (IsFront) {
+        if constexpr (kIsFront) {
             return (static_cast<const Task&>(self))
-                .payload.invokeFront(std::forward<Args>(args)...);
+                .payload_.invokeFront(std::forward<Args>(args)...);
         } else {
-            return (static_cast<const Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
 
-template <typename Task, bool IsFront, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, IsFront, Ret(Args...) &> {
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &> {
+    static_assert(std::is_invocable_v<F, BoundArgs&..., Args...> ||
+                  std::is_invocable_v<F, Args..., BoundArgs&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (IsFront) {
-            return (static_cast<Task&>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        if constexpr (kIsFront) {
+            return (static_cast<Task&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
         } else {
-            return (static_cast<Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+            return (static_cast<Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
 
-template <typename Task, bool IsFront, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, IsFront, Ret(Args...) & noexcept> {
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) & noexcept> {
+    static_assert(std::is_invocable_v<F, BoundArgs&..., Args...> ||
+                  std::is_invocable_v<F, Args..., BoundArgs&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (IsFront) {
-            return (static_cast<Task&>(self)).payload.invokeFront(std::forward<Args>(args)...);
+        if constexpr (kIsFront) {
+            return (static_cast<Task&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
         } else {
-            return (static_cast<Task&>(self)).payload.invoke(std::forward<Args>(args)...);
+            return (static_cast<Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
 
-template <typename Derived, bool isFront, typename ReturnType, typename... CallArgs>
-struct TaskInvokeBase {
-    FORCE_INLINE ReturnType invoke(this auto&& self, CallArgs... args) {
-        using Self = decltype(self);
-        using DerivedRef = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>,
-                                              const Derived, Derived>;
-        auto&& derived = static_cast<DerivedRef&&>(self);
-        using PayloadType = std::remove_cvref_t<decltype(derived.payload)>;
-        static_assert(IsPayload<PayloadType, Self, CallArgs...>::value);
-        if constexpr (isFront) {
-            static_assert(IsPayload<PayloadType, Self, CallArgs...>::kIsInvocableFront,
-                          "F is not invocable with provided arguments. Check whether a different "
-                          "attribute is needed (such as non-const NamedTask, r-value invocation)");
-            return std::forward_like<Self>(derived.payload)
-                .invokeFront(std::forward<CallArgs>(args)...);
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
+    static_assert(std::is_invocable_v<F, BoundArgs&&..., Args...> ||
+                  std::is_invocable_v<F, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&&..., Args...>;
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
+        if constexpr (kIsFront) {
+            return (static_cast<Task&&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
         } else {
-            static_assert(IsPayload<PayloadType, Self, CallArgs...>::kIsInvocable,
-                          "F is not invocable with provided arguments. Check whether a different "
-                          "attribute is needed (such as non-const NamedTask, r-value invocation)");
-            return std::forward_like<Self>(derived.payload).invoke(std::forward<CallArgs>(args)...);
+            return (static_cast<Task&&>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
+};
 
-    FORCE_INLINE ReturnType operator()(this auto&& self, CallArgs... args) {
-        using Self = decltype(self);
-        using DerivedRef = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>,
-                                              const Derived, Derived>;
-        auto&& derived = static_cast<DerivedRef&&>(self);
-        using PayloadType = std::remove_cvref_t<decltype(derived.payload)>;
-        static_assert(IsPayload<PayloadType, Self, CallArgs...>::value);
-        static_assert(IsPayload<PayloadType, Self, CallArgs...>::kIsInvocableFront ||
-                          IsPayload<PayloadType, Self, CallArgs...>::kIsInvocable,
-                      "F is not invocable with provided arguments. Check whether a different "
-                      "attribute is needed (such as non-const NamedTask, r-value invocation)");
-        return std::forward_like<decltype(self)>(self).invoke(std::forward<CallArgs>(args)...);
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) && noexcept> {
+    static_assert(std::is_invocable_v<F, BoundArgs&&..., Args...> ||
+                  std::is_invocable_v<F, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&&..., Args...>;
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
+        if constexpr (kIsFront) {
+            return (static_cast<Task&&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
+        } else {
+            return (static_cast<Task&&>(self)).payload_.invoke(std::forward<Args>(args)...);
+        }
     }
 };
 
 template <typename Signature, typename F, typename... BoundArgs>
-struct NamedTask : NamedTaskInvoker<NamedTask<Signature, F, BoundArgs...>, true, Signature> {
+struct NamedTask : NamedTaskInvoker<NamedTask<Signature, F, BoundArgs...>,
+                                    PayloadT<F, BoundArgs...>, Signature> {
    private:
+    template <typename, typename, typename>
+    friend struct NamedTaskInvoker;
+
+    template <typename, typename, typename...>
+    friend struct NamedTask;
+
     using CallableImpl = F;
     mutable PayloadT<CallableImpl, BoundArgs...> payload_{};
 
@@ -191,23 +207,35 @@ struct NamedTask : NamedTaskInvoker<NamedTask<Signature, F, BoundArgs...>, true,
     NamedTask& operator=(NamedTask&&) = default;
     ~NamedTask() = default;
 
-    template <typename OtherF>
-        requires(std::is_convertible_v<OtherF, CallableImpl>)
-    NamedTask& operator=(const NamedTask<Signature, OtherF, BoundArgs...>& other) {
-        this->payload = other.payload;
+    template <typename SigOther, typename OtherF>
+        requires(std::is_convertible_v<OtherF, CallableImpl> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask(const NamedTask<SigOther, OtherF, BoundArgs...>& other) : payload_{other.payload_} {}
+
+    template <typename SigOther, typename OtherF>
+        requires(std::is_convertible_v<OtherF, CallableImpl> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask& operator=(const NamedTask<SigOther, OtherF, BoundArgs...>& other) {
+        this->payload_ = other.payload_;
         return *this;
     }
+    template <typename SigOther, typename OtherF>
+        requires(std::is_convertible_v<OtherF, CallableImpl> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask(NamedTask<SigOther, OtherF, BoundArgs...>&& other)
+        : payload_{std::move(other).payload_} {}
 
-    template <typename OtherF>
-        requires(std::is_convertible_v<OtherF, CallableImpl>)
-    NamedTask& operator=(NamedTask<Signature, OtherF, BoundArgs...>&& other) {
+    template <typename SigOther, typename OtherF>
+        requires(std::is_convertible_v<OtherF, CallableImpl> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask& operator=(NamedTask<SigOther, OtherF, BoundArgs...>&& other) {
         this->payload = std::move(other).payload;
         return *this;
     }
 
     NamedTask(F&& f, BoundArgs&&... args)  // NOLINT
         requires(sizeof...(BoundArgs) > 0 || !std::is_same_v<std::remove_cvref_t<F>, NamedTask>)
-        : payload{.f = std::forward<F>(f), .args = {std::forward<BoundArgs>(args)...}} {}
+        : payload_{.f = std::forward<F>(f), .args = {std::forward<BoundArgs>(args)...}} {}
 };
 
 template <auto F>
@@ -215,9 +243,16 @@ struct StaticFn {};
 
 template <typename Signature, auto F, typename... BoundArgs>
 struct NamedTask<Signature, StaticFn<F>, BoundArgs...>
-    : NamedTaskInvoker<NamedTask<Signature, decltype(F), BoundArgs...>, true, Signature> {
+    : NamedTaskInvoker<NamedTask<Signature, StaticFn<F>, BoundArgs...>,
+                       PayloadT<decltype(F), BoundArgs...>, Signature> {
    private:
-    mutable PayloadArgsT<F, BoundArgs...> payload;
+    template <typename, typename, typename>
+    friend struct NamedTaskInvoker;
+
+    template <typename, typename, typename...>
+    friend struct NamedTask;
+
+    mutable PayloadArgsT<F, BoundArgs...> payload_;
 
    public:
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
@@ -241,19 +276,34 @@ struct NamedTask<Signature, StaticFn<F>, BoundArgs...>
     NamedTask& operator=(NamedTask&&) = default;
     ~NamedTask() = default;
 
-    template <auto OtherF>
-    NamedTask& operator=(const NamedTask<Signature, StaticFn<OtherF>, BoundArgs...>& other) {
-        this->payload = other.payload;
+    template <typename SigOther, auto OtherF>
+        requires(std::is_convertible_v<decltype(OtherF), decltype(F)> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask(const NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>& other)
+        : payload_{.args = other.payload_.args} {}
+
+    template <typename SigOther, auto OtherF>
+        requires(std::is_convertible_v<decltype(OtherF), decltype(F)> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask& operator=(const NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>& other) {
+        this->payload_.args = other.payload_.args;
+        return *this;
+    }
+    template <typename SigOther, auto OtherF>
+        requires(std::is_convertible_v<decltype(OtherF), decltype(F)> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask(NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>&& other)
+        : payload_{.args = std::move(other).payload_.args} {}
+
+    template <typename SigOther, auto OtherF>
+        requires(std::is_convertible_v<decltype(OtherF), decltype(F)> &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
+    NamedTask& operator=(NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>&& other) {
+        this->payload.args = std::move(other).payload.args;
         return *this;
     }
 
-    template <auto OtherF>
-    NamedTask& operator=(NamedTask<Signature, StaticFn<OtherF>, BoundArgs...>&& other) {
-        this->payload = std::move(other).payload;
-        return *this;
-    }
-
-    NamedTask(BoundArgs&&... args) : payload{{std::forward<BoundArgs>(args)...}} {}
+    NamedTask(BoundArgs&&... args) : payload_{{std::forward<BoundArgs>(args)...}} {}
 };
 
 template <typename F, typename... BoundArgs>

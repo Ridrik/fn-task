@@ -174,7 +174,7 @@ constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) noexcept(
 
 template <auto F, typename... Args>
 constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
-    detail::search<decltype(F), detail::type_list<Args&&...>, detail::type_list<>>::nothrow) {
+    detail::search<decltype(F), detail::type_list<Args&&...>, detail::type_list<>>::kNoThrow) {
     using Selection =
         detail::search<decltype(F), detail::type_list<Args&&...>, detail::type_list<>>;
 
@@ -561,10 +561,10 @@ template <auto F, typename... Args>
 struct PayloadNoRvalueRef<PayloadImplArgs<F, Args...>> : std::true_type {};
 
 template <typename F, typename... Args>
-using PayloadT = PayloadImpl<std::decay_t<F>, std::unwrap_ref_decay_t<Args>...>;
+using PayloadT = PayloadImpl<std::decay_t<F>, std::decay_t<Args>...>;
 
 template <auto F, typename... Args>
-using PayloadArgsT = PayloadImplArgs<F, std::unwrap_ref_decay_t<Args>...>;
+using PayloadArgsT = PayloadImplArgs<F, std::decay_t<Args>...>;
 
 template <typename, typename, typename...>
 struct IsPayload : std::false_type {};
