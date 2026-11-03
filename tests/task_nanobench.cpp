@@ -597,6 +597,7 @@ void compareNamedTaskToTask() {
 
     auto task = fn::Task([](int a, int v) { return a + v; }, 2);
     auto namedTask = fn::NamedTask([](int a, int v) { return a + v; }, 2);
+    namedTask(3);
     auto taskFromNamedTask = fn::Task(namedTask);
     auto stdFunc = std::function<int(int)>{[a = 2](int v) { return a + v; }};
     b.run("Named Task", [&] { ankerl::nanobench::doNotOptimizeAway(namedTask(1)); });

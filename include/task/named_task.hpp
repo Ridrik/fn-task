@@ -172,9 +172,8 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) && noex
     }
 };
 
-template <typename Signature, typename F, typename... BoundArgs>
-struct NamedTask : NamedTaskInvoker<NamedTask<Signature, F, BoundArgs...>,
-                                    PayloadT<F, BoundArgs...>, Signature> {
+template <typename S, typename F, typename... BoundArgs>
+struct NamedTask : NamedTaskInvoker<NamedTask<S, F, BoundArgs...>, PayloadT<F, BoundArgs...>, S> {
    private:
     template <typename, typename, typename>
     friend struct NamedTaskInvoker;
@@ -186,6 +185,8 @@ struct NamedTask : NamedTaskInvoker<NamedTask<Signature, F, BoundArgs...>,
     mutable PayloadT<CallableImpl, BoundArgs...> payload_{};
 
    public:
+    using Signature = S;
+
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
     }
@@ -241,10 +242,10 @@ struct NamedTask : NamedTaskInvoker<NamedTask<Signature, F, BoundArgs...>,
 template <auto F>
 struct StaticFn {};
 
-template <typename Signature, auto F, typename... BoundArgs>
-struct NamedTask<Signature, StaticFn<F>, BoundArgs...>
-    : NamedTaskInvoker<NamedTask<Signature, StaticFn<F>, BoundArgs...>,
-                       PayloadT<decltype(F), BoundArgs...>, Signature> {
+template <typename S, auto F, typename... BoundArgs>
+struct NamedTask<S, StaticFn<F>, BoundArgs...>
+    : NamedTaskInvoker<NamedTask<S, StaticFn<F>, BoundArgs...>, PayloadT<decltype(F), BoundArgs...>,
+                       S> {
    private:
     template <typename, typename, typename>
     friend struct NamedTaskInvoker;
@@ -255,6 +256,8 @@ struct NamedTask<Signature, StaticFn<F>, BoundArgs...>
     mutable PayloadArgsT<F, BoundArgs...> payload_;
 
    public:
+    using Signature = S;
+
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
     }
