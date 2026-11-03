@@ -65,7 +65,7 @@ int main() {
     // to be used as std::string&
     // This works
     const auto compileFunc4 = fn::makeNamedTask<bar>("David", std::ref(str));
-    auto compileFunc5 = fn::makeNamedTask<bar_mimic>("David", std::ref(str));
+    auto compileFunc5 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), "David", std::ref(str));
     compileFunc4(2);
     compileFunc5 = compileFunc4;
     auto compileFunc6 = decltype(compileFunc5){compileFunc4};
