@@ -21,19 +21,15 @@ namespace fn {
 
 namespace detail {
 
-// ------------------------------------------------------------
-// Type lists
-// ------------------------------------------------------------
-
 template <typename... Ts>
-struct type_list {};
+struct TypeList {};
 
 template <typename List, typename T>
 struct push_back;
 
 template <typename... Ts, typename T>
-struct push_back<type_list<Ts...>, T> {
-    using type = type_list<Ts..., T>;
+struct push_back<TypeList<Ts...>, T> {
+    using type = TypeList<Ts..., T>;
 };
 
 template <typename List, typename T>
@@ -44,7 +40,7 @@ using push_back_t = typename push_back<List, T>::type;
 // ------------------------------------------------------------
 
 template <typename T>
-struct invocation_options {
+struct InvocationOptions {
    private:
     using U = std::remove_reference_t<T>;
     using C = std::add_const_t<U>;
@@ -61,7 +57,7 @@ struct invocation_options {
 
 template <typename T>
     requires std::is_const_v<std::remove_reference_t<T>>
-struct invocation_options<T> {
+struct InvocationOptions<T> {
    private:
     using U = std::remove_reference_t<T>;
 
@@ -71,7 +67,7 @@ struct invocation_options<T> {
 };
 
 template <typename T>
-using invocation_options_t = typename invocation_options<T>::type;
+using invocation_options_t = typename InvocationOptions<T>::type;
 
 // ------------------------------------------------------------
 // Search machinery
@@ -120,18 +116,18 @@ struct choose_candidate<Candidate, F, Remaining, Selected, Options, I, false>
 
 // All arguments have been selected.
 template <typename F, typename... Selected>
-struct search<F, type_list<>, type_list<Selected...>> {
+struct search<F, TypeList<>, TypeList<Selected...>> {
     static constexpr bool kValid = std::is_invocable_v<F, Selected...>;
 
     static constexpr bool kNoThrow = std::is_nothrow_invocable_v<F, Selected...>;
 
-    using types = type_list<Selected...>;
+    using types = TypeList<Selected...>;
 };
 
 // Select an alternative for the next argument.
 template <typename F, typename Arg, typename... Rest, typename... Selected>
-struct search<F, type_list<Arg, Rest...>, type_list<Selected...>>
-    : search_next<F, type_list<Rest...>, type_list<Selected...>, invocation_options_t<Arg>, 0> {};
+struct search<F, TypeList<Arg, Rest...>, TypeList<Selected...>>
+    : search_next<F, TypeList<Rest...>, TypeList<Selected...>, invocation_options_t<Arg>, 0> {};
 
 // ------------------------------------------------------------
 // Actual invocation
@@ -139,14 +135,14 @@ struct search<F, type_list<Arg, Rest...>, type_list<Selected...>>
 
 template <typename F, typename Tuple, typename... Selected, std::size_t... I>
 constexpr decltype(auto) invoke_selected(
-    F&& f, Tuple& args, type_list<Selected...> /*unused*/,
+    F&& f, Tuple& args, TypeList<Selected...> /*unused*/,
     std::index_sequence<I...> /*unused*/) noexcept(std::is_nothrow_invocable_v<F&&, Selected...>) {
     return std::invoke(std::forward<F>(f), static_cast<Selected>(std::get<I>(args))...);
 }
 
 template <auto F, typename Tuple, typename... Selected, std::size_t... I>
 constexpr decltype(auto) invoke_selected(
-    Tuple& args, type_list<Selected...> /*unused*/,
+    Tuple& args, TypeList<Selected...> /*unused*/,
     std::index_sequence<I...> /*unused*/) noexcept(std::is_nothrow_invocable_v<decltype(F),
                                                                                Selected...>) {
     return std::invoke(F, static_cast<Selected>(std::get<I>(args))...);
@@ -160,8 +156,8 @@ constexpr decltype(auto) invoke_selected(
 
 template <typename F, typename... Args>
 constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) noexcept(
-    detail::search<F&&, detail::type_list<Args&&...>, detail::type_list<>>::kNoThrow) {
-    using Selection = detail::search<F&&, detail::type_list<Args&&...>, detail::type_list<>>;
+    detail::search<F&&, detail::TypeList<Args&&...>, detail::TypeList<>>::kNoThrow) {
+    using Selection = detail::search<F&&, detail::TypeList<Args&&...>, detail::TypeList<>>;
 
     static_assert(Selection::kValid,
                   "Callable is not invocable with any compatible cv/ref combination");
@@ -174,9 +170,8 @@ constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) noexcept(
 
 template <auto F, typename... Args>
 constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
-    detail::search<decltype(F), detail::type_list<Args&&...>, detail::type_list<>>::kNoThrow) {
-    using Selection =
-        detail::search<decltype(F), detail::type_list<Args&&...>, detail::type_list<>>;
+    detail::search<decltype(F), detail::TypeList<Args&&...>, detail::TypeList<>>::kNoThrow) {
+    using Selection = detail::search<decltype(F), detail::TypeList<Args&&...>, detail::TypeList<>>;
 
     static_assert(Selection::kValid,
                   "Callable is not invocable with any compatible cv/ref combination");
@@ -189,7 +184,7 @@ constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
 
 template <typename F, typename... Args>
 inline constexpr bool is_compatible_invocable_v =  // NOLINT
-    detail::search<F&&, detail::type_list<Args&&...>, detail::type_list<>>::kValid;
+    detail::search<F&&, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid;
 
 template <typename... Ts>
 struct PayloadTuple;

@@ -250,8 +250,8 @@ struct NamedTask : NamedTaskInvoker<NamedTask<S, F, BoundArgs...>, PayloadT<F, B
         requires(std::is_convertible_v<decltype(OtherF), CallableImpl> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
     NamedTask(NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>&& other)
-        : payload_{{.f = static_cast<decltype(OtherF)*>(OtherF),
-                    .args = std::move(other).payload_.args}} {}
+        : payload_{.f = static_cast<decltype(OtherF)*>(OtherF),
+                   .args = std::move(other).payload_.args} {}
 
     template <typename SigOther, typename OtherF>
         requires(std::is_convertible_v<OtherF, CallableImpl> &&
