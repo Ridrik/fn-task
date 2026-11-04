@@ -205,6 +205,12 @@ struct NamedTask : NamedTaskInvoker<NamedTask<S, F, BoundArgs...>, PayloadT<F, B
         return NamedTask::matchesSignature<R(Args...)>();
     }
 
+    template <std::size_t I>
+    constexpr decltype(auto) getBoundArg() noexcept {
+        static_assert(I < sizeof...(BoundArgs), "Exceeds number of captured arguments");
+        return PayloadTupleGetter<I, BoundArgs...>::get(payload_.args);
+    }
+
     NamedTask(const NamedTask&) = default;
     NamedTask& operator=(const NamedTask&) = default;
     NamedTask(NamedTask&&) = default;
@@ -306,6 +312,12 @@ struct NamedTask<S, StaticFn<F>, BoundArgs...>
         return NamedTask::matchesSignature<R(Args...)>();
     }
 
+    template <std::size_t I>
+    constexpr decltype(auto) getBoundArg() noexcept {
+        static_assert(I < sizeof...(BoundArgs), "Exceeds number of captured arguments");
+        return PayloadTupleGetter<I, BoundArgs...>::get(payload_.args);
+    }
+
     NamedTask(const NamedTask&) = default;
     NamedTask& operator=(const NamedTask&) = default;
     NamedTask(NamedTask&&) = default;
@@ -357,12 +369,12 @@ struct NamedTaskTypeDeductor {
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             static constexpr bool kIsValid =
-                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                is_compatible_invocable_v<std::decay_t<F>&&, Ts...,
                                           std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<std::decay_t<F>, std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                          TsR...>;
+                is_compatible_invocable_v<std::decay_t<F>&&,
+                                          std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                is_compatible_invocable_v<std::decay_t<F>&&, Ts...,
                                           std::unwrap_ref_decay_t<BoundArgs>&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
@@ -379,21 +391,21 @@ struct NamedTaskTypeDeductor {
                                      TsR...>);
             static constexpr bool kIsRValRef =
                 (kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                 std::is_invocable_v<std::decay_t<F>&&, Ts...,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&&...>) ||
                 (!kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&,
+                 std::is_invocable_v<std::decay_t<F>&&,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&&...,
                                      TsR...>);
             static constexpr bool kIsLValRef =
                 (kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                 std::is_invocable_v<std::decay_t<F>&, Ts...,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&...>) ||
                 (!kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&,
+                 std::is_invocable_v<std::decay_t<F>&,
                                      std::unwrap_reference_t<
                                          typename RefToConstRef<std::decay_t<BoundArgs>>::Type>&...,
                                      TsR...>);

@@ -23,6 +23,7 @@ int main() {
     // Make NamedTask with deduction guides, similarly to fn::Task/fn::makeTask
     auto task = fn::NamedTask([](int, double) {}, 2.0);
     auto task2 = fn::NamedTask([](int, double) {}, 2.0);
+    const auto& theDouble = task.getBoundArg<0>();
     // task = task2; // Error, even though they look identical, each lambda internally has a
     // different compiler generated type.
 

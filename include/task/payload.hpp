@@ -476,6 +476,32 @@ struct PayloadTuple<T, Ts...> {
     }
 };
 
+template <std::size_t I, typename... Ts>
+struct PayloadTupleGetter;
+
+template <typename T, typename... Ts>
+struct PayloadTupleGetter<0, T, Ts...> {
+    static constexpr T& get(PayloadTuple<T, Ts...>& tuple) {
+        return tuple.head;
+    }
+
+    static constexpr const T& get(const PayloadTuple<T, Ts...>& tuple) {
+        return tuple.head;
+    }
+};
+
+template <std::size_t I, typename T, typename... Ts>
+    requires(I > 0)
+struct PayloadTupleGetter<I, T, Ts...> {
+    static constexpr decltype(auto) get(PayloadTuple<T, Ts...>& tuple) {
+        return PayloadTupleGetter<I - 1, Ts...>::get(tuple.tail);
+    }
+
+    static constexpr decltype(auto) get(const PayloadTuple<T, Ts...>& tuple) {
+        return PayloadTupleGetter<I - 1, Ts...>::get(tuple.tail);
+    }
+};
+
 template <typename F, typename... Args>
 struct PayloadImpl {
     F f;

@@ -166,7 +166,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
             if constexpr (sizeof...(BoundArgs) == 0) {
                 static_assert(std::is_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
-                return (*static_cast<const PayloadType*>(s)).invoke(std::forward<Args>(args)...);
+                return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<F, Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&...>) {
                 if constexpr (sizeof(PayloadType) <= N) {
@@ -403,13 +403,6 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
-    template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N == 0)
-    FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
-        static_assert(sizeof...(BoundArgs) == 0);
-        return [](Args... args) noexcept -> Ret { return F(std::forward<Args>(args)...); };
-    }
-
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(N == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
@@ -559,7 +552,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
             if constexpr (sizeof...(BoundArgs) == 0) {
                 static_assert(std::is_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
-                return (*static_cast<const PayloadType*>(s)).invoke(std::forward<Args>(args)...);
+                return std::move(*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<F, Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 if constexpr (sizeof(PayloadType) <= N) {
@@ -680,7 +673,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
             if constexpr (sizeof...(BoundArgs) == 0) {
                 static_assert(std::is_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
-                return (*static_cast<const PayloadType*>(s)).invoke(std::forward<Args>(args)...);
+                return std::move(*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<F, Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 static_assert(std::is_nothrow_invocable_v<F, Args...,
@@ -815,7 +808,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
             if constexpr (sizeof...(BoundArgs) == 0) {
                 static_assert(std::is_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
-                return (*static_cast<const PayloadType*>(s)).invoke(std::forward<Args>(args)...);
+                return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (is_compatible_invocable_v<
                                      F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 if constexpr (sizeof(PayloadType) <= N) {
@@ -923,7 +916,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
             if constexpr (sizeof...(BoundArgs) == 0) {
                 static_assert(std::is_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
-                return (*static_cast<const PayloadType*>(s)).invoke(std::forward<Args>(args)...);
+                return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (is_compatible_invocable_v<
                                      F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 static_assert(std::is_nothrow_invocable_v<F, Args...,
@@ -2065,12 +2058,12 @@ struct TaskTypeDeductor {
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             static constexpr bool kIsValid =
-                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                is_compatible_invocable_v<std::decay_t<F>&&, Ts...,
                                           std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<std::decay_t<F>, std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                          TsR...>;
+                is_compatible_invocable_v<std::decay_t<F>&&,
+                                          std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<std::decay_t<F>, Ts...,
+                is_compatible_invocable_v<std::decay_t<F>&&, Ts...,
                                           std::unwrap_ref_decay_t<BoundArgs>&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
@@ -2087,21 +2080,21 @@ struct TaskTypeDeductor {
                                      TsR...>);
             static constexpr bool kIsRValRef =
                 (kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                 std::is_invocable_v<std::decay_t<F>&&, Ts...,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&&...>) ||
                 (!kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&,
+                 std::is_invocable_v<std::decay_t<F>&&,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&&...,
                                      TsR...>);
             static constexpr bool kIsLValRef =
                 (kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&, Ts...,
+                 std::is_invocable_v<std::decay_t<F>&, Ts...,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&...>) ||
                 (!kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F>&,
+                 std::is_invocable_v<std::decay_t<F>&,
                                      std::unwrap_reference_t<
                                          typename RefToConstRef<std::decay_t<BoundArgs>>::Type>&...,
                                      TsR...>);
@@ -2190,12 +2183,12 @@ struct TaskTypeDeductorAuto {
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             static constexpr bool kIsValid =
-                is_compatible_invocable_v<std::decay_t<F_Type>, Ts...,
+                is_compatible_invocable_v<std::decay_t<F_Type>&&, Ts...,
                                           std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<std::decay_t<F_Type>,
+                is_compatible_invocable_v<std::decay_t<F_Type>&&,
                                           std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<std::decay_t<F_Type>, Ts...,
+                is_compatible_invocable_v<std::decay_t<F_Type>&&, Ts...,
                                           std::unwrap_ref_decay_t<BoundArgs>&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
@@ -2212,21 +2205,21 @@ struct TaskTypeDeductorAuto {
                                      TsR...>);
             static constexpr bool kIsRValRef =
                 (kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F_Type>&, Ts...,
+                 std::is_invocable_v<std::decay_t<F_Type>&&, Ts...,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&&...>) ||
                 (!kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F_Type>&,
+                 std::is_invocable_v<std::decay_t<F_Type>&&,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&&...,
                                      TsR...>);
             static constexpr bool kIsLValRef =
                 (kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F_Type>&, Ts...,
+                 std::is_invocable_v<std::decay_t<F_Type>&, Ts...,
                                      std::unwrap_reference_t<typename RefToConstRef<
                                          std::decay_t<BoundArgs>>::Type>&...>) ||
                 (!kIsNormalOrder &&
-                 std::is_invocable_v<const std::decay_t<F_Type>&,
+                 std::is_invocable_v<std::decay_t<F_Type>&,
                                      std::unwrap_reference_t<
                                          typename RefToConstRef<std::decay_t<BoundArgs>>::Type>&...,
                                      TsR...>);
@@ -2279,8 +2272,9 @@ struct TaskTypeDeductorAuto {
     static constexpr bool kCanUseTrivial = TrivialUse<PayloadType>::value;
     static constexpr bool kRefCanUseTrivial = TrivialUse<PayloadRefType>::value;
     static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    static constexpr auto kRefPayloadSize =
-        sizeof...(BoundArgs) > 0 ? sizeof(PayloadImplArgs<F, BoundArgs...>) : 0;
+    static constexpr auto kRefPayloadSize = sizeof...(BoundArgs) > 0
+                                                ? sizeof(PayloadImplArgs<F, BoundArgs...>)
+                                                : 0;
     using TypeTraits = StripBoundArgs::type;
     using Signature = typename TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
