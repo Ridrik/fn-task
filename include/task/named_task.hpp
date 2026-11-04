@@ -558,20 +558,58 @@ struct NamedTask<S, StaticFn<F>, BoundArgs...>
     NamedTask(const NamedTask<SigOther, StaticFn<F>, BoundArgs...>& other)
         : payload_{.args = other.payload_.args} {}
 
+    template <typename SigOther, typename... OtherBoundArgs>
+        requires(IsSignatureCompatible<SigOther, Signature>::value &&
+                 std::is_convertible_v<typename NamedTask<SigOther, NamedTaskStaticRefTag<F>,
+                                                          OtherBoundArgs...>::PayloadType,
+                                       PayloadType>)
+    NamedTask(const NamedTask<SigOther, NamedTaskStaticRefTag<F>, OtherBoundArgs...>& other)
+        : payload_{.args = other.payload_.args} {}
+
     template <typename SigOther>
         requires(IsSignatureCompatible<SigOther, Signature>::value)
     NamedTask& operator=(const NamedTask<SigOther, StaticFn<F>, BoundArgs...>& other) {
         this->payload_.args = other.payload_.args;
         return *this;
     }
+
+    template <typename SigOther, typename... OtherBoundArgs>
+        requires(IsSignatureCompatible<SigOther, Signature>::value &&
+                 std::is_convertible_v<typename NamedTask<SigOther, NamedTaskStaticRefTag<F>,
+                                                          OtherBoundArgs...>::PayloadType,
+                                       PayloadType>)
+    NamedTask& operator=(
+        const NamedTask<SigOther, NamedTaskStaticRefTag<F>, OtherBoundArgs...>& other) {
+        this->payload_.args = other.payload_.args;
+        return *this;
+    }
+
     template <typename SigOther>
         requires(IsSignatureCompatible<SigOther, Signature>::value)
     NamedTask(NamedTask<SigOther, StaticFn<F>, BoundArgs...>&& other)
         : payload_{.args = std::move(other).payload_.args} {}
 
+    template <typename SigOther, typename... OtherBoundArgs>
+        requires(IsSignatureCompatible<SigOther, Signature>::value &&
+                 std::is_convertible_v<typename NamedTask<SigOther, NamedTaskStaticRefTag<F>,
+                                                          OtherBoundArgs...>::PayloadType,
+                                       PayloadType>)
+    NamedTask(NamedTask<SigOther, NamedTaskStaticRefTag<F>, OtherBoundArgs...>&& other)
+        : payload_{.args = std::move(other).payload_.args} {}
+
     template <typename SigOther>
         requires(IsSignatureCompatible<SigOther, Signature>::value)
     NamedTask& operator=(NamedTask<SigOther, StaticFn<F>, BoundArgs...>&& other) {
+        this->payload.args = std::move(other).payload.args;
+        return *this;
+    }
+
+    template <typename SigOther, typename... OtherBoundArgs>
+        requires(IsSignatureCompatible<SigOther, Signature>::value &&
+                 std::is_convertible_v<typename NamedTask<SigOther, NamedTaskStaticRefTag<F>,
+                                                          OtherBoundArgs...>::PayloadType,
+                                       PayloadType>)
+    NamedTask& operator=(NamedTask<SigOther, NamedTaskStaticRefTag<F>, OtherBoundArgs...>&& other) {
         this->payload.args = std::move(other).payload.args;
         return *this;
     }
