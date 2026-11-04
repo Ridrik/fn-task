@@ -1,21 +1,24 @@
 #include <functional>
+#include <iostream>
 #include <string>
 
 #include <task/named_task.hpp>
 #include <task/task.hpp>
+
+#include "task/function_traits.hpp"
 
 bool foo(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
          std::string& /*data*/, int /*version*/) {
     return false;
 }
 
-bool bar(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
-         const std::string& /*data*/, int /*version*/) noexcept {
+bool bar(std::string& data, int /*version*/) noexcept {
+    data += ',';
     return false;
 }
 
-bool bar_mimic(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
-               const std::string& /*data*/, int /*version*/) {
+bool bar_mimic(std::string& data, int /*version*/) {
+    data += ',';
     return false;
 }
 
@@ -23,6 +26,12 @@ int main() {
     // Make NamedTask with deduction guides, similarly to fn::Task/fn::makeTask
     auto task = fn::NamedTask([](int, double) {}, 2.0);
     auto task2 = fn::NamedTask([](int, double) {}, 2.0);
+
+    float c{5.0F};
+
+    auto fTask = fn::makeRefNamedTask([](int a, float kek) {}, c);
+    auto fTask2 = fTask;
+    fTask = fTask2;
 
     const auto& theDouble = task.getBoundArg<0>();
     // task = task2; // Error, even though they look identical, each lambda internally has a
@@ -64,7 +73,7 @@ int main() {
     compileFunc(str, 2);
     auto compileFunc2 = fn::makeNamedTask<foo>(3);
     compileFunc2("David", str);
-
+    ;
     auto compileFunc3 = fn::makeNamedTask<foo>("David", std::ref(str));  // Captures as reference
     compileFunc3(2);
 
@@ -72,9 +81,18 @@ int main() {
     // compileFunc4(2); // This fails, since namedTask is marked const, and captured argument needs
     // to be used as std::string&
     // This works
-    const auto compileFunc4 = fn::makeNamedTask<bar>("David", std::ref(str));
-    auto compileFunc5 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), "David", std::ref(str));
-    compileFunc4(2);
-    compileFunc5 = compileFunc4;
-    auto compileFunc6 = decltype(compileFunc5){compileFunc4};
+    auto str2 = std::string{"Hi There"};
+    const auto compileFunc4 = fn::makeRefNamedTask<bar>(str2);
+    const auto compileFunc45 = fn::makeNamedTask<bar>(std::ref(str2));
+    auto compileFunc46 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), std::ref(str2));
+    auto compileFunc5 = fn::makeRefNamedTask(fn::toFuncPtr<bar_mimic>(), str2);
+    compileFunc4(1);
+    compileFunc5(1);
+    compileFunc45.getBoundArg<0>();
+    compileFunc5.getBoundArg<0>();
+    using S1 = decltype(compileFunc5)::Signature;
+    using S2 = decltype(compileFunc46)::Signature;
+    compileFunc5 = compileFunc46;
+    compileFunc46 = compileFunc5;
+    std::cout << "str is " << str2 << '\n';
 }

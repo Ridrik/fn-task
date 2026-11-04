@@ -591,14 +591,20 @@ struct AddRefWrapperToRef<T&> {
     using Type = std::reference_wrapper<T>;
 };
 
+template <typename T>
+using AddRefWrapperToRef_t = typename AddRefWrapperToRef<T>::Type;
+
 template <typename F, typename... Args>
 using PayloadT = PayloadImpl<std::decay_t<F>, std::decay_t<Args>...>;
 
 template <typename F, typename... Args>
-using PayloadNamedRef = PayloadImpl<F, AddRefWrapperToRef<Args>...>;
+using PayloadNamedRef = PayloadImpl<F, AddRefWrapperToRef_t<Args>...>;
 
 template <auto F, typename... Args>
 using PayloadArgsT = PayloadImplArgs<F, std::decay_t<Args>...>;
+
+template <auto F, typename... Args>
+using PayloadStaticNamedRef = PayloadImplArgs<F, AddRefWrapperToRef_t<Args>...>;
 
 template <typename, typename, typename...>
 struct IsPayload : std::false_type {};
