@@ -209,7 +209,7 @@ DEFINE_FUNC_TRAITS_NOEXCEPT(const volatile&&, true, true, false, true);
     }
 // NOLINTEND
 
-DEFINE_MEMBER_FUNCTION_TRAITS(, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS(, false, false, false);
 DEFINE_MEMBER_FUNCTION_TRAITS(const, true, false, false);
 DEFINE_MEMBER_FUNCTION_TRAITS(volatile, false, false, false);
 DEFINE_MEMBER_FUNCTION_TRAITS(const volatile, true, false, false);
@@ -222,7 +222,7 @@ DEFINE_MEMBER_FUNCTION_TRAITS(const&&, true, false, true);
 DEFINE_MEMBER_FUNCTION_TRAITS(volatile&&, false, false, true);
 DEFINE_MEMBER_FUNCTION_TRAITS(const volatile&&, true, false, true);
 
-DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(, true, false, false);
+DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(, false, false, false);
 DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const, true, false, false);
 DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(volatile, false, false, false);
 DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const volatile, true, false, false);

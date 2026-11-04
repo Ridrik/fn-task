@@ -23,6 +23,7 @@ int main() {
     // Make NamedTask with deduction guides, similarly to fn::Task/fn::makeTask
     auto task = fn::NamedTask([](int, double) {}, 2.0);
     auto task2 = fn::NamedTask([](int, double) {}, 2.0);
+
     const auto& theDouble = task.getBoundArg<0>();
     // task = task2; // Error, even though they look identical, each lambda internally has a
     // different compiler generated type.
@@ -51,6 +52,10 @@ int main() {
     auto subTask = fn::makeThisTask(
         [](Payload payload, void* ptr) noexcept { auto& self = *static_cast<MyModule*>(ptr); },
         mPtr);
+    auto subTask2 = fn::makeThisTask(
+        [](Payload payload, void* ptr) noexcept { auto& self = *static_cast<MyModule*>(ptr); },
+        mPtr);
+    subTask2 = subTask;
     static_assert(decltype(subTask)::matchesSignature<void(Payload) const & noexcept>());
     subscriberTask(5.5);
 

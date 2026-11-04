@@ -2,26 +2,44 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <task/task.hpp>
 
+#include "task/function_traits.hpp"
 #include "task/payload.hpp"
 
 bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) noexcept {
     return false;
 }
 
+struct A {
+    int a{};
+    std::string operator()(double b) noexcept {
+        ++a;
+        return "";
+    }
+};
+
 int main() {
     // Task takes a callable and optionally capture arguments, which are expected to be part of
     // the erased callable. It automatically detects the task signature, mutability,
     // copiability, and size. Here, integer is captured (bind_front like), hence signature is
     // Task<void(std::string)>
-
+    A a{};
+    double thisHere = 3.0;
+    auto thisTask = fn::makeRefTask(a, 3.0);
+    a(2.0);
+    thisTask();
     auto task = fn::makeTask(
         [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
         0);
     static_assert(decltype(task)::matchesSignature<void(const std::string&) const & noexcept>());
     auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
+    auto taskMimic2 = fn::Task<void(const std::string&)>{task};
+    auto taskMimic3 = fn::Task<void(const std::string&) &>{task};
+    auto taskMimic4 = fn::Task<void(const std::string&) & noexcept>{task};
+    taskMimic4("kekers");
     task("Hello World");
     // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
     auto task2 = fn::makeTask(

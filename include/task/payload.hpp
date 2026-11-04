@@ -581,8 +581,21 @@ template <auto F, typename... Args>
     requires(PayloadNoRvalueRef<PayloadTuple<Args...>>::value)
 struct PayloadNoRvalueRef<PayloadImplArgs<F, Args...>> : std::true_type {};
 
+template <typename T>
+struct AddRefWrapperToRef {
+    using Type = T;
+};
+
+template <typename T>
+struct AddRefWrapperToRef<T&> {
+    using Type = std::reference_wrapper<T>;
+};
+
 template <typename F, typename... Args>
 using PayloadT = PayloadImpl<std::decay_t<F>, std::decay_t<Args>...>;
+
+template <typename F, typename... Args>
+using PayloadNamedRef = PayloadImpl<F, AddRefWrapperToRef<Args>...>;
 
 template <auto F, typename... Args>
 using PayloadArgsT = PayloadImplArgs<F, std::decay_t<Args>...>;
