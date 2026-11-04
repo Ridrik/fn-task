@@ -74,6 +74,10 @@ struct FunctionTraits<Ret (*)(Args...)> {
     using args_tuple = std::tuple<Args...>;
     using payload_tuple = PayloadTuple<Args...>;
     using func_ptr = Ret (*)(Args...);
+    using signature = Ret(Args...);
+    using signature_no_except = Ret(Args...) noexcept;
+    using base_signature = signature;
+    using base_signature_no_except = signature_no_except;
     static constexpr bool kIsNoExcept{false};
     static constexpr bool kIsConst{false};
     static constexpr bool kIsLValueRef{false};
@@ -87,6 +91,10 @@ struct FunctionTraits<Ret (*)(Args...) noexcept> {
     using args_tuple = std::tuple<Args...>;
     using payload_tuple = PayloadTuple<Args...>;
     using func_ptr = Ret (*)(Args...) noexcept;
+    using signature = Ret(Args...) noexcept;
+    using signature_no_except = Ret(Args...) noexcept;
+    using base_signature = Ret(Args...);
+    using base_signature_no_except = signature_no_except;
     static constexpr bool kIsNoExcept{true};
     static constexpr bool kIsConst{false};
     static constexpr bool kIsLValueRef{false};
@@ -172,6 +180,10 @@ DEFINE_FUNC_TRAITS_NOEXCEPT(const volatile&&, true, true, false, true);
         using args_tuple = std::tuple<Args...>;                               \
         using payload_tuple = PayloadTuple<Args...>;                          \
         using func_ptr = Ret (*)(Args...);                                    \
+        using signature = Ret(Args...) QUALIFIERS;                            \
+        using base_signature = Ret(Args...);                                  \
+        using base_signature_noexcept = Ret(Args...) noexcept;                \
+        using signature_no_except = Ret(Args...) QUALIFIERS noexcept;         \
         static constexpr bool kIsNoExcept{false};                             \
         static constexpr bool kIsConst{IS_CONST};                             \
         static constexpr bool kIsLValueRef{IS_LVAL};                          \
@@ -186,6 +198,10 @@ DEFINE_FUNC_TRAITS_NOEXCEPT(const volatile&&, true, true, false, true);
         using args_tuple = std::tuple<Args...>;                                        \
         using payload_tuple = PayloadTuple<Args...>;                                   \
         using func_ptr = Ret (*)(Args...) noexcept;                                    \
+        using signature = Ret(Args...) QUALIFIERS noexcept;                            \
+        using base_signature = Ret(Args...);                                           \
+        using base_signature_noexcept = Ret(Args...) noexcept;                         \
+        using signature_no_except = Ret(Args...) QUALIFIERS noexcept;                  \
         static constexpr bool kIsNoExcept{true};                                       \
         static constexpr bool kIsConst{IS_CONST};                                      \
         static constexpr bool kIsLValueRef{IS_LVAL};                                   \
@@ -234,78 +250,87 @@ struct AddConst {
     using Type = T const;
 };
 
+template <typename T>
+    requires(FunctionTraits<T>::kValid)
+struct AddNoExcept {
+    using Type = FunctionTraits<T>::signature_no_except;
+};
+
+template <typename Sig>
+concept IsBaseSignature = std::is_same_v<Sig, typename FunctionTraits<Sig>::base_signature>;
+
+template <typename Sig>
+concept IsBaseSignatureAndNoExcept =
+    std::is_same_v<Sig, typename FunctionTraits<Sig>::base_signature_noexcept>;
+
+template <typename SigBase, typename SigTarget>
+concept BaseSignatureMatches = std::is_same_v<typename FunctionTraits<SigBase>::base_signature,
+                                              typename FunctionTraits<SigTarget>::base_signature>;
+
+template <typename Sig>
+concept IsNoExcept = FunctionTraits<Sig>::kIsNoExcept;
+
+template <typename Sig>
+concept IsConst = FunctionTraits<Sig>::kIsConst;
+
+template <typename Sig>
+concept IsLvRefSignature = FunctionTraits<Sig>::kIsLValueRef;
+
+template <typename Sig>
+concept IsRvRefSignature = FunctionTraits<Sig>::kIsRValueRef;
+
+template <typename SigFrom, typename SigTo>
+concept SignatureConstConvertible = BaseSignatureMatches<SigFrom, SigTo> && IsConst<SigFrom> &&
+                                    IsConst<SigTo> && (IsNoExcept<SigFrom> || !IsNoExcept<SigTo>);
+
+template <typename SigFrom, typename SigTo>
+concept SignatureConstToNonConstConvertible =
+    BaseSignatureMatches<SigFrom, SigTo> && IsConst<SigFrom> && !IsConst<SigTo> &&
+    ((IsRvRefSignature<SigFrom> && IsRvRefSignature<SigTo>) ||
+     (!IsRvRefSignature<SigFrom> && IsLvRefSignature<SigTo>)) &&
+    (IsNoExcept<SigFrom> || !IsNoExcept<SigTo>);
+
+template <typename SigFrom, typename SigTo>
+concept AnySignatureConvertibleToItsBase =
+    IsBaseSignature<SigTo> && BaseSignatureMatches<SigTo, SigFrom>;
+
+template <typename SigFrom, typename SigTo>
+concept AnySignatureConvertibleToItsBaseNoExcept =
+    IsBaseSignatureAndNoExcept<SigTo> && BaseSignatureMatches<SigTo, SigFrom> &&
+    IsNoExcept<SigFrom>;
+
+template <typename SigFrom, typename SigTo>
+concept NoExceptMapsToThrowingSignature =
+    !IsNoExcept<SigTo> && std::is_same_v<SigFrom, typename AddNoExcept<SigTo>::Type>;
+
 template <typename SigFrom, typename SigTo>
 struct IsSignatureCompatible : std::false_type {};
 
 template <typename Sig>
 struct IsSignatureCompatible<Sig, Sig> : std::true_type {};
 
-template <typename SigFrom, typename SigBase>
-    requires(std::is_same_v<SigBase, typename FunctionTraits<SigBase>::base_signature> &&
-             std::is_same_v<SigBase, typename FunctionTraits<SigFrom>::base_signature>)
-struct IsSignatureCompatible<SigFrom, SigBase> : std::true_type {};
+template <typename SigFrom, typename SigTo>
+    requires(AnySignatureConvertibleToItsBase<SigFrom, SigTo>)
+struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
 
 // Any signature with noexcept maps to base signature (qualifier-less) with noexcept
-template <typename SigFrom, typename SigBase>
-    requires(std::is_same_v<SigBase, typename FunctionTraits<SigBase>::base_signature_noexcept> &&
-             std::is_same_v<SigBase, typename FunctionTraits<SigFrom>::base_signature_noexcept> &&
-             FunctionTraits<SigFrom>::kIsNoExcept)
-struct IsSignatureCompatible<SigFrom, SigBase> : std::true_type {};
+template <typename SigFrom, typename SigTo>
+    requires(AnySignatureConvertibleToItsBaseNoExcept<SigFrom, SigTo>)
+struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
 
-// Any signature with noexcept maps to signature (without noexcept)
-template <typename SigFrom>
-    requires(!FunctionTraits<SigFrom>::kIsNoExcept)
-struct IsSignatureCompatible<typename FunctionTraits<SigFrom>::signature_no_except, SigFrom>
-    : std::true_type {};
+template <typename SigFrom, typename SigTo>
+    requires(NoExceptMapsToThrowingSignature<SigFrom, SigTo>)
+struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
 
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const&, R(Args...) const> : std::true_type {};
+template <typename SigFrom, typename SigTo>
+    requires(!NoExceptMapsToThrowingSignature<SigFrom, SigTo> &&
+             SignatureConstConvertible<SigFrom, SigTo>)
+struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
 
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) const> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) const noexcept>
-    : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const, R(Args...) const&> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) const&> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) const & noexcept>
-    : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const&, R(Args...) &> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) &> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const & noexcept, R(Args...) & noexcept> : std::true_type {
-};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const, R(Args...) &> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) &> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const noexcept, R(Args...) & noexcept> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const&&, R(Args...) &&> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const && noexcept, R(Args...) &&> : std::true_type {};
-
-template <typename R, typename... Args>
-struct IsSignatureCompatible<R(Args...) const && noexcept, R(Args...) && noexcept>
-    : std::true_type {};
+template <typename SigFrom, typename SigTo>
+    requires(!NoExceptMapsToThrowingSignature<SigFrom, SigTo> &&
+             SignatureConstToNonConstConvertible<SigFrom, SigTo>)
+struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
 
 }  // namespace fn
 

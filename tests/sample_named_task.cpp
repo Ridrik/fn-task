@@ -1,19 +1,21 @@
-
 #include <functional>
 #include <string>
 
 #include <task/named_task.hpp>
 #include <task/task.hpp>
 
-bool foo(std::string /*name*/, std::string& /*data*/, int /*version*/) {
+bool foo(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
+         std::string& /*data*/, int /*version*/) {
     return false;
 }
 
-bool bar(std::string /*name*/, const std::string& /*data*/, int /*version*/) noexcept {
+bool bar(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
+         const std::string& /*data*/, int /*version*/) noexcept {
     return false;
 }
 
-bool bar_mimic(std::string /*name*/, const std::string& /*data*/, int /*version*/) {
+bool bar_mimic(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
+               const std::string& /*data*/, int /*version*/) {
     return false;
 }
 
