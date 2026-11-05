@@ -89,10 +89,17 @@ int main() {
     compileFunc4(1);
     compileFunc5(1);
     compileFunc45.getBoundArg<0>();
-    compileFunc5.getBoundArg<0>();
+    std::string& kekers = compileFunc5.getBoundArg<0>();
     using S1 = decltype(compileFunc5)::Signature;
     using S2 = decltype(compileFunc46)::Signature;
     compileFunc5 = compileFunc46;
     compileFunc46 = compileFunc5;
     std::cout << "str is " << str2 << '\n';
+
+    auto funcWithLiterals = fn::makeNamedTask([](const char* a) {}, "hi there");
+
+    funcWithLiterals.getBoundArg<0>();
+
+    auto nTask = fn::Task{funcWithLiterals};
+    static_assert(decltype(nTask)::matchesSignature<decltype(funcWithLiterals)::Signature>());
 }
