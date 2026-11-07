@@ -69,6 +69,19 @@ struct InvocationOptions<T> {
 template <typename T>
 using invocation_options_t = typename InvocationOptions<T>::type;
 
+template <typename T>
+struct CallableOptions {
+   private:
+    using U = std::remove_reference_t<T>;
+
+   public:
+    using type = std::conditional_t<std::is_const_v<U>, std::tuple<const U&, const U&&>,
+                                    std::tuple<U&&, U&, const U&&, const U&>>;
+};
+
+template <typename T>
+using callable_options_t = typename CallableOptions<T>::type;
+
 // ------------------------------------------------------------
 // Search machinery
 // ------------------------------------------------------------
@@ -184,6 +197,8 @@ constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
 
 template <typename F, typename... Args>
 inline constexpr bool is_compatible_invocable_v =  // NOLINT
+    detail::search<F, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid ||
+    detail::search<F&, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid ||
     detail::search<F&&, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid;
 
 template <typename... Ts>
@@ -479,6 +494,16 @@ struct PayloadTuple<T, Ts...> {
 template <std::size_t I, typename... Ts>
 struct PayloadTupleGetter;
 
+template <typename T>
+struct RefWrapToRef {
+    using Type = T;
+};
+
+template <typename T>
+struct RefWrapToRef<std::reference_wrapper<T>> {
+    using Type = T&;
+};
+
 template <typename T, typename... Ts>
 struct PayloadTupleGetter<0, T, Ts...> {
     static constexpr T& get(PayloadTuple<T, Ts...>& tuple) {
@@ -486,6 +511,15 @@ struct PayloadTupleGetter<0, T, Ts...> {
     }
 
     static constexpr const T& get(const PayloadTuple<T, Ts...>& tuple) {
+        return tuple.head;
+    }
+
+    static constexpr RefWrapToRef<T>::Type& getWrapToRef(PayloadTuple<T, Ts...>& tuple) {
+        return tuple.head;
+    }
+
+    static constexpr const RefWrapToRef<T>::Type& getWrapToRef(
+        const PayloadTuple<T, Ts...>& tuple) {
         return tuple.head;
     }
 };
@@ -499,6 +533,14 @@ struct PayloadTupleGetter<I, T, Ts...> {
 
     static constexpr decltype(auto) get(const PayloadTuple<T, Ts...>& tuple) {
         return PayloadTupleGetter<I - 1, Ts...>::get(tuple.tail);
+    }
+
+    static constexpr decltype(auto) getWrapToRef(PayloadTuple<T, Ts...>& tuple) {
+        return PayloadTupleGetter<I - 1, Ts...>::getWrapToRef(tuple.tail);
+    }
+
+    static constexpr decltype(auto) getWrapToRef(const PayloadTuple<T, Ts...>& tuple) {
+        return PayloadTupleGetter<I - 1, Ts...>::getWrapToRef(tuple.tail);
     }
 };
 

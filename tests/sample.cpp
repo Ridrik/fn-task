@@ -2,12 +2,12 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #include <task/task.hpp>
 
 #include "task/function_traits.hpp"
-#include "task/payload.hpp"
 
 bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) noexcept {
     return false;
@@ -15,8 +15,8 @@ bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) no
 
 struct A {
     int a{};
-    std::string operator()(double b) noexcept {
-        ++a;
+    std::string_view operator()(double& b) const&& noexcept {
+        //++a;
         return "";
     }
 };
@@ -29,23 +29,21 @@ int main() {
     A a{};
     double thisHere = 3.0;
     auto thisTask = fn::makeRefTask(a, 3.0);
-    a(2.0);
     thisTask();
     auto task = fn::makeTask(
-        [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
+        [](int&& age, const std::string& name) mutable noexcept {
+            std::cout << "Name: {}" << name << '\n';
+        },
         0);
-    static_assert(decltype(task)::matchesSignature<void(const std::string&) const & noexcept>());
+    static_assert(decltype(task)::matchesSignature<void(const std::string&) noexcept>());
     auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
     auto taskMimic2 = fn::Task<void(const std::string&)>{task};
-    auto taskMimic3 = fn::Task<void(const std::string&) &>{task};
-    auto taskMimic4 = fn::Task<void(const std::string&) & noexcept>{task};
-    taskMimic4("kekers");
     task("Hello World");
     // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
     auto task2 = fn::makeTask(
         [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
         std::string("Hello World"));
-    static_assert(decltype(task2)::matchesSignature<void(int) const & noexcept>());
+    static_assert(decltype(task2)::matchesSignature<void(int) const noexcept>());
     task2(10);
     auto str = std::string{"Hello World"};
     // You can capture by reference, equivalently to '&str' in lambda
@@ -54,16 +52,6 @@ int main() {
             std::cout << "Name: {}" << name.get() << '\n';
         },
         std::cref(str));  // Or std::ref if one wishes to mutate
-    using dasa = std::unwrap_ref_decay_t<decltype(std::cref(str))>;
-    static constexpr bool isWow =
-        std::is_invocable_v<decltype([](int age, std::reference_wrapper<const std::string> name) {
-                                std::cout << "Name: {}" << name.get() << '\n';
-                            }),
-                            int, dasa>;
-    task2_half(10);
-    str = "Hi";
-    task2_half(10);
-
     // You can still use lambdas alone with captured list
     // Note: fn::Task has similar deduction guides as to fn::makeTask
     auto task3 = fn::Task{
@@ -74,7 +62,7 @@ int main() {
     // If you want to allow heap (similar to std::function), you may use 'FlexTask' alias.
     auto task4 = fn::FlexTask<void(int)>{
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
-    auto flexTask = fn::makeFlexTask<void(int) const&>(
+    auto flexTask = fn::makeFlexTask<void(int) const>(
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; });
 
     // Or, have it on the stack -> way faster copies and moves if you frequently transfer tasks (e.g
@@ -103,6 +91,8 @@ int main() {
     // This would fail
     // auto _ =
     //    fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
+
+    using sig = fn::FunctionTraits<decltype([a = std::string{}]() {})>::signature;
 
     constexpr int kVersion{1};
     // fn::Task allows binding compile time callables, making it as lightweight as possible (without

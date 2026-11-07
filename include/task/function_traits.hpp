@@ -79,8 +79,8 @@ struct FunctionTraits<Ret (*)(Args...)> {
     using base_signature = signature;
     using base_signature_no_except = signature_no_except;
     static constexpr bool kIsNoExcept{false};
-    static constexpr bool kIsConst{false};
-    static constexpr bool kIsLValueRef{false};
+    static constexpr bool kIsConst{true};
+    static constexpr bool kIsLValueRef{true};
     static constexpr bool kIsRValueRef{false};
 };
 
@@ -96,8 +96,8 @@ struct FunctionTraits<Ret (*)(Args...) noexcept> {
     using base_signature = Ret(Args...);
     using base_signature_no_except = signature_no_except;
     static constexpr bool kIsNoExcept{true};
-    static constexpr bool kIsConst{false};
-    static constexpr bool kIsLValueRef{false};
+    static constexpr bool kIsConst{true};
+    static constexpr bool kIsLValueRef{true};
     static constexpr bool kIsRValueRef{false};
 };
 
@@ -306,29 +306,11 @@ concept NoExceptMapsToThrowingSignature =
 template <typename SigFrom, typename SigTo>
 struct IsSignatureCompatible : std::false_type {};
 
-template <typename Sig>
-struct IsSignatureCompatible<Sig, Sig> : std::true_type {};
-
 template <typename SigFrom, typename SigTo>
-    requires(AnySignatureConvertibleToItsBase<SigFrom, SigTo>)
-struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
-
-// Any signature with noexcept maps to base signature (qualifier-less) with noexcept
-template <typename SigFrom, typename SigTo>
-    requires(AnySignatureConvertibleToItsBaseNoExcept<SigFrom, SigTo>)
-struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
-
-template <typename SigFrom, typename SigTo>
-    requires(NoExceptMapsToThrowingSignature<SigFrom, SigTo>)
-struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
-
-template <typename SigFrom, typename SigTo>
-    requires(!NoExceptMapsToThrowingSignature<SigFrom, SigTo> &&
-             SignatureConstConvertible<SigFrom, SigTo>)
-struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
-
-template <typename SigFrom, typename SigTo>
-    requires(!NoExceptMapsToThrowingSignature<SigFrom, SigTo> &&
+    requires(std::is_same_v<SigFrom, SigTo> && AnySignatureConvertibleToItsBase<SigFrom, SigTo> ||
+             AnySignatureConvertibleToItsBaseNoExcept<SigFrom, SigTo> ||
+             NoExceptMapsToThrowingSignature<SigFrom, SigTo> ||
+             SignatureConstConvertible<SigFrom, SigTo> ||
              SignatureConstToNonConstConvertible<SigFrom, SigTo>)
 struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
 

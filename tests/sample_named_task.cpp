@@ -96,9 +96,12 @@ int main() {
     compileFunc46 = compileFunc5;
     std::cout << "str is " << str2 << '\n';
 
-    auto funcWithLiterals = fn::makeNamedTask([](const char* a) {}, "hi there");
+    auto str3 = std::string{"Hi!"};
+    auto funcWithLiterals = fn::makeRefNamedTask(
+        [](const char* a, int&& b, std::string& c) noexcept {}, "hi there", 3, str3);
 
-    funcWithLiterals.getBoundArg<0>();
+    funcWithLiterals.getBoundArg<2>();
+    using S = decltype(funcWithLiterals)::Signature;
 
     auto nTask = fn::Task{funcWithLiterals};
     static_assert(decltype(nTask)::matchesSignature<decltype(funcWithLiterals)::Signature>());

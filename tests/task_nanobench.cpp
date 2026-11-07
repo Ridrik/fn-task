@@ -22,7 +22,7 @@ namespace {
 
 constexpr std::string_view kSvk{"Hello World"};
 
-fn::TrivialTask32<std::uint64_t()> giveTask(int i) {
+fn::TrivialTask32<std::uint64_t() const> giveTask(int i) {
     switch (i) {
         case 0:
             return fn::Task{[](const std::uint64_t& e) -> std::uint64_t { return 1; },
@@ -35,8 +35,8 @@ fn::TrivialTask32<std::uint64_t()> giveTask(int i) {
     }
 }
 
-fn::TrivialTask16<std::uint64_t()> giveStaticTask() {
-    static fn::TrivialTask16<std::uint64_t()> f =
+fn::TrivialTask16<std::uint64_t() const> giveStaticTask() {
+    static fn::TrivialTask16<std::uint64_t() const> f =
         fn::Task{[](const std::uint64_t& e) -> std::uint64_t { return 1; }, std::uint64_t{}};
     return f;
 }
@@ -49,13 +49,13 @@ std::uint64_t staticTask2() {
     return 5;
 }
 
-fn::FlexTask16<std::uint64_t()> giveStaticFlexTask() {
-    static fn::FlexTask16<std::uint64_t()> f =
+fn::FlexTask16<std::uint64_t() const> giveStaticFlexTask() {
+    static fn::FlexTask16<std::uint64_t() const> f =
         fn::Task{[](const std::uint64_t& e) -> std::uint64_t { return 1; }, std::uint64_t{}};
     return f;
 }
 
-fn::Task32<std::uint64_t()> giveTaskWithCapture(int i) {
+fn::Task32<std::uint64_t() const> giveTaskWithCapture(int i) {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
     switch (i) {
         case 0:
@@ -83,7 +83,7 @@ fn::Task<std::uint64_t(), true, 32, false, true> giveTaskWithCaptureExt(int i) {
     }
 }
 
-fn::Task32<std::uint64_t()> giveStaticTaskWithCapture() {
+fn::Task32<std::uint64_t() const> giveStaticTaskWithCapture() {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
     static auto f =
         fn::Task{[](const std::shared_ptr<int>& ptr) -> std::uint64_t { return *ptr + 1; }, p};
@@ -97,7 +97,7 @@ fn::FlexTask16<std::uint64_t()> giveStaticFlexTaskWithCapture() {
     return f;
 }
 
-fn::Task64<std::uint64_t()> giveTaskWithMoreCapture(int i) {
+fn::Task64<std::uint64_t() const> giveTaskWithMoreCapture(int i) {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
     void* node{nullptr};
     std::string_view strView{"hello"};
@@ -117,7 +117,7 @@ fn::Task64<std::uint64_t()> giveTaskWithMoreCapture(int i) {
     }
 }
 
-fn::FlexTask<std::uint64_t()> giveFlexTaskWithMoreCapture(int i) {
+fn::FlexTask<std::uint64_t() const> giveFlexTaskWithMoreCapture(int i) {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
     void* node{nullptr};
     std::string_view strView{"hello"};
@@ -158,7 +158,7 @@ fn::Task<std::uint64_t(), true, 64, false, true> giveTaskWithMoreCaptureExt(int 
     }
 }
 
-fn::Task64<std::uint64_t()> giveStaticTaskWithMoreCapture() {
+fn::Task64<std::uint64_t() const> giveStaticTaskWithMoreCapture() {
     static auto f = fn::makeTask(
         [](const std::shared_ptr<int>& ptr, void* const& n,
            const std::string_view& s) -> std::uint64_t {
@@ -168,7 +168,7 @@ fn::Task64<std::uint64_t()> giveStaticTaskWithMoreCapture() {
     return f;
 }
 
-fn::Task64<std::uint64_t()> giveStaticTaskWithMoreCaptureAsLambda() {
+fn::Task64<std::uint64_t() const> giveStaticTaskWithMoreCaptureAsLambda() {
     static auto f = fn::Task{[p = std::make_shared<int>(0), strView = std::string_view{"hello"},
                               node = static_cast<void*>(nullptr)]() -> std::uint64_t {
         return *p + 1 + strView.size() + static_cast<std::uint64_t>(node != nullptr);
@@ -394,12 +394,12 @@ void doBenchFunctionsFetchAndRun() {
     b.performanceCounters(true);
     doRunFetchRunInstance<std::function<std::uint64_t()>, giveStaticFuncWithMoreCapture>(
         "std::function that captures std::shared_ptr, node pointer and string view", b);
-    doRunFetchRunInstance<fn::Task64<std::uint64_t()>, giveStaticTaskWithMoreCapture>(
+    doRunFetchRunInstance<fn::Task64<std::uint64_t() const>, giveStaticTaskWithMoreCapture>(
         "Task - Base fn::Task64 from Base fn::Task64 that captures std::shared_ptr, node pointer "
         "and "
         "string view",
         b);
-    doRunFetchRunInstance<fn::Task64<std::uint64_t()>, giveStaticTaskWithMoreCaptureAsLambda>(
+    doRunFetchRunInstance<fn::Task64<std::uint64_t() const>, giveStaticTaskWithMoreCaptureAsLambda>(
         "Task - Base fn::Task64 from Base fn::Task64 that captures std::shared_ptr, node pointer "
         "and "
         "string view but inside a lambda (e.g copies the lambda with these captures)",
@@ -424,21 +424,21 @@ void doBenchFunctionsFetchAndRun() {
         b);
     doRunFetchRunInstance<std::function<std::uint64_t()>, giveStaticFuncWithCapture>(
         "std::function that captures std::shared_ptr", b);
-    doRunFetchRunInstance<fn::Task32<std::uint64_t()>, giveStaticTaskWithCapture>(
+    doRunFetchRunInstance<fn::Task32<std::uint64_t() const>, giveStaticTaskWithCapture>(
         "Task - Base fn::Task32 from Base fn::Task32 that captures std::shared_ptr", b);
     doRunFetchRunInstance<fn::FlexTask16<std::uint64_t()>, giveStaticFlexTaskWithCapture>(
         "Task - fn::FlexTask16 from fn::FlexTask16 that captures std::shared_ptr", b);
     doRunFetchRunInstance<std::function<std::uint64_t()>, giveStaticFunc>(
         "std::function with trivial captures", b);
-    doRunFetchRunInstance<fn::Task16<std::uint64_t()>, giveStaticTask>(
+    doRunFetchRunInstance<fn::Task16<std::uint64_t() const>, giveStaticTask>(
         "Task - Base Task16 from fn::TrivialTask16 with trivial captures", b);
-    doRunFetchRunInstance<fn::Task<std::uint64_t(), true, 256, true>, giveStaticTask>(
+    doRunFetchRunInstance<fn::Task<std::uint64_t() const, true, 256, true>, giveStaticTask>(
         "Task - Large 256 bytes stack (unneeded), from fn::TrivialTask16 with trivial captures", b);
-    doRunFetchRunInstance<fn::TrivialTask16<std::uint64_t()>, giveStaticTask>(
+    doRunFetchRunInstance<fn::TrivialTask16<std::uint64_t() const>, giveStaticTask>(
         "Task - fn::TrivialTask16 from fn::TrivialTask16 with trivial captures", b);
-    doRunFetchRunInstance<fn::FlexTask16<std::uint64_t()>, giveStaticTask>(
+    doRunFetchRunInstance<fn::FlexTask16<std::uint64_t() const>, giveStaticTask>(
         "Task - fn::FlexTask16 from fn::TrivialTask16 with trivial captures", b);
-    doRunFetchRunInstance<fn::FlexTask16<std::uint64_t()>, giveStaticFlexTask>(
+    doRunFetchRunInstance<fn::FlexTask16<std::uint64_t() const>, giveStaticFlexTask>(
         "Task - fn::FlexTask16 from fn::FlexTask16 with trivial captures", b);
     doRunFetchRunInstanceTag<fn::StaticTrivialTask<std::uint64_t()>, staticTask, staticTask2>(
         "Static fn::Trivial Task (no buffer) - fetching static function and running it (no "
@@ -463,10 +463,10 @@ void doBenchFunctionsJustRun() {
     b.performanceCounters(true);
     std::function<std::uint64_t()> f1 = giveFuncWithMoreCapture(0);
     std::function<std::uint64_t()> f2 = giveFunc(0);
-    fn::Task64<std::uint64_t()> task1 = giveTask(0);
-    fn::Task64<std::uint64_t()> task2 = giveTaskWithMoreCapture(0);
+    fn::Task64<std::uint64_t() const> task1 = giveTask(0);
+    fn::Task64<std::uint64_t() const> task2 = giveTaskWithMoreCapture(0);
     const auto flexTask = giveFlexTaskWithMoreCapture(0);
-    fn::TrivialTask64<std::uint64_t()> task3 = giveTask(0);
+    fn::TrivialTask64<std::uint64_t() const> task3 = giveTask(0);
     fn::Task<std::uint64_t(), true, 32, false, true> task4 = giveTaskWithCaptureExt(0);
     fn::Task<std::uint64_t(), true, 64, false, true> task5 = giveTaskWithMoreCaptureExt(0);
     b.run("std::function that captures std::shared_ptr, node pointer and string view",
@@ -522,9 +522,9 @@ void doBenchFunctions() {
     b.performanceCounters(true);
     std::function<std::uint64_t()> f1;
     std::function<std::uint64_t()> f2;
-    fn::Task32<std::uint64_t()> task1;
-    fn::Task64<std::uint64_t()> task2;
-    fn::TrivialTask64<std::uint64_t()> task3;
+    fn::Task32<std::uint64_t() const> task1;
+    fn::Task64<std::uint64_t() const> task2;
+    fn::TrivialTask64<std::uint64_t() const> task3;
     fn::Task<std::uint64_t(), true, 32, false, true> task4;
     fn::Task<std::uint64_t(), true, 64, false, true> task5;
     b.run("std::function that captures std::shared_ptr, node pointer and string view",
@@ -582,7 +582,7 @@ void doCompareOrder() {
         return static_cast<bool>(a + b);
     };
     const auto f = fn::makeImmutTask<kFunc>(false);
-    const auto f2 = fn::makeImmutTask<bool(int, bool) const&, kFunc>(std::string_view{});
+    const auto f2 = fn::makeImmutTask<bool(int, bool) const, kFunc>(std::string_view{});
     b.run("Normal order", [&] { ankerl::nanobench::doNotOptimizeAway(f({}, 2)); });
     b.run("Reserve Order", [&] { ankerl::nanobench::doNotOptimizeAway(f2(0, false)); });
 }
