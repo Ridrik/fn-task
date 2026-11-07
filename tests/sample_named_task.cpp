@@ -1,11 +1,13 @@
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <string>
 
 #include <task/named_task.hpp>
 #include <task/task.hpp>
 
 #include "task/function_traits.hpp"
+#include "task/payload.hpp"
 
 bool foo(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
          std::string& /*data*/, int /*version*/) {
@@ -28,12 +30,12 @@ int main() {
     auto task2 = fn::NamedTask([](int, double) {}, 2.0);
 
     float c{5.0F};
-
     auto fTask = fn::makeRefNamedTask([](int a, float kek) {}, c);
     auto fTask2 = fTask;
     fTask = fTask2;
 
-    const auto& theDouble = task.getBoundArg<0>();
+    const auto& doubleArg = task.getBoundArg<0>();
+
     // task = task2; // Error, even though they look identical, each lambda internally has a
     // different compiler generated type.
 
@@ -73,13 +75,9 @@ int main() {
     compileFunc(str, 2);
     auto compileFunc2 = fn::makeNamedTask<foo>(3);
     compileFunc2("David", str);
-    ;
     auto compileFunc3 = fn::makeNamedTask<foo>("David", std::ref(str));  // Captures as reference
     compileFunc3(2);
 
-    // const auto compileFunc4 = fn::makeNamedTask<foo>("David", std::ref(str));
-    // compileFunc4(2); // This fails, since namedTask is marked const, and captured argument needs
-    // to be used as std::string&
     // This works
     auto str2 = std::string{"Hi There"};
     const auto compileFunc4 = fn::makeRefNamedTask<bar>(str2);
@@ -100,7 +98,7 @@ int main() {
     auto funcWithLiterals = fn::makeRefNamedTask(
         [](const char* a, int&& b, std::string& c) noexcept {}, "hi there", 3, str3);
 
-    funcWithLiterals.getBoundArg<2>();
+    std::string& strArg = funcWithLiterals.getBoundArg<2>();
     using S = decltype(funcWithLiterals)::Signature;
 
     auto nTask = fn::Task{funcWithLiterals};

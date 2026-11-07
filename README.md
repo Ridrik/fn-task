@@ -11,6 +11,7 @@ In addition, `fn::NamedTask` is the opposite: a typed callable. Its type is dire
 
 ## Key Features
 * Captures arguments thrown in following the inner callable, in an extensive and automatic way, either bind_front or bind_back.
+* Allows constness, referencing (&, &&) as well as `noexcept` qualifications to its signature, which are enforced in the way that the callable and captured arguments are used.
 * Extensive user-control: You control the stack buffer, mutability, heap-allowance, copiability, etc.
 * Immutable, stack-only by default. Allow heap with `fn::FlexTask` or by manually selecting the boolean template. Similar for mutable with `fn::TaskMut`, etc.
 * Allows taking references, similar to capturing lambda. Simply use std::ref or std::cref on a captured argument, storing a reference instead.
@@ -31,7 +32,7 @@ include(FetchContent)
 FetchContent_Declare(
     task
     GIT_REPOSITORY [https://github.com/Ridrik/fn-task.git](https://github.com/Ridrik/fn-task.git)
-    GIT_TAG v1.1.3
+    GIT_TAG v1.2.0
 )
 FetchContent_MakeAvailable(task)
 
@@ -63,17 +64,28 @@ int main() {
     // Task takes a callable and optionally capture arguments, which are expected to be part of the
     // erased callable. It automatically detects the task signature, mutability, copiability, and
     // size. Here, integer is captured (bind_front like), hence signature is Task<void(std::string)>
-    auto task =
-        fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; }, 0);
-    static_assert(decltype(task)::matchesSignature<void(std::string)>());
+    auto task = fn::makeTask(
+        [](int&& age, const std::string& name) mutable noexcept {
+            std::cout << "Name: {}" << name << '\n';
+        },
+        0);
+    static_assert(decltype(task)::matchesSignature<void(const std::string&) noexcept>());
+    auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
+    auto taskMimic2 = fn::Task<void(const std::string&)>{task};
     task("Hello World");
     // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
-    auto task2 =
-        fn::makeTask([](int age, std::string name) { std::cout << "Name: {}" << name << '\n'; },
-                     std::string("Hello World"));
-    static_assert(decltype(task2)::matchesSignature<void(int)>());
+    auto task2 = fn::makeTask(
+        [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
+        std::string("Hello World"));
+    static_assert(decltype(task2)::matchesSignature<void(int) const noexcept>());
     task2(10);
-
+    auto str = std::string{"Hello World"};
+    // You can capture by reference, equivalently to '&str' in lambda
+    auto task2_half = fn::makeTask(
+        [](int age, std::reference_wrapper<const std::string> name) {
+            std::cout << "Name: {}" << name.get() << '\n';
+        },
+        std::cref(str));  // Or std::ref if one wishes to mutate
     // You can still use lambdas alone with captured list
     // Note: fn::Task has similar deduction guides as to fn::makeTask
     auto task3 = fn::Task{
@@ -84,7 +96,7 @@ int main() {
     // If you want to allow heap (similar to std::function), you may use 'FlexTask' alias.
     auto task4 = fn::FlexTask<void(int)>{
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
-    auto flexTask = fn::makeFlexTask<void(int)>(
+    auto flexTask = fn::makeFlexTask<void(int) const>(
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; });
 
     // Or, have it on the stack -> way faster copies and moves if you frequently transfer tasks (e.g
@@ -92,39 +104,65 @@ int main() {
     auto task5 = fn::Task64<void(int)>{
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
 
-    // auto _ = fn::Task64<void(int&)>{
-    //    [name = std::string("Hello World")](int& age) mutable { name = "Hi"; }}; // Error,
+    auto _ = fn::Task64<void(int&) &>{
+        [name = std::string("Hello World")](int& age) mutable { name = "Hi"; }};  // Error,
     //    fn::Task are immutable by default
 
     // auto _ = fn::Task64<void(int&)>{[](int& age, std::string& name) mutable { name = "Hi"; },
     //                                 std::string("Hello World")}; Similar error
 
     // This works
-    auto _ = fn::TaskMut<void(int&)>{[](int& age, std::string& name) mutable { name = "Hi"; },
-                                     std::string("Hello World")};
+    auto _ = fn::Task64<void(int&) &>{[](int& age, std::string& name) mutable { name = "Hi"; },
+                                      std::string("Hello World")};
 
     // Deducts move only tasks
     auto uniqueTask = fn::makeTask([](std::unique_ptr<int>& a) { return *a; },
                                    std::make_unique<int>(5));  // Makes it mutable
     // OR
-    auto _ = fn::UniqueTask<int()>{[](const std::unique_ptr<int>& a) { return *a; },
-                                   std::make_unique<int>(5)};
+    auto uniqueTask2 = fn::UniqueTask<int()>{[](const std::unique_ptr<int>& a) { return *a; },
+                                             std::make_unique<int>(5)};
     static_assert(!decltype(uniqueTask)::isCopyable());
     // This would fail
     // auto _ =
     //    fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
 
+    using sig = fn::FunctionTraits<decltype([a = std::string{}]() {})>::signature;
+
     constexpr int kVersion{1};
     // fn::Task allows binding compile time callables, making it as lightweight as possible (without
     // captured arguments, no buffer even exists!)
-    auto bindTask = fn::makeTask<foo>(kVersion);
+    auto bindTask = fn::makeTask<foo>();
+    static_assert(
+        decltype(bindTask)::matchesSignature<bool(const std::string&, std::string&, int) const &
+                                             noexcept>());
     auto data = std::string{"Some data"};
-    bindTask("My name", data);
+    bindTask("My name", data, 1);
+
+    // Gets deducted as void(int) const, since lambdas are usually either const or mutable in
+    // qualifications
+    auto taskk = fn::Task{[](int a, double b) {}, 3.0};
+
+    class Wrapper {
+       public:
+        std::string str;
+
+        std::string operator()(std::size_t& s) && {
+            s += str.size();
+            return std::move(str);
+        }
+    };
+
+    // operator itself is &&, while captured argument std::size_t is taken as '&', hence signature
+    // is a cv-less std::string()
+    auto taskk2 = fn::makeTask(Wrapper{"Hello World"}, std::size_t{5});
+    static_assert(decltype(taskk2)::matchesSignature<std::string()>());
+    std::cout << "Message is " << taskk2() << '\n';
 }
 
 ```
 
-### `fn::NamedTask`
+
+### `Named Task`
 
 ```cpp
 #include <string>
@@ -144,6 +182,14 @@ int main() {
     // Make NamedTask with deduction guides, similarly to fn::Task/fn::makeTask
     auto task = fn::NamedTask([](int, double) {}, 2.0);
     auto task2 = fn::NamedTask([](int, double) {}, 2.0);
+
+    float c{5.0F};
+    auto fTask = fn::makeRefNamedTask([](int a, float kek) {}, c);
+    auto fTask2 = fTask;
+    fTask = fTask2;
+
+    const auto& doubleArg = task.getBoundArg<0>();
+
     // task = task2; // Error, even though they look identical, each lambda internally has a
     // different compiler generated type.
 
@@ -169,8 +215,13 @@ int main() {
         static_cast<void*>(mPtr));
     // Even more simply (Use this)
     auto subTask = fn::makeThisTask(
-        [](Payload payload, void* ptr) { auto& self = *static_cast<MyModule*>(ptr); }, mPtr);
-    static_assert(decltype(subscriberTask)::matchesSignature<void(Payload)>());
+        [](Payload payload, void* ptr) noexcept { auto& self = *static_cast<MyModule*>(ptr); },
+        mPtr);
+    auto subTask2 = fn::makeThisTask(
+        [](Payload payload, void* ptr) noexcept { auto& self = *static_cast<MyModule*>(ptr); },
+        mPtr);
+    subTask2 = subTask;
+    static_assert(decltype(subTask)::matchesSignature<void(Payload) const & noexcept>());
     subscriberTask(5.5);
 
     auto compileFunc = fn::makeNamedTask<foo>("David");
@@ -178,18 +229,53 @@ int main() {
     compileFunc(str, 2);
     auto compileFunc2 = fn::makeNamedTask<foo>(3);
     compileFunc2("David", str);
-
     auto compileFunc3 = fn::makeNamedTask<foo>("David", std::ref(str));  // Captures as reference
     compileFunc3(2);
 
-    // const auto compileFunc4 = fn::makeNamedTask<foo>("David", std::ref(str));
-    // compileFunc4(2); // This fails, since namedTask is marked const, and captured argument needs
-    // to be used as std::string&
     // This works
-    const auto compileFunc4 = fn::makeNamedTask<bar>("David", std::cref(str));
-    compileFunc4(2);
+    auto str2 = std::string{"Hi There"};
+    const auto compileFunc4 = fn::makeRefNamedTask<bar>(str2);
+    const auto compileFunc45 = fn::makeNamedTask<bar>(std::ref(str2));
+    auto compileFunc46 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), std::ref(str2));
+    auto compileFunc5 = fn::makeRefNamedTask(fn::toFuncPtr<bar_mimic>(), str2);
+    compileFunc4(1);
+    compileFunc5(1);
+    compileFunc45.getBoundArg<0>();
+    std::string& kekers = compileFunc5.getBoundArg<0>();
+    using S1 = decltype(compileFunc5)::Signature;
+    using S2 = decltype(compileFunc46)::Signature;
+    compileFunc5 = compileFunc46;
+    compileFunc46 = compileFunc5;
+    std::cout << "str is " << str2 << '\n';
+
+    auto str3 = std::string{"Hi!"};
+    auto funcWithLiterals = fn::makeRefNamedTask(
+        [](const char* a, int&& b, std::string& c) noexcept {}, "hi there", 3, str3);
+
+    std::string& strArg = funcWithLiterals.getBoundArg<2>();
+    using S = decltype(funcWithLiterals)::Signature;
+
+    auto nTask = fn::Task{funcWithLiterals};
+    static_assert(decltype(nTask)::matchesSignature<decltype(funcWithLiterals)::Signature>());
 }
 ```
+
+---
+
+### Signature qualifiers and its relation to the Task object itself, compared with standard type-erased callables
+
+**Note** Signature qualfiers are enforced to the inner captured arguments, but they are not forward to the operator() of the task itself. This is an intentional design choice to decouple Task reassignment from mutability of bound data itself. For instance:
+
+```cpp
+const fn::NamedTask<void()>& reftask = task;
+refTask();
+```
+
+is allowed, even though the signature is non-const. With `std::copyable_function`, such an operation wouldn't be allowed, as the standard forwards qualifiers directly to the wrapper's operator(). The difference allows `fn::Task` to distinguish between side-effects of its bound arguments (given its signature) from reassignment itself, which belongs to the wrapper itself.
+
+**Author's reasoning:**
+
+"In a typical class, both const and non-const methods may exist, and a const object still allows for const methods to be called. Furthermore, typical classes offer all kinds of different possible functionalities (like handlers, subscribers, events, etc...) which need not necessarily public methods. In contrast, a type erased callable's main purpose is to be invoked. Making a const callable of a non-const signature un-invokable severily limits its use in real-world situations. On the other hand, having signature express to users whether internal data may mutate or not is clear enough, allowing for constness of the wrapper itself to be independent and instead made to restrict `fn::Task`/`fn::NamedTask` reassignments."
 
 ---
 ## Benchmarks

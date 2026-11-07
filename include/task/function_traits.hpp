@@ -307,7 +307,7 @@ template <typename SigFrom, typename SigTo>
 struct IsSignatureCompatible : std::false_type {};
 
 template <typename SigFrom, typename SigTo>
-    requires(std::is_same_v<SigFrom, SigTo> && AnySignatureConvertibleToItsBase<SigFrom, SigTo> ||
+    requires(std::is_same_v<SigFrom, SigTo> || AnySignatureConvertibleToItsBase<SigFrom, SigTo> ||
              AnySignatureConvertibleToItsBaseNoExcept<SigFrom, SigTo> ||
              NoExceptMapsToThrowingSignature<SigFrom, SigTo> ||
              SignatureConstConvertible<SigFrom, SigTo> ||

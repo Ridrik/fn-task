@@ -1,3 +1,34 @@
+## v1.2.0 - November 2026
+### Added
+- Added qualifiers on signature, such as 'const', l-value/r-value reference, and noexcept, alongside updated deduction guides when making tasks.
+Example:
+ ```cpp
+    // Gets deducted as void(int) const, since lambdas are usually either const or mutable in
+    // qualifications
+    auto task = fn::Task{[](int a, double b) {}, 3.0};
+
+    class Wrapper {
+       public:
+        std::string str;
+
+        std::string operator()(std::size_t& s) && {
+            s += str.size();
+            return std::move(str);
+        }
+    };
+
+    // operator itself is &&, while captured argument std::size_t is taken as '&', hence signature
+    // is a cv-less std::string()
+    auto task2 = fn::makeTask(Wrapper{"Hello World"}, std::size_t{5});
+    static_assert(decltype(task2)::matchesSignature<std::string()>());
+    std::cout << "Message is " << task2() << '\n';
+ ```
+- Added reference option for `fn::NamedTask`, behaving similarly to `fn::Task`. See `fn::makeRefNamedTask`.
+- Added ability to retrieve bound arguments from `fn::NamedTask`. Fetch it via `fn::NamedTask::getBoundArgs<I>()`.
+
+### Removed
+- Removed 'Mutable' template option, given that mutability is implicitly part of the signature with this new update and given the changes above.
+
 ## v1.1.3 - March 2026
 ### Added
 - Explicit named task for 'this' pointer as `void*`, via `fn::makeThisTask`. Example:

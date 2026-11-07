@@ -2573,13 +2573,13 @@ template <typename F, typename... BoundArgs>
 struct TaskTypeDeductor {
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::decay_t<F>>;
-        using AllArgs = typename Traits::args_tuple;
+        using AllArgs = Traits::args_tuple;
 
         static constexpr std::size_t kRemainingCount =
             std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
 
-        using SlicedTuple = typename slice_first<kRemainingCount, AllArgs>::type;
-        using SlicedTupleReverse = typename slice_last<kRemainingCount, AllArgs>::type;
+        using SlicedTuple = slice_first<kRemainingCount, AllArgs>::type;
+        using SlicedTupleReverse = slice_last<kRemainingCount, AllArgs>::type;
 
         template <typename Ret, typename Tuple, typename TupleReverse>
         struct rebuild;
@@ -2692,7 +2692,7 @@ struct TaskTypeDeductor {
     static constexpr auto kPayloadSize = sizeof(PayloadType);
     static constexpr auto kRefPayloadSize = sizeof(PayloadRefType);
     using TypeTraits = StripBoundArgs::type;
-    using Signature = typename TypeTraits::Signature;
+    using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
     template <bool Copyable = kCopyable, std::size_t N = kPayloadSize,
@@ -2718,8 +2718,8 @@ struct TaskTypeDeductorAuto {
         static constexpr std::size_t kRemainingCount =
             std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
 
-        using SlicedTuple = typename slice_first<kRemainingCount, AllArgs>::type;
-        using SlicedTupleReverse = typename slice_last<kRemainingCount, AllArgs>::type;
+        using SlicedTuple = slice_first<kRemainingCount, AllArgs>::type;
+        using SlicedTupleReverse = slice_last<kRemainingCount, AllArgs>::type;
 
         template <typename Ret, typename Tuple, typename TupleReverse>
         struct rebuild;
@@ -2832,11 +2832,10 @@ struct TaskTypeDeductorAuto {
     static constexpr bool kCanUseTrivial = TrivialUse<PayloadType>::value;
     static constexpr bool kRefCanUseTrivial = TrivialUse<PayloadRefType>::value;
     static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    static constexpr auto kRefPayloadSize = sizeof...(BoundArgs) > 0
-                                                ? sizeof(PayloadImplArgs<F, BoundArgs...>)
-                                                : 0;
+    static constexpr auto kRefPayloadSize =
+        sizeof...(BoundArgs) > 0 ? sizeof(PayloadImplArgs<F, BoundArgs...>) : 0;
     using TypeTraits = StripBoundArgs::type;
-    using Signature = typename TypeTraits::Signature;
+    using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
     template <bool Copyable = kCopyable, std::size_t N = kPayloadSize,

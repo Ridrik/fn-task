@@ -103,4 +103,24 @@ int main() {
                                              noexcept>());
     auto data = std::string{"Some data"};
     bindTask("My name", data, 1);
+
+    // Gets deducted as void(int) const, since lambdas are usually either const or mutable in
+    // qualifications
+    auto taskk = fn::Task{[](int a, double b) {}, 3.0};
+
+    class Wrapper {
+       public:
+        std::string str;
+
+        std::string operator()(std::size_t& s) && {
+            s += str.size();
+            return std::move(str);
+        }
+    };
+
+    // operator itself is &&, while captured argument std::size_t is taken as '&', hence signature
+    // is a cv-less std::string()
+    auto taskk2 = fn::makeTask(Wrapper{"Hello World"}, std::size_t{5});
+    static_assert(decltype(taskk2)::matchesSignature<std::string()>());
+    std::cout << "Message is " << taskk2() << '\n';
 }
