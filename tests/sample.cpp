@@ -33,7 +33,7 @@ int main() {
     auto thisTask = fn::makeRefTask(a, 3.0);
     thisTask();
     auto task = fn::makeTask(
-        [](int&& age, const std::string& name) mutable noexcept {
+        [](int&& /*age*/, const std::string& name) mutable noexcept {  // NOLINT
             std::cout << "Name: {}" << name << '\n';
         },
         0);

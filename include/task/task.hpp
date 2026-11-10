@@ -24,27 +24,27 @@ struct AlwaysFalse : std::false_type {};
 
 enum class Op : std::uint8_t { kDestroy, kClone, kMove, kAssign, kMoveAssign };
 
-template <std::size_t Alignment, std::size_t N, bool IsTrivial, bool Extended = false,
+template <Alignment alignment, InlineSize size, Triviality t, bool Extended = false,
           typename Signature = void()>
 struct Storage;
 
-template <typename Signature, typename Task = int, std::size_t N = 0>
+template <typename Signature, typename Task = int, InlineSize size = 0>
 struct InvokerBuilder;
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) &, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) &, Task, size> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -53,14 +53,14 @@ struct InvokerBuilder<Ret(Args...) &, Task, N> {
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<F&, Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
                 }
             } else if constexpr (std::is_invocable_v<F&, std::unwrap_ref_decay_t<BoundArgs>&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s))
@@ -81,7 +81,7 @@ struct InvokerBuilder<Ret(Args...) &, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -90,7 +90,7 @@ struct InvokerBuilder<Ret(Args...) &, Task, N> {
                 return F(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<decltype(F), Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
@@ -98,7 +98,7 @@ struct InvokerBuilder<Ret(Args...) &, Task, N> {
             } else if constexpr (std::is_invocable_v<decltype(F),
                                                      std::unwrap_ref_decay_t<BoundArgs>&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s))
@@ -122,7 +122,7 @@ struct InvokerBuilder<Ret(Args...) &, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -136,7 +136,7 @@ struct InvokerBuilder<Ret(Args...) &, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -147,20 +147,20 @@ struct InvokerBuilder<Ret(Args...) &, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) & noexcept, Task, size> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) noexcept -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -169,14 +169,14 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<F&, Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
                 }
             } else if constexpr (std::is_invocable_v<F&, std::unwrap_ref_decay_t<BoundArgs>&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s))
@@ -197,7 +197,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -206,7 +206,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
                 return F(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<decltype(F), Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
@@ -214,7 +214,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
             } else if constexpr (std::is_invocable_v<decltype(F),
                                                      std::unwrap_ref_decay_t<BoundArgs>&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s))
@@ -237,7 +237,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -251,7 +251,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -262,20 +262,20 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) const&, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) const&, Task, size> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -288,7 +288,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
                                   const F&, Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>&...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -300,7 +300,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>&...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -323,7 +323,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -336,7 +336,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
                                   decltype(F), Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>&...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -348,7 +348,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>&...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -373,7 +373,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -387,7 +387,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -398,20 +398,20 @@ struct InvokerBuilder<Ret(Args...) const&, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) const & noexcept, Task, size> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) noexcept -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -424,7 +424,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
                                   const F&, Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>&...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -436,7 +436,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>&...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -459,7 +459,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -472,7 +472,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
                                   decltype(F), Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>&...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -484,7 +484,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>&...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -508,7 +508,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
         };
     }
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -522,7 +522,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -533,20 +533,20 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) const, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) const, Task, size> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -559,7 +559,7 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
                                   const F, Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -571,7 +571,7 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -594,7 +594,7 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -607,7 +607,7 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
                                   decltype(F), Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -619,7 +619,7 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -644,7 +644,7 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -658,7 +658,7 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -669,20 +669,20 @@ struct InvokerBuilder<Ret(Args...) const, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) const noexcept, Task, size> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) noexcept -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -695,7 +695,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
                                   const F, Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -707,7 +707,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -730,7 +730,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -743,7 +743,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
                                   decltype(F), Args...,
                                   const std::unwrap_ref_decay_t<
                                       typename RefToConstRef<BoundArgs>::Type>...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
                     } else {
@@ -755,7 +755,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
                                          const std::unwrap_ref_decay_t<
                                              typename RefToConstRef<BoundArgs>::Type>...,
                                          Args...>) {
-                    if constexpr (sizeof(PayloadType) <= N) {
+                    if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
                     } else {
@@ -779,7 +779,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
         };
     }
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -793,7 +793,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -804,20 +804,20 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) &&, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) &&, Task, size> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -826,7 +826,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
                 return std::move(*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<F&&, Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -835,7 +835,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
                 }
             } else if constexpr (std::is_invocable_v<F&&, std::unwrap_ref_decay_t<BoundArgs>&&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -857,7 +857,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -866,7 +866,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
                 return F(std::forward<Args>(args)...);
             } else if constexpr (std::is_invocable_v<decltype(F), Args...,
                                                      std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -876,7 +876,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
             } else if constexpr (std::is_invocable_v<decltype(F),
                                                      std::unwrap_ref_decay_t<BoundArgs>&&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -900,7 +900,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -914,7 +914,7 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -925,20 +925,20 @@ struct InvokerBuilder<Ret(Args...) &&, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) noexcept -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -950,7 +950,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
                 static_assert(std::is_nothrow_invocable_v<F&&, Args...,
                                                           std::unwrap_ref_decay_t<BoundArgs>&&...>,
                               "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -963,7 +963,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
                     std::is_nothrow_invocable_v<F&&, std::unwrap_ref_decay_t<BoundArgs>&&...,
                                                 Args...>,
                     "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -985,7 +985,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -997,7 +997,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
                 static_assert(std::is_nothrow_invocable_v<decltype(F), Args...,
                                                           std::unwrap_ref_decay_t<BoundArgs>&&...>,
                               "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -1011,7 +1011,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
                     std::is_nothrow_invocable_v<decltype(F),
                                                 std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>,
                     "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -1035,7 +1035,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1049,7 +1049,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1060,20 +1060,20 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) const&&, Task, size> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1084,7 +1084,7 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
             } else if constexpr (std::is_invocable_v<
                                      const F&&, Args...,
                                      const std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -1094,7 +1094,7 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
             } else if constexpr (std::is_invocable_v<const F&&,
                                                      const std::unwrap_ref_decay_t<BoundArgs>&&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -1116,7 +1116,7 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1126,7 +1126,7 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
             } else if constexpr (std::is_invocable_v<
                                      decltype(F), Args...,
                                      const std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -1136,7 +1136,7 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
             } else if constexpr (std::is_invocable_v<decltype(F),
                                                      const std::unwrap_ref_decay_t<BoundArgs>&&...,
                                                      Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -1160,7 +1160,7 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1174,7 +1174,7 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1185,20 +1185,20 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) noexcept -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1212,7 +1212,7 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
                     std::is_nothrow_invocable_v<const F&&, Args...,
                                                 const std::unwrap_ref_decay_t<BoundArgs>&&...>,
                     "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -1226,7 +1226,7 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
                     std::is_nothrow_invocable_v<
                         const F&&, const std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>,
                     "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -1248,7 +1248,7 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1262,7 +1262,7 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
                     std::is_nothrow_invocable_v<decltype(F), Args...,
                                                 const std::unwrap_ref_decay_t<BoundArgs>&&...>,
                     "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
                 } else {
@@ -1276,7 +1276,7 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
                     std::is_nothrow_invocable_v<
                         decltype(F), const std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>,
                     "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -1300,7 +1300,7 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1314,7 +1314,7 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1325,20 +1325,20 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...), Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...), Task, size> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         return [](Args... args) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1347,7 +1347,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (is_compatible_invocable_v<
                                      F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1356,7 +1356,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
                 }
             } else if constexpr (is_compatible_invocable_v<
                                      F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFrontCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1371,7 +1371,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1381,7 +1381,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
             } else if constexpr (is_compatible_invocable_v<
                                      decltype(F), Args...,
                                      std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1391,7 +1391,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
             } else if constexpr (is_compatible_invocable_v<decltype(F),
                                                            std::unwrap_ref_decay_t<BoundArgs>&&...,
                                                            Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFrontCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1406,7 +1406,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1420,7 +1420,7 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1431,13 +1431,13 @@ struct InvokerBuilder<Ret(Args...), Task, N> {
     }
 };
 
-template <typename Task, std::size_t N, typename Ret, typename... Args>
-struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
+template <typename Task, InlineSize size, typename Ret, typename... Args>
+struct InvokerBuilder<Ret(Args...) noexcept, Task, size> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N == 0)
+        requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
         static_assert(sizeof...(BoundArgs) == 0);
         static_assert(std::is_nothrow_invocable_v<decltype(F), Args...>,
@@ -1446,7 +1446,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
     }
 
     template <typename PayloadType, typename F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1455,7 +1455,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (is_compatible_invocable_v<
                                      F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1464,7 +1464,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
                 }
             } else if constexpr (is_compatible_invocable_v<
                                      F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFrontCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1479,7 +1479,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
     }
 
     template <typename PayloadType, auto F, typename... BoundArgs>
-        requires(N > 0)
+        requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
@@ -1489,7 +1489,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
             } else if constexpr (is_compatible_invocable_v<
                                      decltype(F), Args...,
                                      std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1499,7 +1499,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
             } else if constexpr (is_compatible_invocable_v<decltype(F),
                                                            std::unwrap_ref_decay_t<BoundArgs>&&...,
                                                            Args...>) {
-                if constexpr (sizeof(PayloadType) <= N) {
+                if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFrontCompatible(std::forward<Args>(args)...);
                 } else {
@@ -1514,7 +1514,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
     }
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1528,7 +1528,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
         if ((static_cast<Task>(self)).storage_ == nullptr) {
             throw std::bad_function_call();
         }
-        if constexpr (N == 0) {
+        if constexpr (size == 0) {
             return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
             return (static_cast<Task>(self))
@@ -1539,13 +1539,14 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, N> {
     }
 };
 
-template <std::size_t Alignment, std::size_t N, typename Signature>
-    requires(N > 0)
-struct Storage<Alignment, N, true, true, Signature> {
-    alignas(Alignment) mutable std::array<std::byte, N> data{};
+template <Alignment alignment, InlineSize size, typename Signature>
+    requires(size > 0)
+struct Storage<alignment, size, Triviality::kTrivial, true, Signature> {
+    alignas(alignment.bytes) mutable std::array<std::byte, size> data{};
     InvokerBuilder<Signature>::Type invoker{nullptr};
 
-    template <typename Payload, bool AllowHeap = false, bool Copyable = true>
+    template <typename Payload, HeapPolicy /*hp*/ = HeapPolicy::kDisallow,
+              Copyability /*cp*/ = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {}
 
     [[nodiscard]] constexpr bool operator==(std::nullptr_t) const noexcept {
@@ -1553,11 +1554,12 @@ struct Storage<Alignment, N, true, true, Signature> {
     }
 };
 
-template <std::size_t Alignment, typename Signature>
-struct Storage<Alignment, 0, true, true, Signature> {
+template <Alignment alignment, typename Signature>
+struct Storage<alignment, 0, Triviality::kTrivial, true, Signature> {
     InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
-    template <typename Payload, bool AllowHeap = false, bool Copyable = true>
+    template <typename Payload, HeapPolicy /*hp*/ = HeapPolicy::kDisallow,
+              Copyability /*cp*/ = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {}
 
     [[nodiscard]] constexpr bool operator==(std::nullptr_t) const noexcept {
@@ -1565,13 +1567,13 @@ struct Storage<Alignment, 0, true, true, Signature> {
     }
 };
 
-template <std::size_t Alignment, std::size_t N, typename Signature>
-    requires(N > 0)
-struct Storage<Alignment, N, true, false, Signature> {
-    alignas(Alignment) mutable std::array<std::byte, N> data{};
+template <Alignment alignment, InlineSize size, typename Signature>
+    requires(size > 0)
+struct Storage<alignment, size, Triviality::kTrivial, false, Signature> {
+    alignas(alignment.bytes) mutable std::array<std::byte, size> data{};
     InvokerBuilder<Signature>::Type invoker{nullptr};
 
-    template <typename Payload, bool AllowHeap, bool Copyable = true>
+    template <typename Payload, HeapPolicy /*hp*/, Copyability /*cp*/ = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {}
 
     [[nodiscard]] constexpr bool operator==(std::nullptr_t) const noexcept {
@@ -1579,11 +1581,12 @@ struct Storage<Alignment, N, true, false, Signature> {
     }
 };
 
-template <std::size_t Alignment, typename Signature>
-struct Storage<Alignment, 0, true, false, Signature> {
+template <Alignment alignment, typename Signature>
+struct Storage<alignment, 0, Triviality::kTrivial, false, Signature> {
     InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
-    template <typename Payload, bool AllowHeap = false, bool Copyable = true>
+    template <typename Payload, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {}
 
     [[nodiscard]] constexpr bool operator==(std::nullptr_t) const noexcept {
@@ -1591,10 +1594,10 @@ struct Storage<Alignment, 0, true, false, Signature> {
     }
 };
 
-template <std::size_t Alignment, std::size_t N, typename Signature>
-    requires(N > 0)
-struct Storage<Alignment, N, false, false, Signature> {
-    alignas(Alignment) mutable std::array<std::byte, N> data{};
+template <Alignment alignment, InlineSize size, typename Signature>
+    requires(size > 0)
+struct Storage<alignment, size, Triviality::kNonTrivial, false, Signature> {
+    alignas(alignment.bytes) mutable std::array<std::byte, size> data{};
     InvokerBuilder<Signature>::Type invoker{nullptr};
     void (*manager)(Op op, void* src, void* dst){nullptr};
 
@@ -1605,11 +1608,12 @@ struct Storage<Alignment, N, false, false, Signature> {
         }
     }
 
-    template <Op op, std::size_t U, typename SigOther>
+    template <Op op, InlineSize sizeSrc, typename SigOther>
     constexpr void doConstructFromNonTrivial(
-        Storage<Alignment, U, false, false, SigOther>&& other) noexcept {  // NOLINT
+        Storage<alignment, sizeSrc, Triviality::kNonTrivial, false,
+                SigOther>&& other) noexcept {  // NOLINT
         static_assert(op == Op::kMove || op == Op::kMoveAssign);
-        static_assert(N >= U);
+        static_assert(size >= sizeSrc);
         if constexpr (op == Op::kMoveAssign) {
             doDelete();
         }
@@ -1620,11 +1624,11 @@ struct Storage<Alignment, N, false, false, Signature> {
         other.manager = nullptr;
     }
 
-    template <Op op, std::size_t U, typename SigOther>
+    template <Op op, InlineSize sizeSrc, typename SigOther>
     constexpr void doConstructFromNonTrivial(
-        const Storage<Alignment, U, false, false, SigOther>& other) {
+        const Storage<alignment, sizeSrc, Triviality::kNonTrivial, false, SigOther>& other) {
         static_assert(op == Op::kClone || op == Op::kAssign);
-        static_assert(N >= U);
+        static_assert(size >= sizeSrc);
         if constexpr (op == Op::kAssign) {
             doDelete();
         }
@@ -1634,40 +1638,43 @@ struct Storage<Alignment, N, false, false, Signature> {
         }
     }
 
-    template <std::size_t U, bool isAssign = false, bool AllowHeap = false, bool Copyable = true>
-    constexpr void doConstructFromTrivial(void* dst, const void* src) noexcept(U <= N) {  // NOLINT
-        static_assert(U <= N || AllowHeap);
+    template <std::size_t U, bool isAssign = false, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
+    constexpr void doConstructFromTrivial(void* dst,
+                                          const void* src) noexcept(U <= size) {  // NOLINT
+        static_assert(U <= size || hp == HeapPolicy::kAllow);
         if constexpr (isAssign) {
             doDelete();
         }
         manager = [](Op o, void* src, void* dest) {
-            if constexpr (U <= N) {
+            if constexpr (U <= size) {
                 if (o == Op::kDestroy) {
                     return;
                 }
                 std::memcpy(dest, src, U);
             } else {
-                static_assert(AllowHeap);
+                static_assert(hp == HeapPolicy::kAllow);
                 switch (o) {
                     case Op::kDestroy: {
                         auto* srcPtr = *static_cast<void**>(dest);
-                        if constexpr (Alignment <= alignof(std::max_align_t)) {
+                        if constexpr (alignment <= alignof(std::max_align_t)) {
                             ::operator delete(srcPtr);
                         } else {
-                            ::operator delete(srcPtr, std::align_val_t{Alignment});
+                            ::operator delete(srcPtr, std::align_val_t{std::size_t{alignment}});
                         }
                         return;
                     }
                     case Op::kAssign:
                     case Op::kClone: {
-                        if constexpr (Copyable) {
-                            if constexpr (Alignment <= alignof(std::max_align_t)) {
+                        if constexpr (cp == Copyability::kCopyable) {
+                            if constexpr (alignment <= alignof(std::max_align_t)) {
                                 auto* heapPtr = ::operator new(U);
                                 void* oldData = *static_cast<void**>(src);
                                 std::memcpy(heapPtr, oldData, U);
                                 new (dest) void*(heapPtr);
                             } else {
-                                auto* heapPtr = ::operator new(U, std::align_val_t{Alignment});
+                                auto* heapPtr =
+                                    ::operator new(U, std::align_val_t{std::size_t{alignment}});
                                 void* oldData = *static_cast<void**>(src);
                                 std::memcpy(heapPtr, oldData, U);
                                 new (dest) void*(heapPtr);
@@ -1686,25 +1693,26 @@ struct Storage<Alignment, N, false, false, Signature> {
                 std::unreachable();
             }
         };
-        if constexpr (U <= N) {
+        if constexpr (U <= size) {
             std::memcpy(dst, src, U);
         } else {
-            static_assert(AllowHeap);
-            if constexpr (Alignment <= alignof(std::max_align_t)) {
+            static_assert(hp == HeapPolicy::kAllow);
+            if constexpr (alignment <= alignof(std::max_align_t)) {
                 auto* heapPtr = ::operator new(U);
                 std::memcpy(heapPtr, src, U);
                 new (dst) void*(heapPtr);
             } else {
-                auto* heapPtr = ::operator new(U, std::align_val_t{Alignment});
+                auto* heapPtr = ::operator new(U, std::align_val_t{std::size_t{alignment}});
                 std::memcpy(heapPtr, src, U);
                 new (dst) void*(heapPtr);
             }
         }
     }
 
-    template <typename Payload, bool onHeap = false, bool Copyable = true>
+    template <typename Payload, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {  // NOLINT
-        if constexpr (sizeof(Payload) <= N) {
+        if constexpr (sizeof(Payload) <= size) {
             manager = [](Op op, void* src, void* dst) -> void {
                 using T = Payload;
                 switch (op) {
@@ -1715,7 +1723,7 @@ struct Storage<Alignment, N, false, false, Signature> {
                         return;
                     case Op::kAssign:
                     case Op::kClone:
-                        if constexpr (Copyable) {
+                        if constexpr (cp == Copyability::kCopyable) {
                             if constexpr (std::is_trivially_copy_constructible_v<T>) {
                                 std::memcpy(dst, src, sizeof(T));
                             } else {
@@ -1735,7 +1743,7 @@ struct Storage<Alignment, N, false, false, Signature> {
                 std::unreachable();
             };
         } else {
-            static_assert(onHeap && N >= sizeof(void*));
+            static_assert(hp == HeapPolicy::kAllow && size >= sizeof(void*));
             manager = [](Op op, void* src, void* dst) -> void {
                 using T = Payload;
                 switch (op) {
@@ -1747,17 +1755,17 @@ struct Storage<Alignment, N, false, false, Signature> {
                         if constexpr (!std::is_trivially_destructible_v<T>) {
                             srcPtr->~T();
                         }
-                        if constexpr (Alignment <= alignof(std::max_align_t)) {
+                        if constexpr (alignment <= alignof(std::max_align_t)) {
                             ::operator delete(srcPtr);
                         } else {
-                            ::operator delete(srcPtr, std::align_val_t{Alignment});
+                            ::operator delete(srcPtr, std::align_val_t{std::size_t{alignment}});
                         }
                         return;
                     }
                     case Op::kAssign:
                     case Op::kClone: {
-                        if constexpr (Copyable) {
-                            if constexpr (Alignment <= alignof(std::max_align_t)) {
+                        if constexpr (cp == Copyability::kCopyable) {
+                            if constexpr (alignment <= alignof(std::max_align_t)) {
                                 auto* heapPtr = ::operator new(sizeof(T));
                                 if constexpr (std::is_trivially_copy_constructible_v<T>) {
                                     std::memcpy(heapPtr, *static_cast<const T**>(src), sizeof(T));
@@ -1766,8 +1774,8 @@ struct Storage<Alignment, N, false, false, Signature> {
                                 }
                                 new (dst) T*(static_cast<T*>(heapPtr));
                             } else {
-                                auto* heapPtr =
-                                    ::operator new(sizeof(T), std::align_val_t{Alignment});
+                                auto* heapPtr = ::operator new(
+                                    sizeof(T), std::align_val_t{std::size_t{alignment}});
                                 if constexpr (std::is_trivially_copy_constructible_v<T>) {
                                     std::memcpy(heapPtr, *static_cast<const T**>(src), sizeof(T));
                                 } else {
@@ -1797,27 +1805,30 @@ struct Storage<Alignment, N, false, false, Signature> {
     }
 };
 
-template <std::size_t Alignment, typename Signature>
-struct Storage<Alignment, 0, false, false, Signature> {
+template <Alignment alignment, typename Signature>
+struct Storage<alignment, 0, Triviality::kNonTrivial, false, Signature> {
     InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
-    template <Op op, std::size_t U, typename SigOther>
-    constexpr void doConstructFromNonTrivial(Storage<Alignment, U, false, false, SigOther>&&
-                                             /*other*/) noexcept {  // NOLINT
+    template <Op op, InlineSize sizeSrc, typename SigOther>
+    constexpr void doConstructFromNonTrivial(
+        Storage<alignment, sizeSrc, Triviality::kNonTrivial, false, SigOther>&&
+        /*other*/) noexcept {  // NOLINT
         static_assert(op == Op::kMove || op == Op::kMoveAssign);
-        static_assert(U == 0);
+        static_assert(sizeSrc == 0);
     }
 
-    template <Op op, std::size_t U, typename SigOther>
+    template <Op op, InlineSize sizeSrc, typename SigOther>
     constexpr void doConstructFromNonTrivial(
-        const Storage<Alignment, 0, false, false, SigOther>& /*other*/) {
+        const Storage<alignment, 0, Triviality::kNonTrivial, false, SigOther>& /*other*/) {
         static_assert(op == Op::kClone || op == Op::kAssign);
     }
 
-    template <std::size_t U, bool isAssign = false, bool AllowHeap = false, bool Copyable = true>
+    template <std::size_t U, bool isAssign = false, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstructFromTrivial(void* /*dst*/, const void* /*src*/) noexcept {}
 
-    template <typename Payload, bool AllowHeap = false, bool Copyable = true>
+    template <typename Payload, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {}
 
     [[nodiscard]] constexpr bool operator==(std::nullptr_t) const noexcept {
@@ -1825,10 +1836,10 @@ struct Storage<Alignment, 0, false, false, Signature> {
     }
 };
 
-template <std::size_t Alignment, std::size_t N, typename Signature>
-    requires(N > 0)
-struct Storage<Alignment, N, false, true, Signature> {
-    alignas(Alignment) mutable std::array<std::byte, N> data;
+template <Alignment alignment, InlineSize size, typename Signature>
+    requires(size > 0)
+struct Storage<alignment, size, Triviality::kNonTrivial, true, Signature> {
+    alignas(alignment.bytes) mutable std::array<std::byte, size> data;
     InvokerBuilder<Signature>::Type invoker{nullptr};
     void (*cloner)(void* dst, const void* src){nullptr};
     void (*mover)(void* dst, void* src){nullptr};
@@ -1841,11 +1852,12 @@ struct Storage<Alignment, N, false, true, Signature> {
         }
     }
 
-    template <Op op, std::size_t U, typename SigOther>
+    template <Op op, InlineSize sizeSrc, typename SigOther>
     constexpr void doConstructFromNonTrivial(
-        Storage<Alignment, U, false, true, SigOther>&& other) noexcept {  // NOLINT
+        Storage<alignment, sizeSrc, Triviality::kNonTrivial, true,
+                SigOther>&& other) noexcept {  // NOLINT
         static_assert(op == Op::kMove || op == Op::kMoveAssign);
-        static_assert(N >= U);
+        static_assert(size >= sizeSrc);
         if constexpr (op == Op::kMoveAssign) {
             doDelete();
         }
@@ -1860,11 +1872,11 @@ struct Storage<Alignment, N, false, true, Signature> {
         other.deleter = nullptr;
     }
 
-    template <Op op, std::size_t U, typename SigOther>
+    template <Op op, InlineSize sizeSrc, typename SigOther>
     constexpr void doConstructFromNonTrivial(
-        const Storage<Alignment, U, false, true, SigOther>& other) {
+        const Storage<alignment, sizeSrc, Triviality::kNonTrivial, true, SigOther>& other) {
         static_assert(op == Op::kClone || op == Op::kAssign);
-        static_assert(N >= U);
+        static_assert(size >= sizeSrc);
         if constexpr (op == Op::kAssign) {
             doDelete();
         }
@@ -1876,9 +1888,10 @@ struct Storage<Alignment, N, false, true, Signature> {
         }
     }
 
-    template <std::size_t U, bool isAssign = false, bool AllowHeap = false, bool Copyable = true>
+    template <std::size_t U, bool isAssign = false, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstructFromTrivial(void* dst, const void* src) noexcept {
-        static_assert(Copyable);
+        static_assert(cp == Copyability::kCopyable);
         if constexpr (isAssign) {
             doDelete();
         }
@@ -1888,9 +1901,10 @@ struct Storage<Alignment, N, false, true, Signature> {
         std::memcpy(dst, src, U);
     }
 
-    template <typename Payload, bool AllowHeap = false, bool Copyable = true>
+    template <typename Payload, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {
-        static_assert(Copyable);
+        static_assert(cp == Copyability::kCopyable);
         using T = Payload;
         cloner = [](void* dst, const void* src) {
             if constexpr (std::is_trivially_copy_constructible_v<T>) {
@@ -1919,26 +1933,29 @@ struct Storage<Alignment, N, false, true, Signature> {
     }
 };
 
-template <std::size_t Alignment, typename Signature>
-struct Storage<Alignment, 0, false, true, Signature> {
+template <Alignment alignment, typename Signature>
+struct Storage<alignment, 0, Triviality::kNonTrivial, true, Signature> {
     InvokerBuilder<Signature>::TypeNoBuffer invoker{nullptr};
 
-    template <Op op, std::size_t U, typename SigOther>
-    constexpr void doConstructFromNonTrivial(Storage<Alignment, 0, false, true, SigOther>&&
-                                             /*other*/) noexcept {  // NOLINT
+    template <Op op, InlineSize sizeSrc, typename SigOther>
+    constexpr void doConstructFromNonTrivial(
+        Storage<alignment, 0, Triviality::kNonTrivial, true, SigOther>&&
+        /*other*/) noexcept {  // NOLINT
         static_assert(op == Op::kMove || op == Op::kMoveAssign);
     }
 
-    template <Op op, std::size_t U, typename SigOther>
+    template <Op op, InlineSize sizeSrc, typename SigOther>
     constexpr void doConstructFromNonTrivial(
-        const Storage<Alignment, 0, false, true, SigOther>& /*other*/) {
+        const Storage<alignment, 0, Triviality::kNonTrivial, true, SigOther>& /*other*/) {
         static_assert(op == Op::kClone || op == Op::kAssign);
     }
 
-    template <std::size_t U, bool isAssign = false, bool AllowHeap = false, bool Copyable = true>
+    template <std::size_t U, bool isAssign = false, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstructFromTrivial(void* /*dst*/, const void* /*src*/) noexcept {}
 
-    template <typename Payload, bool AllowHeap = false, bool Copyable = true>
+    template <typename Payload, HeapPolicy hp = HeapPolicy::kDisallow,
+              Copyability cp = Copyability::kCopyable>
     constexpr void doConstruct() noexcept {}
 
     [[nodiscard]] constexpr bool operator==(std::nullptr_t) const noexcept {
@@ -1946,9 +1963,10 @@ struct Storage<Alignment, 0, false, true, Signature> {
     }
 };
 
-template <typename Signature, bool Copyable = true, std::size_t N = 16, bool IsTrivial = false,
-          bool Extended = false, bool AllowHeap = false,
-          std::size_t Align = alignof(std::max_align_t)>
+template <typename Signature, Copyability cb = Copyability::kCopyable,
+          InlineSize size = alignof(std::max_align_t), Triviality t = Triviality::kTrivial,
+          bool Extended = false, HeapPolicy hp = HeapPolicy::kDisallow,
+          Alignment align = alignof(std::max_align_t)>
 struct Task;
 
 template <auto F>
@@ -1962,22 +1980,27 @@ struct IsFunctionTag<FunctionTag<F>> : std::true_type {};
 
 struct RefTag {};
 
-template <typename Signature, bool Copyable, std::size_t N, bool IsTrivial, bool Extended,
-          bool AllowHeap, std::size_t Align>
+template <typename Signature, Copyability cb, InlineSize size, Triviality t, bool Extended,
+          HeapPolicy hp, Alignment align>
 struct Task
-    : public InvokerBuilder<
-          Signature, Task<Signature, Copyable, N, IsTrivial, Extended, AllowHeap, Align>, N> {
-    template <typename, bool, std::size_t, bool, bool, bool, std::size_t>
+    : public InvokerBuilder<Signature, Task<Signature, cb, size, t, Extended, hp, align>, size> {
+    template <typename, Copyability, InlineSize, Triviality, bool, HeapPolicy, Alignment>
     friend struct Task;
 
-    template <typename, typename, std::size_t>
+    template <typename, typename, InlineSize>
     friend struct InvokerBuilder;
 
+    // NOLINTBEGIN
+    static constexpr bool IsTrivial = t == Triviality::kTrivial;
+    static constexpr bool AllowHeap = hp == HeapPolicy::kAllow;
+    static constexpr bool Copyable = cb == Copyability::kCopyable;
+    // NOLINTEND
+
     static_assert(!IsTrivial || !AllowHeap, "Trivial Task should not allow heap usage");
-    static_assert(N > 0 || IsTrivial, "0 buffer size is only allowed on trivial types");
+    static_assert(size > 0 || IsTrivial, "0 buffer size is only allowed on trivial types");
     static_assert(!Extended || !AllowHeap,
                   "Extended mode with heap under development. Switch one off");
-    static_assert(Align > 0 && (Align & (Align - 1)) == 0, "Alignment must be a power of 2");
+    static_assert(align > 0 && (align & (align - 1)) == 0, "Alignment must be a power of 2");
     static_assert(Copyable || !Extended, "Move only types under development for Extended option.");
 
     using traits = FunctionTraits<Signature>;
@@ -1985,60 +2008,61 @@ struct Task
     using R = typename traits::return_type;
 
    private:
-    Storage<Align, N, IsTrivial, Extended, Signature> storage_;
+    Storage<align, size, t, Extended, Signature> storage_;
 
-    template <Op op, typename SigOther, bool CopySrc, std::size_t N_src, bool MutSrc,
-              bool IsTrivialSrc, bool ExtSrc,
-              bool AllowHeapSrc>
+    template <Op op, typename SigOther, Copyability cbSrc, InlineSize sizeSrc, bool MutSrc,
+              Triviality tSrc, bool ExtSrc,
+              HeapPolicy hpSrc>
     constexpr void doConvert(auto&& other) noexcept(  // NOLINT
         (op == Op::kMove || op == Op::kMoveAssign) &&
-        (!IsTrivialSrc || IsTrivial || !AllowHeap || N_src <= N))
+        (tSrc == Triviality::kNonTrivial || IsTrivial || !AllowHeap || sizeSrc <= size))
         requires std::same_as<std::remove_cvref_t<decltype(other)>,
-                              Task<SigOther, CopySrc, N_src, IsTrivialSrc, ExtSrc, AllowHeapSrc>>
+                              Task<SigOther, cbSrc, sizeSrc, tSrc, ExtSrc, hpSrc>>
     {
+        using SrcType = std::remove_cvref_t<decltype(other)>;
         static_assert(std::is_const_v<std::remove_reference_t<decltype(other)>> ||
                           std::is_rvalue_reference_v<decltype(other)>,
                       "T must be const& or rvalue&&");
         constexpr bool kIsMovable = std::is_rvalue_reference_v<decltype(other)>;
         auto& dest = *this;
-        static_assert(N >= N_src || (AllowHeap && IsTrivialSrc && !AllowHeapSrc),
+        static_assert(size >= sizeSrc || (AllowHeap && SrcType::IsTrivial && !SrcType::AllowHeap),
                       "Payload too large to move into this storage");
         static_assert(
-            !AllowHeapSrc || AllowHeap,
+            !SrcType::AllowHeap || AllowHeap,
             "Cannot convert a task with heap storage option into one where it is disabled");
         static_assert(kMutable || !MutSrc);
-        static_assert(!IsTrivial || IsTrivialSrc,
+        static_assert(!IsTrivial || SrcType::IsTrivial,
                       "Cannot copy/move non-trivial task into trivial one");
-        static_assert(CopySrc || (op != Op::kClone && op != Op::kAssign));
+        static_assert(SrcType::Copyable || (op != Op::kClone && op != Op::kAssign));
 
-        static_assert((Extended == ExtSrc) || (IsTrivial && IsTrivialSrc));
+        static_assert((Extended == ExtSrc) || (IsTrivial && SrcType::IsTrivial));
         static_assert(op != Op::kDestroy, "Called Task converter with invalid (destroy) flag");
         static_assert((kIsMovable && (op == Op::kMove || op == Op::kMoveAssign)) ||
                       (op == Op::kClone || op == Op::kAssign));
         dest.storage_.invoker = other.storage_.invoker;
 
-        if constexpr (IsTrivialSrc) {
+        if constexpr (SrcType::IsTrivial) {
             if constexpr (IsTrivial) {
-                if constexpr (N_src > 0) {
-                    std::memcpy(dest.storage_.data.data(), other.storage_.data.data(), N_src);
+                if constexpr (sizeSrc > 0) {
+                    std::memcpy(dest.storage_.data.data(), other.storage_.data.data(), sizeSrc);
                 }
             } else {
-                if constexpr (N_src == 0) {
+                if constexpr (sizeSrc == 0) {
                     dest.storage_.template doConstructFromTrivial<
-                        N_src, op == Op::kAssign || op == Op::kMoveAssign, AllowHeap, Copyable>(
+                        sizeSrc, op == Op::kAssign || op == Op::kMoveAssign, hp, cb>(
                         dest.storage_.data.data(), nullptr);
                 } else {
                     dest.storage_.template doConstructFromTrivial<
-                        N_src, op == Op::kAssign || op == Op::kMoveAssign, AllowHeap, Copyable>(
+                        sizeSrc, op == Op::kAssign || op == Op::kMoveAssign, hp, cb>(
                         dest.storage_.data.data(), other.storage_.data.data());
                 }
             }
         } else {
             if constexpr (kIsMovable) {
-                dest.storage_.template doConstructFromNonTrivial<op, N_src, SigOther>(
+                dest.storage_.template doConstructFromNonTrivial<op, sizeSrc, SigOther>(
                     std::move(other.storage_));
             } else {
-                dest.storage_.template doConstructFromNonTrivial<op, N_src, SigOther>(
+                dest.storage_.template doConstructFromNonTrivial<op, sizeSrc, SigOther>(
                     other.storage_);
             }
         }
@@ -2054,7 +2078,7 @@ struct Task
         }
 
         [[nodiscard]] constexpr auto getBuffer() const noexcept {
-            if constexpr (N == 0) {
+            if constexpr (size == 0) {
                 return std::span<const std::byte>{};
             } else {
                 return std::span<const std::byte>{impl_.storage_.data};
@@ -2075,7 +2099,7 @@ struct Task
 
    public:
     [[nodiscard]] static constexpr auto getBufferSize() noexcept -> std::size_t {
-        return N;
+        return size;
     }
 
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
@@ -2133,29 +2157,35 @@ struct Task
         return Internal{*this};
     }
 
-    template <typename SigOther, std::size_t M, bool IsTrivial2, bool Ext2, bool AllowHeapSrc>
-    Task& operator=(const Task<SigOther, true, M, IsTrivial2, Ext2, AllowHeapSrc, Align>& other)
-        requires((kMutable ||
-                  !Task<SigOther, true, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable) &&
-                 (!IsTrivial || IsTrivial2) && (IsTrivial || IsTrivial2 || Extended == Ext2) &&
-                 (AllowHeap || !AllowHeapSrc) && IsSignatureCompatible<SigOther, Signature>::value)
+    template <typename SigOther, InlineSize sizeSrc, Triviality tSrc, bool Ext2, HeapPolicy hpSrc>
+    Task& operator=(
+        const Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc, align>& other)
+        requires((kMutable || !Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc,
+                                    align>::kMutable) &&
+                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
+                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
     {
-        doConvert<Op::kAssign, SigOther, true, M,
-                  Task<SigOther, true, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable,
-                  IsTrivial2, Ext2, AllowHeapSrc>(other);
+        doConvert<Op::kAssign, SigOther, true, sizeSrc,
+                  Task<SigOther, cb, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable, tSrc, Ext2,
+                  hpSrc>(other);
         return *this;
     };
 
-    template <typename SigOther, std::size_t M, bool IsTrivial2, bool Ext2, bool AllowHeapSrc>
-    Task(const Task<SigOther, true, M, IsTrivial2, Ext2, AllowHeapSrc, Align>& other)
-        requires((kMutable ||
-                  !Task<SigOther, true, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable) &&
-                 (!IsTrivial || IsTrivial2) && (IsTrivial || IsTrivial2 || Extended == Ext2) &&
-                 (AllowHeap || !AllowHeapSrc) && IsSignatureCompatible<SigOther, Signature>::value)
+    template <typename SigOther, InlineSize sizeSrc, Triviality tSrc, bool Ext2, HeapPolicy hpSrc>
+    Task(const Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc, align>& other)
+        requires((kMutable || !Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc,
+                                    align>::kMutable) &&
+                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
+                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
     {
-        doConvert<Op::kClone, SigOther, true, M,
-                  Task<SigOther, true, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable,
-                  IsTrivial2, Ext2, AllowHeapSrc>(other);
+        doConvert<
+            Op::kClone, SigOther, Copyability::kCopyable, sizeSrc,
+            Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable,
+            tSrc, Ext2, hpSrc>(other);
     };
 
     Task(const Task& /*other*/)
@@ -2165,8 +2195,7 @@ struct Task
     Task(const Task& other)
         requires(!IsTrivial && Copyable)
     {
-        doConvert<Op::kClone, Signature, Copyable, N, kMutable, IsTrivial, Extended, AllowHeap>(
-            other);
+        doConvert<Op::kClone, Signature, cb, size, kMutable, t, Extended, hp>(other);
     }
 
     Task(const Task& /*other*/)
@@ -2183,8 +2212,7 @@ struct Task
         if (this == &other) {
             return *this;
         }
-        doConvert<Op::kAssign, Signature, Copyable, N, kMutable, IsTrivial, Extended, AllowHeap>(
-            other);
+        doConvert<Op::kAssign, Signature, cb, size, kMutable, t, Extended, hp>(other);
         return *this;
     }
 
@@ -2192,32 +2220,36 @@ struct Task
         requires(!Copyable)
     = delete;
 
-    template <typename SigOther, bool CopyOther, std::size_t M, bool IsTrivial2, bool Ext2,
-              bool AllowHeapSrc>
-    Task(Task<SigOther, CopyOther, M, IsTrivial2, Ext2, AllowHeapSrc, Align>&& other) noexcept(
-        !IsTrivial2 || IsTrivial || !AllowHeap || M <= N)
+    template <typename SigOther, Copyability cbSrc, InlineSize sizeSrc, Triviality tSrc, bool Ext2,
+              HeapPolicy hpSrc>
+    Task(Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>&& other) noexcept(
+        tSrc == Triviality::kNonTrivial || IsTrivial || !AllowHeap || sizeSrc <= size)
         requires((kMutable ||
-                  !Task<SigOther, CopyOther, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable) &&
-                 (!IsTrivial || IsTrivial2) && (IsTrivial || IsTrivial2 || Extended == Ext2) &&
-                 (AllowHeap || !AllowHeapSrc) && IsSignatureCompatible<SigOther, Signature>::value)
+                  !Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable) &&
+                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
+                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
     {
-        doConvert<Op::kMove, SigOther, CopyOther, M,
-                  Task<SigOther, CopyOther, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable,
-                  IsTrivial2, Ext2, AllowHeapSrc>(std::move(other));
+        doConvert<Op::kMove, SigOther, cbSrc, sizeSrc,
+                  Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable, tSrc, Ext2,
+                  hpSrc>(std::move(other));
     }
 
-    template <typename SigOther, bool CopyOther, std::size_t M, bool IsTrivial2, bool Ext2,
-              bool AllowHeapSrc>
-    Task& operator=(Task<SigOther, CopyOther, M, IsTrivial2, Ext2, AllowHeapSrc, Align>&&
-                        other) noexcept(!IsTrivial2 || IsTrivial || !AllowHeap || M <= N)
+    template <typename SigOther, Copyability cbSrc, InlineSize sizeSrc, Triviality tSrc, bool Ext2,
+              HeapPolicy hpSrc>
+    Task& operator=(Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>&& other) noexcept(
+        tSrc == Triviality::kNonTrivial || IsTrivial || !AllowHeap || sizeSrc <= size)
         requires((kMutable ||
-                  !Task<SigOther, CopyOther, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable) &&
-                 (!IsTrivial || IsTrivial2) && (IsTrivial || IsTrivial2 || Extended == Ext2) &&
-                 (AllowHeap || !AllowHeapSrc) && IsSignatureCompatible<SigOther, Signature>::value)
+                  !Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable) &&
+                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
+                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 IsSignatureCompatible<SigOther, Signature>::value)
     {
-        doConvert<Op::kMoveAssign, SigOther, CopyOther, M,
-                  Task<SigOther, CopyOther, M, IsTrivial2, Ext2, AllowHeapSrc, Align>::kMutable,
-                  IsTrivial2, Ext2, AllowHeapSrc>(std::move(other));
+        doConvert<Op::kMoveAssign, SigOther, cbSrc, sizeSrc,
+                  Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable, tSrc, Ext2,
+                  hpSrc>(std::move(other));
         return *this;
     }
 
@@ -2228,8 +2260,7 @@ struct Task
     Task(Task&& other) noexcept
         requires(!IsTrivial)
     {
-        doConvert<Op::kMove, Signature, Copyable, N, kMutable, IsTrivial, Extended, AllowHeap>(
-            std::move(other));
+        doConvert<Op::kMove, Signature, cb, size, kMutable, t, Extended, hp>(std::move(other));
     }
 
     Task& operator=(Task&& /*other*/) noexcept
@@ -2242,8 +2273,8 @@ struct Task
         if (this == &other) {
             return *this;
         }
-        doConvert<Op::kMoveAssign, Signature, Copyable, N, kMutable, IsTrivial, Extended,
-                  AllowHeap>(std::move(other));
+        doConvert<Op::kMoveAssign, Signature, cb, size, kMutable, t, Extended, hp>(
+            std::move(other));
         return *this;
     }
 
@@ -2270,7 +2301,7 @@ struct Task
 
     template <auto F, typename... BoundArgs>
     constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
-        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
                        template getInvoker<PayloadArgsT<F, BoundArgs...>, F, BoundArgs...>()} {
         using PayloadType = PayloadArgsT<F, BoundArgs...>;
         if constexpr (!std::is_empty_v<PayloadType>) {
@@ -2282,31 +2313,32 @@ struct Task
                 std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
                 "Given payload is not constructible, move constructible or destructible");
             static_assert(
-                sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
+                sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
                 "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                 "storage (template option, or via FlexTask aliases)");
-            static_assert(alignof(PayloadType) <= Align,
+            static_assert(alignof(PayloadType) <= align,
                           "Alignment requirement too high for buffer. Increase template alignment");
             if constexpr (IsTrivial) {
-                static_assert(TrivialUse<PayloadType, Copyable>::value,
+                static_assert(TrivialUse<PayloadType, cb>::value,
                               "Payload needs to be trivially move & copy constructible, and "
                               "trivially destructible to be allowed within a Trivial Task");
             }
-            storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
-            if constexpr (sizeof(PayloadType) <= N) {
+            storage_.template doConstruct<PayloadType, hp, cb>();
+            if constexpr (sizeof(PayloadType) <= size) {
                 new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
             } else {
-                static_assert(alignof(void*) <= Align,
+                static_assert(alignof(void*) <= align,
                               "Alignment requirement too high to store heap pointer. Increase "
                               "template alignment");
                 static_assert(AllowHeap);
-                if constexpr (Align <= alignof(std::max_align_t)) {
+                if constexpr (align <= alignof(std::max_align_t)) {
                     void* heapPtr = ::operator new(sizeof(PayloadType));
                     auto* payload =  // NOLINT
                         new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
                     new (storage_.data.data()) PayloadType*(payload);
                 } else {
-                    void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
+                    void* heapPtr =
+                        ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
                     auto* payload =  // NOLINT
                         new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
                     new (storage_.data.data()) PayloadType*(payload);
@@ -2321,16 +2353,16 @@ struct Task
                  !IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
-              .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::
+              .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
                   template getInvoker<PayloadT<decltype(f), BoundArgs...>,
                                       std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
-        static_assert(sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
+        static_assert(sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
                       "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                       "storage (template option, or via FlexTask aliases)");
-        static_assert(alignof(PayloadType) <= Align,
+        static_assert(alignof(PayloadType) <= align,
                       "Alignment requirement too high for buffer. Increase template alignment");
         static_assert(
             !Copyable || std::is_copy_constructible_v<PayloadType>,
@@ -2339,27 +2371,28 @@ struct Task
             std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
             "Given payload is not move constructible or destructible");
         if constexpr (IsTrivial) {
-            static_assert(TrivialUse<PayloadType, Copyable>::value,
+            static_assert(TrivialUse<PayloadType, cb>::value,
                           "Payload needs to be trivially move & copy constructible, and "
                           "trivially destructible to be allowed within a Trivial Task");
         }
-        storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
-        if constexpr (sizeof(PayloadType) <= N) {
+        storage_.template doConstruct<PayloadType, hp, cb>();
+        if constexpr (sizeof(PayloadType) <= size) {
             new (storage_.data.data())
                 PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
         } else {
             static_assert(AllowHeap);
-            static_assert(alignof(void*) <= Align,
+            static_assert(alignof(void*) <= align,
                           "Alignment requirement too high to store heap pointer. Increase "
                           "template alignment");
-            if constexpr (Align <= alignof(std::max_align_t)) {
+            if constexpr (align <= alignof(std::max_align_t)) {
                 void* heapPtr = ::operator new(sizeof(PayloadType));
                 auto* payload =  // NOLINT
                     new (heapPtr)
                         PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
                 new (storage_.data.data()) PayloadType*(payload);
             } else {
-                void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
+                void* heapPtr =
+                    ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
                 auto* payload =  // NOLINT
                     new (heapPtr)
                         PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
@@ -2374,8 +2407,8 @@ struct Task
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value))
         : storage_{.invoker =
                        InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>,
-                                      N>::template getInvoker<PayloadImpl<F, BoundArgs...>,
-                                                              std::decay_t<F>, BoundArgs...>()} {
+                                      size>::template getInvoker<PayloadImpl<F, BoundArgs...>,
+                                                                 std::decay_t<F>, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
                std::is_lvalue_reference_v<BoundArgs>) ||
@@ -2384,10 +2417,10 @@ struct Task
              ...));
         using PayloadType = PayloadImpl<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
-        static_assert(sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
+        static_assert(sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
                       "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                       "storage (template option, or via FlexTask aliases)");
-        static_assert(alignof(PayloadType) <= Align,
+        static_assert(alignof(PayloadType) <= align,
                       "Alignment requirement too high for buffer. Increase template alignment");
         static_assert(
             !Copyable || std::is_copy_constructible_v<PayloadType>,
@@ -2396,27 +2429,28 @@ struct Task
             std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
             "Given payload is not constructible, move constructible or destructible");
         if constexpr (IsTrivial) {
-            static_assert(TrivialUse<PayloadType, Copyable>::value,
+            static_assert(TrivialUse<PayloadType, cb>::value,
                           "Payload needs to be trivially move & copy constructible, and "
                           "trivially destructible to be allowed within a Trivial Task");
         }
-        storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
-        if constexpr (sizeof(PayloadType) <= N) {
+        storage_.template doConstruct<PayloadType, hp, cb>();
+        if constexpr (sizeof(PayloadType) <= size) {
             new (storage_.data.data())
                 PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
         } else {
             static_assert(AllowHeap);
-            static_assert(alignof(void*) <= Align,
+            static_assert(alignof(void*) <= align,
                           "Alignment requirement too high to store heap pointer. Increase "
                           "template alignment");
-            if constexpr (Align <= alignof(std::max_align_t)) {
+            if constexpr (align <= alignof(std::max_align_t)) {
                 void* heapPtr = ::operator new(sizeof(PayloadType));
                 auto* payload =  // NOLINT
                     new (heapPtr)
                         PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
                 new (storage_.data.data()) PayloadType*(payload);
             } else {
-                void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
+                void* heapPtr =
+                    ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
                 auto* payload =  // NOLINT
                     new (heapPtr)
                         PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
@@ -2428,7 +2462,7 @@ struct Task
     template <auto F, typename... BoundArgs>
     constexpr Task([[maybe_unused]] RefTag /*unused*/,                               // NOLINT
                    [[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
-        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, N>::
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
                        template getInvoker<PayloadImplArgs<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
@@ -2440,10 +2474,10 @@ struct Task
         if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
             static_assert(
-                sizeof(PayloadType) <= N || (AllowHeap && sizeof(PayloadType*) <= N),
+                sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
                 "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                 "storage (template option, or via FlexTask aliases)");
-            static_assert(alignof(PayloadType) <= Align,
+            static_assert(alignof(PayloadType) <= align,
                           "Alignment requirement too high for buffer. Increase template alignment");
             static_assert(
                 !Copyable || std::is_copy_constructible_v<PayloadType>,
@@ -2452,25 +2486,26 @@ struct Task
                 std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
                 "Given payload is not constructible, move constructible or destructible");
             if constexpr (IsTrivial) {
-                static_assert(TrivialUse<PayloadType, Copyable>::value,
+                static_assert(TrivialUse<PayloadType, cb>::value,
                               "Payload needs to be trivially move & copy constructible, and "
                               "trivially destructible to be allowed within a Trivial Task");
             }
-            storage_.template doConstruct<PayloadType, AllowHeap, Copyable>();
-            if constexpr (sizeof(PayloadType) <= N) {
+            storage_.template doConstruct<PayloadType, hp, cb>();
+            if constexpr (sizeof(PayloadType) <= size) {
                 new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
             } else {
                 static_assert(AllowHeap);
-                static_assert(alignof(void*) <= Align,
+                static_assert(alignof(void*) <= align,
                               "Alignment requirement too high to store heap pointer. Increase "
                               "template alignment");
-                if constexpr (Align <= alignof(std::max_align_t)) {
+                if constexpr (align <= alignof(std::max_align_t)) {
                     void* heapPtr = ::operator new(sizeof(PayloadType));
                     auto* payload =  // NOLINT
                         new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
                     new (storage_.data.data()) PayloadType*(payload);
                 } else {
-                    void* heapPtr = ::operator new(sizeof(PayloadType), std::align_val_t{Align});
+                    void* heapPtr =
+                        ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
                     auto* payload =  // NOLINT
                         new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
                     new (storage_.data.data()) PayloadType*(payload);
@@ -2487,83 +2522,94 @@ struct Task
     }
 };
 
-template <typename Signature, std::size_t N = 64, bool IsTrivial = false, bool Extended = false,
-          bool AllowHeap = false, std::size_t Alignment = alignof(std::max_align_t)>
-using CopyableTask = Task<Signature, true, N, IsTrivial, Extended, AllowHeap, Alignment>;
+template <typename Signature, InlineSize size = 64, Triviality t = Triviality::kNonTrivial,
+          bool Extended = false, HeapPolicy hp = HeapPolicy::kDisallow,
+          Alignment alignment = alignof(std::max_align_t)>
+using CopyableTask = Task<Signature, Copyability::kCopyable, size, t, Extended, hp, alignment>;
 
-template <typename Signature, std::size_t N = 64, bool IsTrivial = false, bool Extended = false,
-          bool AllowHeap = false, std::size_t Alignment = alignof(std::max_align_t)>
-using UniqueTask = Task<Signature, false, N, IsTrivial, Extended, AllowHeap, Alignment>;
+template <typename Signature, InlineSize size = 64, Triviality t = Triviality::kNonTrivial,
+          bool Extended = false, HeapPolicy hp = HeapPolicy::kDisallow,
+          Alignment alignment = alignof(std::max_align_t)>
+using UniqueTask = Task<Signature, Copyability::kNonCopyable, size, t, Extended, hp, alignment>;
 
-template <typename Signature, bool Copyable = true, bool IsTrivial = false, bool Extended = false>
-using Task16 = Task<Signature, Copyable, 16, IsTrivial, Extended, false>;
-template <typename Signature, bool Copyable = true, bool IsTrivial = false, bool Extended = false>
-using Task32 = Task<Signature, Copyable, 32, IsTrivial, Extended, false>;
-template <typename Signature, bool Copyable = true, bool IsTrivial = false, bool Extended = false>
-using Task48 = Task<Signature, Copyable, 48, IsTrivial, Extended, false>;
-template <typename Signature, bool Copyable = true, bool IsTrivial = false, bool Extended = false>
-using Task64 = Task<Signature, Copyable, 64, IsTrivial, Extended, false>;
-template <typename Signature, bool Copyable = true, bool IsTrivial = false, bool Extended = false>
-using Task128 = Task<Signature, Copyable, 128, IsTrivial, Extended, false>;
-template <typename Signature, bool Copyable = true, bool IsTrivial = false, bool Extended = false>
-using Task256 = Task<Signature, Copyable, 256, IsTrivial, Extended, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial, bool Extended = false>
+using Task16 = Task<Signature, cp, 16, t, Extended, HeapPolicy::kDisallow>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial, bool Extended = false>
+using Task32 = Task<Signature, cp, 32, t, Extended, HeapPolicy::kDisallow>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial, bool Extended = false>
+using Task48 = Task<Signature, cp, 48, t, Extended, HeapPolicy::kDisallow>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial, bool Extended = false>
+using Task64 = Task<Signature, cp, 64, t, Extended, HeapPolicy::kDisallow>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial, bool Extended = false>
+using Task128 = Task<Signature, cp, 128, t, Extended, HeapPolicy::kDisallow>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial, bool Extended = false>
+using Task256 = Task<Signature, cp, 256, t, Extended, HeapPolicy::kDisallow>;
 
-template <typename Signature, bool Copyable = true>
-using TrivialTask16 = Task16<Signature, Copyable, true, false>;
-template <typename Signature, bool Copyable = true>
-using TrivialTask32 = Task32<Signature, Copyable, true, false>;
-template <typename Signature, bool Copyable = true>
-using TrivialTask48 = Task48<Signature, Copyable, true, false>;
-template <typename Signature, bool Copyable = true>
-using TrivialTask64 = Task64<Signature, Copyable, true, false>;
-template <typename Signature, bool Copyable = true>
-using TrivialTask128 = Task128<Signature, Copyable, true, false>;
-template <typename Signature, bool Copyable = true>
-using TrivialTask256 = Task256<Signature, Copyable, true, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTask16 = Task16<Signature, cp, Triviality::kTrivial, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTask32 = Task32<Signature, cp, Triviality::kTrivial, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTask48 = Task48<Signature, cp, Triviality::kTrivial, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTask64 = Task64<Signature, cp, Triviality::kTrivial, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTask128 = Task128<Signature, cp, Triviality::kTrivial, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTask256 = Task256<Signature, cp, Triviality::kTrivial, false>;
 
-template <typename Signature, bool Copyable = true, bool Extended = false>
-using SmallTask = Task<Signature, Copyable, 16, false, Extended, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, bool Extended = false>
+using SmallTask = Task<Signature, cp, 16, Triviality::kNonTrivial, Extended, HeapPolicy::kDisallow>;
 
-template <typename Signature, bool Copyable = true, std::size_t N = 64, bool AllowHeap = false>
-using TrivialTask = Task<Signature, Copyable, N, true, false, AllowHeap>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, InlineSize size = 64,
+          HeapPolicy hp = HeapPolicy::kDisallow>
+using TrivialTask = Task<Signature, cp, size, Triviality::kTrivial, false, hp>;
 
-template <typename Signature, bool Copyable = true, bool AllowHeap = false>
-using TrivialSmallTask = TrivialTask<Signature, Copyable, 16, AllowHeap>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          HeapPolicy hp = HeapPolicy::kDisallow>
+using TrivialSmallTask = TrivialTask<Signature, cp, 16, hp>;
 
-template <typename Signature, bool Copyable = true, bool AllowHeap = false>
-using TrivialSmallTaskMut = TrivialTask<Signature, Copyable, 16, AllowHeap>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          HeapPolicy hp = HeapPolicy::kDisallow>
+using TrivialSmallTaskMut = TrivialTask<Signature, cp, 16, hp>;
 
-template <typename Signature, bool Copyable = true>
-using TrivialTaskCaptureless = TrivialTask<Signature, Copyable, 1>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTaskCaptureless = TrivialTask<Signature, cp, 1>;
 
-template <typename Signature, bool Copyable = true>
-using StaticTrivialTask = TrivialTask<Signature, Copyable, 0>;
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using StaticTrivialTask = TrivialTask<Signature, cp, 0>;
 
-template <typename Signature, bool Copyable = true, std::size_t N = 64, bool IsTrivial = false>
-using FlexTask = Task<Signature, Copyable, N, IsTrivial, false, true>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, InlineSize size = 64,
+          Triviality t = Triviality::kNonTrivial>
+using FlexTask = Task<Signature, cp, size, t, false, HeapPolicy::kAllow>;
 
-template <typename Signature, std::size_t N = 64, bool IsTrivial = false>
-using UniqueFlexTask = FlexTask<Signature, false, N, IsTrivial>;
+template <typename Signature, InlineSize size = 64, Triviality t = Triviality::kNonTrivial>
+using UniqueFlexTask = FlexTask<Signature, Copyability::kNonCopyable, size, t>;
 
-template <typename Signature, bool Copyable = true, bool IsTrivial = false>
-using FlexTask16 = FlexTask<Signature, Copyable, 16, IsTrivial>;
-template <typename Signature, bool Copyable = true, bool IsTrivial = false>
-using FlexTask32 = FlexTask<Signature, Copyable, 32, IsTrivial>;
-template <typename Signature, bool Copyable = true, bool IsTrivial = false>
-using FlexTask64 = FlexTask<Signature, Copyable, 64, IsTrivial>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial>
+using FlexTask16 = FlexTask<Signature, cp, 16, t>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial>
+using FlexTask32 = FlexTask<Signature, cp, 32, t>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial>
+using FlexTask64 = FlexTask<Signature, cp, 64, t>;
 
-template <typename Signature, bool Copyable = true, std::size_t N = 64, bool IsTrivial = false>
-using FlexTaskMut = FlexTask<Signature, Copyable, N, IsTrivial>;
+static_assert(TrivialTask<void(), Copyability::kCopyable, 0>::getSize() == sizeof(void*));
 
-static_assert(TrivialTask<void(), true, 0>::getSize() == sizeof(void*));
+template <typename Signature, Copyability cp = Copyability::kCopyable>
+using TrivialTaskCapturelessMut = TrivialTask<Signature, cp, 1>;
 
-template <typename Signature, bool Copyable = true>
-using TrivialTaskCapturelessMut = TrivialTask<Signature, Copyable, 1>;
-
-template <typename Sig, bool Cpy, std::size_t N, bool IsT, bool Ext, bool AllowHeap,
-          std::size_t Align>
-Task(Task<Sig, Cpy, N, IsT, Ext, AllowHeap, Align>)
-    -> Task<Sig, Cpy, N, IsT, Ext, AllowHeap, Align>;
+template <typename Sig, Copyability cp, InlineSize size, Triviality t, bool Ext, HeapPolicy hp,
+          Alignment align>
+Task(Task<Sig, cp, size, t, Ext, hp, align>) -> Task<Sig, cp, size, t, Ext, hp, align>;
 
 template <auto F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
@@ -2572,7 +2618,7 @@ Task(FunctionTag<F>, BoundArgs&&...)
     -> Task<typename TaskTypeDeductorAuto<F, BoundArgs...>::TypeTraits::Signature,
             TaskTypeDeductorAuto<F, BoundArgs...>::kCopyable,
             TaskTypeDeductorAuto<F, BoundArgs...>::kPayloadSize,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kCanUseTrivial, false, false,
+            TaskTypeDeductorAuto<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
             TaskTypeDeductorAuto<F, BoundArgs...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
@@ -2580,11 +2626,12 @@ template <typename F, typename... BoundArgs>
              FunctionTraits<std::decay_t<F>>::kValid &&
              (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
              TaskTypeDeductor<F, BoundArgs...>::kIsValid)
-Task(F&&, BoundArgs&&...) -> Task<typename TaskTypeDeductor<F, BoundArgs...>::TypeTraits::Signature,
-                                  TaskTypeDeductor<F, BoundArgs...>::kCopyable,
-                                  TaskTypeDeductor<F, BoundArgs...>::kPayloadSize,
-                                  TaskTypeDeductor<F, BoundArgs...>::kCanUseTrivial, false, false,
-                                  TaskTypeDeductor<F, BoundArgs...>::kAlignment>;
+Task(F&&, BoundArgs&&...)
+    -> Task<typename TaskTypeDeductor<F, BoundArgs...>::TypeTraits::Signature,
+            TaskTypeDeductor<F, BoundArgs...>::kCopyable,
+            TaskTypeDeductor<F, BoundArgs...>::kPayloadSize,
+            TaskTypeDeductor<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
+            TaskTypeDeductor<F, BoundArgs...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(!IsFunctionTag<F>::value &&
@@ -2594,7 +2641,7 @@ Task(RefTag, F&&, BoundArgs&&...)
     -> Task<typename TaskTypeDeductor<F, BoundArgs...>::TypeTraits::Signature,
             TaskTypeDeductor<F, BoundArgs...>::kRefCopyable,
             TaskTypeDeductor<F, BoundArgs...>::kRefPayloadSize,
-            TaskTypeDeductor<F, BoundArgs...>::kRefCanUseTrivial, false, false,
+            TaskTypeDeductor<F, BoundArgs...>::kRefTriviality, false, HeapPolicy::kDisallow,
             TaskTypeDeductor<F, BoundArgs...>::kRefAlignment>;
 
 template <auto F, typename... BoundArgs>
@@ -2604,7 +2651,7 @@ Task(RefTag, FunctionTag<F>, BoundArgs&&...)
     -> Task<typename TaskTypeDeductorAuto<F, BoundArgs...>::TypeTraits::Signature,
             TaskTypeDeductorAuto<F, BoundArgs...>::kRefCopyable,
             TaskTypeDeductorAuto<F, BoundArgs...>::kRefPayloadSize,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kRefCanUseTrivial, false, false,
+            TaskTypeDeductorAuto<F, BoundArgs...>::kRefCanUseTrivial, false, HeapPolicy::kDisallow,
             TaskTypeDeductorAuto<F, BoundArgs...>::kRefAlignment>;
 
 template <typename F, typename... Args>
@@ -2648,7 +2695,7 @@ FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<
     return Task(FunctionTag<F>{}, std::forward<Args>(args)...);
 }
 
-template <std::size_t N = 16, typename F, typename... Args>
+template <std::size_t N = alignof(std::max_align_t), typename F, typename... Args>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<F>>, "Given callable is invalid");
     using Deductor = TaskTypeDeductor<F, Args...>;
@@ -2656,17 +2703,18 @@ FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
     return typename Deductor::template FlexType<N>{std::forward<F>(f), std::forward<Args>(args)...};
 }
 
-template <typename Sig, std::size_t N = 16, typename F, typename... Args>
+template <typename Sig, InlineSize size = alignof(std::max_align_t), typename F, typename... Args>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<F>>, "Given callable is invalid");
     using Deductor = TaskTypeDeductor<F, Args...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
-    return typename Deductor::template FlexType<N>{std::forward<F>(f), std::forward<Args>(args)...};
+    return
+        typename Deductor::template FlexType<size>{std::forward<F>(f), std::forward<Args>(args)...};
 }
 
-template <std::size_t N = 16, auto F, typename... Args>
+template <std::size_t N = alignof(std::max_align_t), auto F, typename... Args>
 FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
     using Deductor = TaskTypeDeductorAuto<F, Args...>;
@@ -2674,14 +2722,15 @@ FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
     return typename Deductor::template FlexType<N>{FunctionTag<F>{}, std::forward<Args>(args)...};
 }
 
-template <typename Sig, std::size_t N = 16, auto F, typename... Args>
+template <typename Sig, InlineSize size = alignof(std::max_align_t), auto F, typename... Args>
 FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
     using Deductor = TaskTypeDeductorAuto<F, Args...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
-    return typename Deductor::template FlexType<N>{FunctionTag<F>{}, std::forward<Args>(args)...};
+    return
+        typename Deductor::template FlexType<size>{FunctionTag<F>{}, std::forward<Args>(args)...};
 }
 
 template <typename F, typename... Args>

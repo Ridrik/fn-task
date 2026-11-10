@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <type_traits>
 
@@ -11,17 +12,55 @@
 
 namespace fn {
 
-template <typename Signature, bool Copyable, std::size_t N, bool IsTrivial, bool Extended,
-          bool AllowHeap, std::size_t Align>
+enum class Triviality : std::uint8_t { kNonTrivial, kTrivial };
+enum class Copyability : std::uint8_t { kNonCopyable, kCopyable };
+enum class HeapPolicy : std::uint8_t { kDisallow, kAllow };
+
+/* Up to the specified bytes, inline storage will be used for bound args, avoiding heap allocation*/
+struct InlineSize {
+    constexpr InlineSize(std::size_t n) : bytes{n} {}
+    constexpr operator std::size_t() const noexcept {
+        return bytes;
+    }
+
+    std::size_t bytes{alignof(std::max_align_t)};
+};
+
+/* Alignment of storage (bound arguments) data */
+struct Alignment {
+    constexpr Alignment(std::size_t n) : bytes{n} {}
+    constexpr operator std::size_t() const noexcept {
+        return bytes;
+    }
+
+    std::size_t bytes{16};
+};
+
+template <typename, Copyability cb = Copyability::kCopyable>
+struct TrivialUse : std::false_type {};
+
+// Captured arguments of type-erased callable are not copy-assigned or move-assigned, and instead
+// are destroyed followed by the copy/move constructor. Therefore, to be safe to simply memcpy
+// and not need manager pointers, one checks copy/move constructor and destructor triviallity
+template <typename Pl>
+    requires(std::is_trivially_copy_constructible_v<Pl> &&
+             std::is_trivially_move_constructible_v<Pl> && std::is_trivially_destructible_v<Pl>)
+struct TrivialUse<Pl, Copyability::kCopyable> : std::true_type {};
+
+template <typename Pl>
+    requires(std::is_trivially_move_constructible_v<Pl> && std::is_trivially_destructible_v<Pl>)
+struct TrivialUse<Pl, Copyability::kNonCopyable> : std::true_type {};
+
+template <typename Signature, Copyability cb, InlineSize size, Triviality t, bool Extended,
+          HeapPolicy hp, Alignment align>
 struct Task;
 
 template <typename T>
 struct IsTask : std::false_type {};
 
-template <typename Signature, bool Copyable, std::size_t N, bool IsTrivial, bool Extended,
-          bool AllowHeap, std::size_t Align>
-struct IsTask<Task<Signature, Copyable, N, IsTrivial, Extended, AllowHeap, Align>>
-    : std::true_type {};
+template <typename Signature, Copyability cb, InlineSize size, Triviality t, bool Extended,
+          HeapPolicy hp, Alignment align>
+struct IsTask<Task<Signature, cb, size, t, Extended, hp, align>> : std::true_type {};
 
 template <typename S, typename F, typename... BoundArgs>
 struct NamedTask;
@@ -163,13 +202,20 @@ struct TaskTypeDeductor {
     using PayloadType = PayloadT<F, BoundArgs...>;
     using PayloadRefType = PayloadImpl<F, BoundArgs...>;
 
-    static constexpr bool kCopyable = std::is_copy_constructible_v<PayloadType>;
-    static constexpr bool kRefCopyable = std::is_copy_constructible_v<PayloadRefType>;
-    static constexpr bool kCanUseTrivial = TrivialUse<PayloadType, kCopyable>::value;
-    static constexpr bool kRefCanUseTrivial = TrivialUse<PayloadRefType, kRefCopyable>::value;
-    static constexpr std::size_t kAlignment =
+    static constexpr auto kCopyable = std::is_copy_constructible_v<PayloadType>
+                                          ? Copyability::kCopyable
+                                          : Copyability::kNonCopyable;
+    static constexpr auto kRefCopyable = std::is_copy_constructible_v<PayloadRefType>
+                                             ? Copyability::kCopyable
+                                             : Copyability::kNonCopyable;
+    static constexpr auto kTriviality =
+        TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
+    static constexpr auto kRefTriviality = TrivialUse<PayloadRefType, kCopyable>::value
+                                               ? Triviality::kTrivial
+                                               : Triviality::kNonTrivial;
+    static constexpr Alignment kAlignment =
         std::max(alignof(PayloadType), alignof(std::max_align_t));
-    static constexpr std::size_t kRefAlignment =
+    static constexpr Alignment kRefAlignment =
         std::max(alignof(PayloadRefType), alignof(std::max_align_t));
     static constexpr auto kPayloadSize = sizeof(PayloadType);
     static constexpr auto kRefPayloadSize = sizeof(PayloadRefType);
@@ -177,16 +223,17 @@ struct TaskTypeDeductor {
     using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
-    template <bool Copyable = kCopyable, std::size_t N = kPayloadSize,
-              bool IsTrivial = kCanUseTrivial, std::size_t Align = kAlignment>
-    using Type = Task<Signature, Copyable, N, IsTrivial, false, false, Align>;
+    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
+              Triviality t = kTriviality, Alignment align = kAlignment>
+    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
 
-    template <std::size_t N>
-    using FlexType = Task<Signature, kCopyable, N, kCanUseTrivial, false, true, kAlignment>;
+    template <InlineSize size>
+    using FlexType =
+        Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 
-    template <bool Copyable = kRefCopyable, std::size_t N = kRefPayloadSize,
-              bool IsTrivial = kRefCanUseTrivial, std::size_t Align = kRefAlignment>
-    using RefType = Task<Signature, Copyable, N, IsTrivial, false, false, Align>;
+    template <Copyability cb = kRefCopyable, InlineSize size = kRefPayloadSize,
+              Triviality t = kRefTriviality, Alignment align = kRefAlignment>
+    using RefType = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
 };
 
 template <auto F, typename... BoundArgs>
@@ -304,32 +351,41 @@ struct TaskTypeDeductorAuto {
     // anyway, hence not urgent to change for now
     using PayloadType = PayloadImplArgs<F, std::unwrap_ref_decay_t<BoundArgs>...>;
     using PayloadRefType = PayloadImplArgs<F, BoundArgs...>;
+    static constexpr auto kCopyable = std::is_copy_constructible_v<PayloadType>
+                                          ? Copyability::kCopyable
+                                          : Copyability::kNonCopyable;
+    static constexpr auto kRefCopyable = std::is_copy_constructible_v<PayloadRefType>
+                                             ? Copyability::kCopyable
+                                             : Copyability::kNonCopyable;
 
-    static constexpr bool kCopyable = std::is_copy_constructible_v<PayloadType>;
-    static constexpr bool kRefCopyable = std::is_copy_constructible_v<PayloadRefType>;
-    static constexpr std::size_t kAlignment =
+    static constexpr Alignment kAlignment =
         std::max(alignof(PayloadType), alignof(std::max_align_t));
-    static constexpr std::size_t kRefAlignment =
+    static constexpr Alignment kRefAlignment =
         std::max(alignof(PayloadRefType), alignof(std::max_align_t));
-    static constexpr bool kCanUseTrivial = TrivialUse<PayloadType>::value;
-    static constexpr bool kRefCanUseTrivial = TrivialUse<PayloadRefType>::value;
+    static constexpr auto kTriviality =
+        TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
+    static constexpr auto kRefTriviality = TrivialUse<PayloadRefType, kCopyable>::value
+                                               ? Triviality::kTrivial
+                                               : Triviality::kNonTrivial;
     static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    static constexpr auto kRefPayloadSize =
-        sizeof...(BoundArgs) > 0 ? sizeof(PayloadImplArgs<F, BoundArgs...>) : 0;
+    static constexpr auto kRefPayloadSize = sizeof...(BoundArgs) > 0
+                                                ? sizeof(PayloadImplArgs<F, BoundArgs...>)
+                                                : 0;
     using TypeTraits = StripBoundArgs::type;
     using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
-    template <bool Copyable = kCopyable, std::size_t N = kPayloadSize,
-              bool IsTrivial = kCanUseTrivial, std::size_t Align = kAlignment>
-    using Type = Task<Signature, Copyable, N, IsTrivial, false, false, Align>;
+    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
+              Triviality t = kTriviality, Alignment align = kAlignment>
+    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
 
-    template <std::size_t N>
-    using FlexType = Task<Signature, kCopyable, N, kCanUseTrivial, false, true, kAlignment>;
+    template <InlineSize size>
+    using FlexType =
+        Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 
-    template <bool Copyable = kRefCopyable, std::size_t N = kRefPayloadSize,
-              bool IsTrivial = kRefCanUseTrivial, std::size_t Align = kRefAlignment>
-    using RefType = Task<Signature, Copyable, N, IsTrivial, false, false, Align>;
+    template <Copyability cb = kRefCopyable, InlineSize size = kRefPayloadSize,
+              Triviality t = kRefTriviality, Alignment align = kRefAlignment>
+    using RefType = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
 };
 
 template <typename F, typename... BoundArgs>
@@ -577,7 +633,7 @@ template <template <typename, typename...> typename T, typename Fd, typename... 
     requires(!IsTask<T<Fd, BoundArgs...>>::value && !IsNamedTask<T<Fd, BoundArgs...>>::value &&
              HasFunctionTraits<std::decay_t<Fd>> && TaskTypeDeductor<Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<Fd, BoundArgs...>::TypeTraits::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<Fd, BoundArgs...>::Signature> {};
 
 template <template <bool, typename, typename...> typename T, bool B, typename Fd,
           typename... BoundArgs>
@@ -585,7 +641,7 @@ template <template <bool, typename, typename...> typename T, bool B, typename Fd
              !IsNamedTask<T<B, Fd, BoundArgs...>>::value && HasFunctionTraits<std::decay_t<Fd>> &&
              TaskTypeDeductor<Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<B, Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<Fd, BoundArgs...>::TypeTraits::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<Fd, BoundArgs...>::Signature> {};
 
 }  // namespace fn
 

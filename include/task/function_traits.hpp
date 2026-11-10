@@ -21,21 +21,6 @@ struct RefToConstRef<std::reference_wrapper<U>> {
     using Type = std::reference_wrapper<const U>;
 };
 
-template <typename, bool Copyable = true>
-struct TrivialUse : std::false_type {};
-
-// Captured arguments of type-erased callable are not copy-assigned or move-assigned, and instead
-// are destroyed followed by the copy/move constructor. Therefore, to be safe to simply memcpy
-// and not need manager pointers, one checks copy/move constructor and destructor triviallity
-template <typename Pl>
-    requires(std::is_trivially_copy_constructible_v<Pl> &&
-             std::is_trivially_move_constructible_v<Pl> && std::is_trivially_destructible_v<Pl>)
-struct TrivialUse<Pl, true> : std::true_type {};
-
-template <typename Pl>
-    requires(std::is_trivially_move_constructible_v<Pl> && std::is_trivially_destructible_v<Pl>)
-struct TrivialUse<Pl, false> : std::true_type {};
-
 template <std::size_t N, typename Tuple, typename Indices = std::make_index_sequence<N>>
 struct slice_first;
 

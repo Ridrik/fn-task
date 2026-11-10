@@ -7,6 +7,8 @@ CompileFlags:
     - -fdeps-format=p1689r5
     - -fmodule-mapper=tests/CMakeFiles/task_nanobench.dir/task_nanobench.cpp.o.modmap
     - -fmodule-mapper=tests/CMakeFiles/sample_named_task.dir/sample_named_task.cpp.o.modmap
+    - -fmodule-mapper=tests/CMakeFiles/aggregator.dir/aggregator.cpp.o.modmap
+    - -fmodule-mapper=tests/CMakeFiles/sample.dir/sample.cpp.o.modmap
 Index:
   Background: Build          
 

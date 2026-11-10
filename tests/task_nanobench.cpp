@@ -16,6 +16,7 @@
 #include <fault/fault.hpp>
 
 #include "fault/core.hpp"
+#include "task/deductors.hpp"
 #include "task/named_task.hpp"
 
 namespace {
@@ -70,9 +71,11 @@ fn::Task32<std::uint64_t() const> giveTaskWithCapture(int i) {
     }
 }
 
-fn::Task<std::uint64_t(), true, 32, false, true> giveTaskWithCaptureExt(int i) {
+fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 32, fn::Triviality::kNonTrivial, true>
+giveTaskWithCaptureExt(int i) {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
-    using R = fn::Task<std::uint64_t(), true, 32, false, true>;
+    using R = fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 32, fn::Triviality::kNonTrivial,
+                       true>;
     switch (i) {
         case 0:
             return R{[](const std::shared_ptr<int>& ptr) -> std::uint64_t { return *ptr; }, p};
@@ -137,11 +140,13 @@ fn::FlexTask<std::uint64_t() const> giveFlexTaskWithMoreCapture(int i) {
     }
 }
 
-fn::Task<std::uint64_t(), true, 64, false, true> giveTaskWithMoreCaptureExt(int i) {
+fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 64, fn::Triviality::kNonTrivial, true>
+giveTaskWithMoreCaptureExt(int i) {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
     void* node{nullptr};
     std::string_view strView{"hello"};
-    using F = fn::Task<std::uint64_t(), true, 64, false, true>;
+    using F = fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 64, fn::Triviality::kNonTrivial,
+                       true>;
     switch (i) {
         case 0:
             return F{[](const std::shared_ptr<int>& ptr, void* n,
@@ -198,7 +203,8 @@ auto giveStaticTaskWithMoreCaptureExt() {
     static std::shared_ptr<int> p{std::make_shared<int>(0)};
     void* node{nullptr};
     std::string_view strView{"hello"};
-    static auto f = fn::Task<std::uint64_t(), true, 64, false, false, true>{
+    static auto f = fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 64,
+                             fn::Triviality::kNonTrivial, false, fn::HeapPolicy::kAllow>{
         [](const std::shared_ptr<int>& ptr, void* n, std::string_view s) -> std::uint64_t {
             return *ptr + 1 + s.size() + static_cast<std::uint64_t>(n != nullptr);
         },
@@ -432,7 +438,9 @@ void doBenchFunctionsFetchAndRun() {
         "std::function with trivial captures", b);
     doRunFetchRunInstance<fn::Task16<std::uint64_t() const>, giveStaticTask>(
         "Task - Base Task16 from fn::TrivialTask16 with trivial captures", b);
-    doRunFetchRunInstance<fn::Task<std::uint64_t() const, true, 256, true>, giveStaticTask>(
+    doRunFetchRunInstance<
+        fn::Task<std::uint64_t() const, fn::Copyability::kCopyable, 256, fn::Triviality::kTrivial>,
+        giveStaticTask>(
         "Task - Large 256 bytes stack (unneeded), from fn::TrivialTask16 with trivial captures", b);
     doRunFetchRunInstance<fn::TrivialTask16<std::uint64_t() const>, giveStaticTask>(
         "Task - fn::TrivialTask16 from fn::TrivialTask16 with trivial captures", b);
@@ -467,8 +475,10 @@ void doBenchFunctionsJustRun() {
     fn::Task64<std::uint64_t() const> task2 = giveTaskWithMoreCapture(0);
     const auto flexTask = giveFlexTaskWithMoreCapture(0);
     fn::TrivialTask64<std::uint64_t() const> task3 = giveTask(0);
-    fn::Task<std::uint64_t(), true, 32, false, true> task4 = giveTaskWithCaptureExt(0);
-    fn::Task<std::uint64_t(), true, 64, false, true> task5 = giveTaskWithMoreCaptureExt(0);
+    fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 32, fn::Triviality::kNonTrivial, true>
+        task4 = giveTaskWithCaptureExt(0);
+    fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 64, fn::Triviality::kNonTrivial, true>
+        task5 = giveTaskWithMoreCaptureExt(0);
     b.run("std::function that captures std::shared_ptr, node pointer and string view",
           [&] { ankerl::nanobench::doNotOptimizeAway(f1()); });
     b.run("Task that captures std::shared_ptr, node pointer and string view", [&] {
@@ -525,8 +535,10 @@ void doBenchFunctions() {
     fn::Task32<std::uint64_t() const> task1;
     fn::Task64<std::uint64_t() const> task2;
     fn::TrivialTask64<std::uint64_t() const> task3;
-    fn::Task<std::uint64_t(), true, 32, false, true> task4;
-    fn::Task<std::uint64_t(), true, 64, false, true> task5;
+    fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 32, fn::Triviality::kNonTrivial, true>
+        task4;
+    fn::Task<std::uint64_t(), fn::Copyability::kCopyable, 64, fn::Triviality::kNonTrivial, true>
+        task5;
     b.run("std::function that captures std::shared_ptr, node pointer and string view",
           [&] { ankerl::nanobench::doNotOptimizeAway(f1 = giveFuncWithMoreCapture(rand() % 3)); });
     b.run("Task - Base from Base that captures std::shared_ptr, node pointer and string view", [&] {
