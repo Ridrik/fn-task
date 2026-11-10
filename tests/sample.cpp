@@ -1,12 +1,14 @@
+#include <cstddef>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <type_traits>
+#include <utility>
 
 #include <task/task.hpp>
 
+#include "task/deductors.hpp"
 #include "task/function_traits.hpp"
 
 bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) noexcept {
@@ -78,8 +80,8 @@ int main() {
     //                                 std::string("Hello World")}; Similar error
 
     // This works
-    auto _ = fn::Task64<void(int&) &>{[](int& age, std::string& name) mutable { name = "Hi"; },
-                                      std::string("Hello World")};
+    auto refSigTask = fn::Task64<void(int&) &>{
+        [](int& age, std::string& name) mutable { name = "Hi"; }, std::string("Hello World")};
 
     // Deducts move only tasks
     auto uniqueTask = fn::makeTask([](std::unique_ptr<int>& a) { return *a; },
@@ -123,4 +125,9 @@ int main() {
     auto taskk2 = fn::makeTask(Wrapper{"Hello World"}, std::size_t{5});
     static_assert(decltype(taskk2)::matchesSignature<std::string()>());
     std::cout << "Message is " << taskk2() << '\n';
+
+    // Bind support
+    auto bindBack = std::bind_back([](int a) {}, 42);
+    auto bindBackTask = fn::Task{bindBack};
+    bindBackTask();
 }

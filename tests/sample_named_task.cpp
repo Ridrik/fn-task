@@ -103,4 +103,9 @@ int main() {
 
     auto nTask = fn::Task{funcWithLiterals};
     static_assert(decltype(nTask)::matchesSignature<decltype(funcWithLiterals)::Signature>());
+
+    // Bind support
+    auto bindBack = std::bind_back([](int a) {}, 42);
+    auto bindBackTask = fn::NamedTask{bindBack};
+    bindBackTask();
 }
