@@ -217,6 +217,44 @@ template <typename... Ts>
     requires((std::is_reference_v<Ts> && ...))
 struct IsRefPayloadTuple<PayloadTuple<Ts...>> : std::true_type {};
 
+template <typename T>
+struct unwrap_reference_qualifiers {  // NOLINT
+    using type = T;
+};
+
+template <typename T>
+struct unwrap_reference_qualifiers<std::reference_wrapper<T>> {
+    using type = std::remove_const_t<T>;
+};
+
+template <typename T>
+struct unwrap_reference_qualifiers<std::reference_wrapper<T>&&> {
+    using type = std::remove_const_t<T>&&;
+};
+
+template <typename T>
+struct unwrap_reference_qualifiers<std::reference_wrapper<T> const&&> {
+    using type = std::remove_const_t<T> const&&;
+};
+
+template <typename T>
+struct unwrap_reference_qualifiers<const std::reference_wrapper<T>> {
+    using type = const std::remove_const_t<T>;
+};
+
+template <typename T>
+struct unwrap_reference_qualifiers<std::reference_wrapper<T>&> {
+    using type = std::remove_const_t<T>&;
+};
+
+template <typename T>
+struct unwrap_reference_qualifiers<const std::reference_wrapper<T>&> {
+    using type = const std::remove_const_t<T>&;
+};
+
+template <typename T>
+using unwrap_reference_qualifiers_t = typename unwrap_reference_qualifiers<T>::type;
+
 template <>
 struct PayloadTuple<> {
     template <auto F, typename... ArgsSoFar>
@@ -270,20 +308,23 @@ struct PayloadTuple<> {
                                                 ArgsSoFar&&... args) {
         static_assert(std::is_invocable_v<F, decltype(args)...>,
                       "F is not callable with given arguments");
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+        return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
+                           std::forward<ArgsSoFar>(args)...);
     }
 
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyCompatible([[maybe_unused]] this auto&& /*self*/,
                                                           F&& f, ArgsSoFar&&... args) {
-        return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+        return fn::invoke_compatible(std::forward<unwrap_reference_qualifiers_t<F>>(f),
+                                     std::forward<ArgsSoFar>(args)...);
     }
 
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
         static_assert(std::is_invocable_v<F, decltype(args)...>,
                       "F is not callable with given arguments");
-        return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...);
+        return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
+                           std::forward<ArgsSoFar>(args)...);
     }
 
     template <typename F, typename... ArgsSoFar>
@@ -407,7 +448,8 @@ struct PayloadTuple<T, Ts...> {
             static_assert(std::is_invocable_v<decltype(f), decltype(args)...,
                                               decltype(std::forward_like<Self>(self.head))>,
                           "F is not callable with given arguments");
-            return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+            return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
+                               std::forward<ArgsSoFar>(args)...,
                                std::forward_like<Self>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).apply(std::forward<F>(f),
@@ -421,7 +463,8 @@ struct PayloadTuple<T, Ts...> {
                                                           ArgsSoFar&&... args) {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
-            return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+            return fn::invoke_compatible(std::forward<unwrap_reference_qualifiers_t<F>>(f),
+                                         std::forward<ArgsSoFar>(args)...,
                                          std::forward_like<Self>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).applyCompatible(
@@ -435,8 +478,8 @@ struct PayloadTuple<T, Ts...> {
         if constexpr (sizeof...(Ts) == 0) {
             static_assert(std::is_invocable_v<decltype(f), decltype(args)..., decltype(head)>,
                           "F is not callable with given arguments");
-            return std::invoke(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                               std::forward<T>(head));
+            return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
+                               std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
         } else {
             return std::move(tail).applyAsArgs(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
                                                std::forward<T>(head));
@@ -446,8 +489,8 @@ struct PayloadTuple<T, Ts...> {
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgsCompatible(F&& f, ArgsSoFar&&... args) && {
         if constexpr (sizeof...(Ts) == 0) {
-            return fn::invoke_compatible(std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                                         std::forward<T>(head));
+            return fn::invoke_compatible(std::forward<unwrap_reference_qualifiers_t<F>>(f),
+                                         std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
         } else {
             return std::move(tail).applyAsArgsCompatible(
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)..., std::forward<T>(head));

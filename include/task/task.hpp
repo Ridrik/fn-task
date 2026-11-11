@@ -1980,10 +1980,9 @@ struct IsFunctionTag<FunctionTag<F>> : std::true_type {};
 
 struct RefTag {};
 
-template <typename Signature, Copyability cb, InlineSize size, Triviality t, bool Extended,
-          HeapPolicy hp, Alignment align>
-struct Task
-    : public InvokerBuilder<Signature, Task<Signature, cb, size, t, Extended, hp, align>, size> {
+template <typename S, Copyability cb, InlineSize size, Triviality t, bool Extended, HeapPolicy hp,
+          Alignment align>
+struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>, size> {
     template <typename, Copyability, InlineSize, Triviality, bool, HeapPolicy, Alignment>
     friend struct Task;
 
@@ -2003,6 +2002,7 @@ struct Task
     static_assert(align > 0 && (align & (align - 1)) == 0, "Alignment must be a power of 2");
     static_assert(Copyable || !Extended, "Move only types under development for Extended option.");
 
+    using Signature = S;
     using traits = FunctionTraits<Signature>;
     static constexpr bool kMutable = !traits::kIsConst;
     using R = typename traits::return_type;
@@ -2355,7 +2355,8 @@ struct Task
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
                   template getInvoker<PayloadT<decltype(f), BoundArgs...>,
-                                      std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
+                                      std::remove_cvref_t<std::unwrap_ref_decay_t<decltype(f)>>,
+                                      std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
@@ -2403,8 +2404,7 @@ struct Task
 
     template <typename F, typename... BoundArgs>
     constexpr Task([[maybe_unused]] RefTag /*unused*/, F&& f, BoundArgs&&... args)  // NOLINT
-        requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
-                 (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value))
+        requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value)
         : storage_{.invoker =
                        InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>,
                                       size>::template getInvoker<PayloadImpl<F, BoundArgs...>,
@@ -2634,9 +2634,8 @@ Task(F&&, BoundArgs&&...)
             TaskTypeDeductor<F, BoundArgs...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
-    requires(!IsFunctionTag<F>::value &&
-             (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
-             FunctionTraits<std::decay_t<F>>::kValid && TaskTypeDeductor<F, BoundArgs...>::kIsValid)
+    requires(!IsFunctionTag<F>::value && FunctionTraits<std::decay_t<F>>::kValid &&
+             TaskTypeDeductor<F, BoundArgs...>::kIsValid)
 Task(RefTag, F&&, BoundArgs&&...)
     -> Task<typename TaskTypeDeductor<F, BoundArgs...>::TypeTraits::Signature,
             TaskTypeDeductor<F, BoundArgs...>::kRefCopyable,
@@ -2645,8 +2644,7 @@ Task(RefTag, F&&, BoundArgs&&...)
             TaskTypeDeductor<F, BoundArgs...>::kRefAlignment>;
 
 template <auto F, typename... BoundArgs>
-    requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
-             FunctionTraits<decltype(F)>::kValid && TaskTypeDeductorAuto<F, BoundArgs...>::kIsValid)
+    requires(FunctionTraits<decltype(F)>::kValid && TaskTypeDeductorAuto<F, BoundArgs...>::kIsValid)
 Task(RefTag, FunctionTag<F>, BoundArgs&&...)
     -> Task<typename TaskTypeDeductorAuto<F, BoundArgs...>::TypeTraits::Signature,
             TaskTypeDeductorAuto<F, BoundArgs...>::kRefCopyable,
@@ -2657,7 +2655,8 @@ Task(RefTag, FunctionTag<F>, BoundArgs&&...)
 template <typename F, typename... Args>
 FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeTask(
     F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<F>>, "Given callable is invalid");
+    static_assert(HasFunctionTraits<std::remove_cvref_t<std::unwrap_ref_decay_t<F>>>,
+                  "Given callable is invalid");
     static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");
     return Task(std::forward<F>(f), std::forward<Args>(args)...);

@@ -66,10 +66,16 @@ template <typename S, typename F, typename... BoundArgs>
 struct NamedTask;
 
 template <typename>
-struct IsNamedTask : std::false_type {};
+struct IsNamedTask : std::false_type {
+    static constexpr bool kIsRef{false};
+    static constexpr bool kIsAuto{false};
+};
 
 template <typename S, typename F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, F, BoundArgs...>> : std::true_type {};
+struct IsNamedTask<NamedTask<S, F, BoundArgs...>> : std::true_type {
+    static constexpr bool kIsRef{false};
+    static constexpr bool kIsAuto{false};
+};
 
 template <typename F>
 struct NamedTaskRefTag {};
@@ -81,19 +87,29 @@ template <auto F>
 struct StaticFn {};
 
 template <typename S, typename F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, NamedTaskRefTag<F>, BoundArgs...>> : std::true_type {};
+struct IsNamedTask<NamedTask<S, NamedTaskRefTag<F>, BoundArgs...>> : std::true_type {
+    static constexpr bool kIsRef{true};
+    static constexpr bool kIsAuto{false};
+};
 
 template <typename S, auto F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, StaticFn<F>, BoundArgs...>> : std::true_type {};
+struct IsNamedTask<NamedTask<S, StaticFn<F>, BoundArgs...>> : std::true_type {
+    static constexpr bool kIsRef{false};
+    static constexpr bool kIsAuto{true};
+};
 
 template <typename S, auto F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>> : std::true_type {};
+struct IsNamedTask<NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>> : std::true_type {
+    static constexpr bool kIsRef{true};
+    static constexpr bool kIsAuto{true};
+};
 
-template <typename F, typename... BoundArgs>
-    requires(HasFunctionTraits<std::decay_t<F>>)
+template <typename Ft, typename... BoundArgs>
+    requires(HasFunctionTraits<std::remove_cvref_t<std::unwrap_ref_decay_t<Ft>>>)
 struct TaskTypeDeductor {
+    using F = std::remove_cvref_t<std::unwrap_ref_decay_t<Ft>>;
     struct StripBoundArgs {
-        using Traits = FunctionTraits<std::decay_t<F>>;
+        using Traits = FunctionTraits<F>;
         using AllArgs = Traits::args_tuple;
 
         static constexpr std::size_t kRemainingCount =
@@ -107,46 +123,43 @@ struct TaskTypeDeductor {
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             static constexpr bool kIsValid =
-                is_compatible_invocable_v<std::decay_t<F>, Ts...,
-                                          std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<std::decay_t<F>, std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                          TsR...>;
+                is_compatible_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...> ||
+                is_compatible_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<std::decay_t<F>&&, Ts...,
-                                          std::unwrap_ref_decay_t<BoundArgs>&&...>;
+                is_compatible_invocable_v<F&&, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>, Ts...,
+                  std::is_invocable_v<const F, Ts...,
                                       const std::unwrap_reference_t<typename RefToConstRef<
                                           std::decay_t<BoundArgs>>::Type>...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>,
+                  std::is_invocable_v<const F,
                                       const std::unwrap_reference_t<
                                           typename RefToConstRef<std::decay_t<BoundArgs>>::Type>...,
                                       TsR...>));
             static constexpr bool kIsRValRef =
                 Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&, Ts...,
+                  std::is_invocable_v<F&&, Ts...,
                                       std::unwrap_reference_t<typename RefToConstRef<
                                           std::decay_t<BoundArgs>>::Type>&&...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&,
+                  std::is_invocable_v<F&&,
                                       std::unwrap_reference_t<typename RefToConstRef<
                                           std::decay_t<BoundArgs>>::Type>&&...,
                                       TsR...>));
             static constexpr bool kIsLValRef =
                 Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&, Ts...,
+                  std::is_invocable_v<F&, Ts...,
                                       std::unwrap_reference_t<typename RefToConstRef<
                                           std::decay_t<BoundArgs>>::Type>&...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&,
+                  std::is_invocable_v<F&,
                                       std::unwrap_reference_t<typename RefToConstRef<
                                           std::decay_t<BoundArgs>>::Type>&...,
                                       TsR...>));
