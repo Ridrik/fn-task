@@ -2655,7 +2655,7 @@ Task(RefTag, FunctionTag<F>, BoundArgs&&...)
 template <typename F, typename... Args>
 FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeTask(
     F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_cvref_t<std::unwrap_ref_decay_t<F>>>,
+    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
     static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");

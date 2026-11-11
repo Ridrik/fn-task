@@ -224,32 +224,32 @@ struct unwrap_reference_qualifiers {  // NOLINT
 
 template <typename T>
 struct unwrap_reference_qualifiers<std::reference_wrapper<T>> {
-    using type = std::remove_const_t<T>;
+    using type = T;
 };
 
 template <typename T>
 struct unwrap_reference_qualifiers<std::reference_wrapper<T>&&> {
-    using type = std::remove_const_t<T>&&;
+    using type = T&&;
 };
 
 template <typename T>
 struct unwrap_reference_qualifiers<std::reference_wrapper<T> const&&> {
-    using type = std::remove_const_t<T> const&&;
+    using type = T const&&;
 };
 
 template <typename T>
 struct unwrap_reference_qualifiers<const std::reference_wrapper<T>> {
-    using type = const std::remove_const_t<T>;
+    using type = const T;
 };
 
 template <typename T>
 struct unwrap_reference_qualifiers<std::reference_wrapper<T>&> {
-    using type = std::remove_const_t<T>&;
+    using type = T&;
 };
 
 template <typename T>
 struct unwrap_reference_qualifiers<const std::reference_wrapper<T>&> {
-    using type = const std::remove_const_t<T>&;
+    using type = const T&;
 };
 
 template <typename T>
