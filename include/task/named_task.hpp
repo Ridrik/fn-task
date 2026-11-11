@@ -26,9 +26,10 @@ struct NamedTaskInvoker;
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
-    static_assert(is_compatible_invocable_v<F, BoundArgs&&..., Args...> ||
-                  is_compatible_invocable_v<F, Args..., BoundArgs&&...>);
-    static constexpr bool kIsFront = is_compatible_invocable_v<F, BoundArgs&&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(is_compatible_invocable_v<UnwrapF, BoundArgs&&..., Args...> ||
+                  is_compatible_invocable_v<UnwrapF, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = is_compatible_invocable_v<UnwrapF, BoundArgs&&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -42,9 +43,10 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcept> {
-    static_assert(is_compatible_invocable_v<F, BoundArgs&&..., Args...> ||
-                  is_compatible_invocable_v<F, Args..., BoundArgs&&...>);
-    static constexpr bool kIsFront = is_compatible_invocable_v<F, BoundArgs&&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(is_compatible_invocable_v<UnwrapF, BoundArgs&&..., Args...> ||
+                  is_compatible_invocable_v<UnwrapF, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = is_compatible_invocable_v<UnwrapF, BoundArgs&&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -58,9 +60,11 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcep
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const> {
-    static_assert(std::is_invocable_v<F, const BoundArgs..., Args...> ||
-                  std::is_invocable_v<F, Args..., const BoundArgs...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...> ||
+                  std::is_invocable_v<const UnwrapF, Args..., const BoundArgs...>);
+    static constexpr bool kIsFront =
+        std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return (static_cast<const Task>(self))
@@ -73,9 +77,11 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const> 
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const noexcept> {
-    static_assert(std::is_invocable_v<F, const BoundArgs..., Args...> ||
-                  std::is_invocable_v<F, Args..., const BoundArgs...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...> ||
+                  std::is_invocable_v<const UnwrapF, Args..., const BoundArgs...>);
+    static constexpr bool kIsFront =
+        std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
         if constexpr (kIsFront) {
             return (static_cast<const Task>(self))
@@ -88,9 +94,11 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const n
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&> {
-    static_assert(std::is_invocable_v<F, const BoundArgs&..., Args...> ||
-                  std::is_invocable_v<F, Args..., const BoundArgs&...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<const UnwrapF&, const BoundArgs&..., Args...> ||
+                  std::is_invocable_v<const UnwrapF&, Args..., const BoundArgs&...>);
+    static constexpr bool kIsFront =
+        std::is_invocable_v<const UnwrapF&, const BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return (static_cast<const Task&>(self))
@@ -103,9 +111,11 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&>
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const & noexcept> {
-    static_assert(std::is_invocable_v<F, const BoundArgs&..., Args...> ||
-                  std::is_invocable_v<F, Args..., const BoundArgs&...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, const BoundArgs&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<const UnwrapF&, const BoundArgs&..., Args...> ||
+                  std::is_invocable_v<const UnwrapF&, Args..., const BoundArgs&...>);
+    static constexpr bool kIsFront =
+        std::is_invocable_v<const UnwrapF&, const BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
         if constexpr (kIsFront) {
             return (static_cast<const Task&>(self))
@@ -118,9 +128,10 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const &
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &> {
-    static_assert(std::is_invocable_v<F, BoundArgs&..., Args...> ||
-                  std::is_invocable_v<F, Args..., BoundArgs&...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...> ||
+                  std::is_invocable_v<UnwrapF&, Args..., BoundArgs&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return (static_cast<Task>(self)).payload_.invokeFront(std::forward<Args>(args)...);
@@ -132,9 +143,10 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &> {
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) & noexcept> {
-    static_assert(std::is_invocable_v<F, BoundArgs&..., Args...> ||
-                  std::is_invocable_v<F, Args..., BoundArgs&...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...> ||
+                  std::is_invocable_v<UnwrapF&, Args..., BoundArgs&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
         if constexpr (kIsFront) {
             return (static_cast<Task>(self)).payload_.invokeFront(std::forward<Args>(args)...);
@@ -146,9 +158,10 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) & noexc
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
-    static_assert(std::is_invocable_v<F, BoundArgs&&..., Args...> ||
-                  std::is_invocable_v<F, Args..., BoundArgs&&...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<UnwrapF&&, BoundArgs&&..., Args...> ||
+                  std::is_invocable_v<UnwrapF&&, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&&, BoundArgs&&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -162,15 +175,52 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) && noexcept> {
-    static_assert(std::is_invocable_v<F, BoundArgs&&..., Args...> ||
-                  std::is_invocable_v<F, Args..., BoundArgs&&...>);
-    static constexpr bool kIsFront = std::is_invocable_v<F, BoundArgs&&..., Args...>;
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<UnwrapF&&, BoundArgs&&..., Args...> ||
+                  std::is_invocable_v<UnwrapF&&, Args..., BoundArgs&&...>);
+    static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&&, BoundArgs&&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
                 .invokeFront(std::forward<Args>(args)...);
         } else {
             return std::move((static_cast<Task>(self)).payload_)
+                .invoke(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&&> {
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<const UnwrapF&&, const BoundArgs&&..., Args...> ||
+                  std::is_invocable_v<const UnwrapF&&, Args..., const BoundArgs&&...>);
+    static constexpr bool kIsFront =
+        std::is_invocable_v<const UnwrapF&&, const BoundArgs&&..., Args...>;
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
+        if constexpr (kIsFront) {
+            return std::move((static_cast<const Task>(self)).payload_)
+                .invokeFront(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<const Task>(self)).payload_)
+                .invoke(std::forward<Args>(args)...);
+        }
+    }
+};
+
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const && noexcept> {
+    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    static_assert(std::is_invocable_v<const UnwrapF&&, const BoundArgs&&..., Args...> ||
+                  std::is_invocable_v<const UnwrapF&&, Args..., const BoundArgs&&...>);
+    static constexpr bool kIsFront =
+        std::is_invocable_v<const UnwrapF&&, const BoundArgs&&..., Args...>;
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
+        if constexpr (kIsFront) {
+            return std::move((static_cast<const Task>(self)).payload_)
+                .invokeFront(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<const Task>(self)).payload_)
                 .invoke(std::forward<Args>(args)...);
         }
     }
@@ -196,6 +246,7 @@ struct NamedTask<S, F, BoundArgs...>
 
    public:
     using Signature = S;
+    using CallableHolder = F;
 
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
@@ -392,6 +443,7 @@ struct NamedTask<S, NamedTaskRefTag<F>, BoundArgs...>
 
    public:
     using Signature = S;
+    using CallableHolder = NamedTaskRefTag<F>;
 
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
@@ -428,7 +480,7 @@ struct NamedTask<S, NamedTaskRefTag<F>, BoundArgs...>
         : payload_{other.payload_} {}
 
     template <typename SigOther, typename OtherF, typename... OtherBoundArgs>
-        requires(std::is_convertible_v<OtherF, CallableImpl> &&
+        requires(std::is_convertible_v<OtherF, F> &&
                  std::is_convertible_v<
                      typename NamedTask<SigOther, OtherF, OtherBoundArgs...>::PayloadType,
                      PayloadType> &&
@@ -569,7 +621,7 @@ struct NamedTask<S, NamedTaskRefTag<F>, BoundArgs...>
         : payload_{.f = std::forward<F>(f), .args = {std::forward<BoundArgs>(args)...}} {}
 
     // For deductors
-    NamedTask([[maybe_unused]] NamedTaskRefTag<F> /*unused*/, F&& f, BoundArgs&&... args)  // NOLINT
+    NamedTask([[maybe_unused]] NTRefTagCommon /*unused*/, F&& f, BoundArgs&&... args)  // NOLINT
         requires(sizeof...(BoundArgs) > 0 || !IsNamedTask<std::decay_t<F>>::value)
         : payload_{.f = std::forward<F>(f), .args = {std::forward<BoundArgs>(args)...}} {}
 };
@@ -590,6 +642,7 @@ struct NamedTask<S, StaticFn<F>, BoundArgs...>
 
    public:
     using Signature = S;
+    using CallableHolder = StaticFn<F>;
 
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
@@ -698,6 +751,7 @@ struct NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>
 
    public:
     using Signature = S;
+    using CallableHolder = NamedTaskStaticRefTag<F>;
 
     [[nodiscard]] static constexpr auto getSize() noexcept -> std::size_t {
         return sizeof(NamedTask);
@@ -790,7 +844,7 @@ struct NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>
     NamedTask(BoundArgs&&... args) : payload_{{std::forward<BoundArgs>(args)...}} {}
 
     // For deductors
-    NamedTask([[maybe_unused]] NamedTaskStaticRefTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
+    NamedTask([[maybe_unused]] NTRefTagCommon /*unused*/, BoundArgs&&... args)  // NOLINT
         : payload_{{std::forward<BoundArgs>(args)...}} {}
 };
 
@@ -799,7 +853,7 @@ NamedTask(F&&, BoundArgs&&...)
     -> NamedTask<typename NamedTaskTypeDeductor<F, BoundArgs...>::Signature, F, BoundArgs...>;
 
 template <typename F, typename... BoundArgs>
-NamedTask(NamedTaskRefTag<F>, F&&, BoundArgs&&...)
+NamedTask(NTRefTagCommon, F&&, BoundArgs&&...)
     -> NamedTask<typename NamedTaskTypeDeductor<F, BoundArgs...>::Signature, NamedTaskRefTag<F>,
                  BoundArgs...>;
 
@@ -822,7 +876,7 @@ FORCE_INLINE auto makeRefNamedTask(BoundArgs&&... args) {
     return NamedTask<
         typename NamedTaskTypeDeductorAuto<F, AddRefWrapperToRef_t<BoundArgs>...>::Signature,
         NamedTaskStaticRefTag<F>, AddRefWrapperToRef_t<BoundArgs>...>{
-        NamedTaskStaticRefTag<F>{}, std::forward<BoundArgs>(args)...};
+        NTRefTagCommon{}, std::forward<BoundArgs>(args)...};
 }
 
 template <typename F>
@@ -841,9 +895,10 @@ FORCE_INLINE auto toFuncPtr() {
 }
 
 template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
-    requires(!StoreFuncAsPtr || (requires {
-        typename FunctionTraits<std::decay_t<F>>::func_ptr;
-    } && std::is_convertible_v<F, typename FunctionTraits<std::decay_t<F>>::func_ptr>))
+    requires((sizeof...(BoundArgs) > 0 || !IsNamedTask<std::decay_t<F>>::value) &&
+             (!StoreFuncAsPtr || (requires {
+                 typename FunctionTraits<std::decay_t<F>>::func_ptr;
+             } && std::is_convertible_v<F, typename FunctionTraits<std::decay_t<F>>::func_ptr>)))
 FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
     if constexpr (StoreFuncAsPtr) {
         using func_ptr = typename FunctionTraits<std::decay_t<F>>::func_ptr;
@@ -856,6 +911,14 @@ FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
     }
 }
 
+/*template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
+FORCE_INLINE auto makeNamedTask(auto&& f)
+    requires IsNamedTask<std::decay_t<decltype(f)>>::value
+{
+    return NamedTask<typename NamedTaskTypeDeductor<F, BoundArgs...>::Signature, F, BoundArgs...>{
+        std::forward<F>(f)};
+}*/
+
 template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
     requires(!StoreFuncAsPtr || (requires {
         typename FunctionTraits<std::decay_t<F>>::func_ptr;
@@ -865,13 +928,13 @@ FORCE_INLINE auto makeRefNamedTask(F&& f, BoundArgs&&... args) {
         using func_ptr = typename FunctionTraits<std::decay_t<F>>::func_ptr;
         return NamedTask<
             typename NamedTaskTypeDeductor<func_ptr, AddRefWrapperToRef_t<BoundArgs>...>::Signature,
-            NamedTaskRefTag<func_ptr>, BoundArgs...>{NamedTaskRefTag<F>{}, std::forward<F>(f),
+            NamedTaskRefTag<func_ptr>, BoundArgs...>{std::forward<F>(f),
                                                      std::forward<BoundArgs>(args)...};
     } else {
         return NamedTask<
-            typename NamedTaskTypeDeductor<F, AddRefWrapperToRef_t<BoundArgs>...>::Signature,
-            NamedTaskRefTag<F>, BoundArgs...>{NamedTaskRefTag<F>{}, std::forward<F>(f),
-                                              std::forward<BoundArgs>(args)...};
+            typename NamedTaskTypeDeductor<AddRefWrapperToRef_t<F>,
+                                           AddRefWrapperToRef_t<BoundArgs>...>::Signature,
+            NamedTaskRefTag<F>, BoundArgs...>{std::forward<F>(f), std::forward<BoundArgs>(args)...};
     }
 }
 
@@ -897,7 +960,7 @@ FORCE_INLINE auto makeThisRefTask(F&& f, BoundArg&& arg)
 {
     using ptr = typename FunctionTraits<std::decay_t<F>>::func_ptr;
     return NamedTask<typename NamedTaskTypeDeductor<ptr, void*>::Signature, NamedTaskRefTag<ptr>,
-                     void*>{NamedTaskRefTag<F>{}, std::forward<F>(f), std::forward<BoundArg>(arg)};
+                     void*>{NTRefTagCommon{}, std::forward<F>(f), std::forward<BoundArg>(arg)};
 }
 
 template <auto F, typename BoundArg>

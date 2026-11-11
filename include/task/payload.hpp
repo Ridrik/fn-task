@@ -306,7 +306,7 @@ struct PayloadTuple<> {
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/, F&& f,
                                                 ArgsSoFar&&... args) {
-        static_assert(std::is_invocable_v<F, decltype(args)...>,
+        static_assert(std::is_invocable_v<unwrap_reference_qualifiers_t<F>, decltype(args)...>,
                       "F is not callable with given arguments");
         return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
                            std::forward<ArgsSoFar>(args)...);
@@ -321,7 +321,7 @@ struct PayloadTuple<> {
 
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
-        static_assert(std::is_invocable_v<F, decltype(args)...>,
+        static_assert(std::is_invocable_v<unwrap_reference_qualifiers_t<F>, decltype(args)...>,
                       "F is not callable with given arguments");
         return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
                            std::forward<ArgsSoFar>(args)...);
@@ -445,7 +445,7 @@ struct PayloadTuple<T, Ts...> {
     FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, F&& f, ArgsSoFar&&... args) {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
-            static_assert(std::is_invocable_v<decltype(f), decltype(args)...,
+            static_assert(std::is_invocable_v<unwrap_reference_qualifiers_t<F>, decltype(args)...,
                                               decltype(std::forward_like<Self>(self.head))>,
                           "F is not callable with given arguments");
             return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
@@ -476,7 +476,8 @@ struct PayloadTuple<T, Ts...> {
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgs(F&& f, ArgsSoFar&&... args) && {
         if constexpr (sizeof...(Ts) == 0) {
-            static_assert(std::is_invocable_v<decltype(f), decltype(args)..., decltype(head)>,
+            static_assert(std::is_invocable_v<unwrap_reference_qualifiers_t<F>, decltype(args)...,
+                                              decltype(head)>,
                           "F is not callable with given arguments");
             return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
                                std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
@@ -683,7 +684,7 @@ template <typename F, typename... Args>
 using PayloadT = PayloadImpl<std::decay_t<F>, std::decay_t<Args>...>;
 
 template <typename F, typename... Args>
-using PayloadNamedRef = PayloadImpl<F, AddRefWrapperToRef_t<Args>...>;
+using PayloadNamedRef = PayloadImpl<AddRefWrapperToRef_t<F>, AddRefWrapperToRef_t<Args>...>;
 
 template <auto F, typename... Args>
 using PayloadArgsT = PayloadImplArgs<F, std::decay_t<Args>...>;
