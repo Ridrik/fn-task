@@ -128,8 +128,8 @@ int main() {
         struct Functor {
             std::string data;
 
-            void operator()(std::string&& other) {
-                data += other;
+            void operator()(std::string& other) & {
+                // data += other;
             }
         };
         auto sRef = std::ref(s);
@@ -137,7 +137,10 @@ int main() {
         using strRefT = std::reference_wrapper<std::string>;
         using unref = std::unwrap_ref_decay_t<strRefT>;
         // static_assert(std::is_invocable_v<Functor, unref&&>);
-        // auto a = fn::makeNamedTask(Functor{}, std::ref(s));
+        auto functor = Functor{};
+        static_assert(std::is_invocable_v<std::reference_wrapper<Functor>, std::string&>);
+        auto a = fn::makeRefNamedTask(functor, s);
+        a();
         auto aa = fn::makeTask(Functor{}, s);
     }
 }

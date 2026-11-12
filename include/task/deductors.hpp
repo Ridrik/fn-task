@@ -383,9 +383,8 @@ struct TaskTypeDeductorAuto {
                                                ? Triviality::kTrivial
                                                : Triviality::kNonTrivial;
     static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    static constexpr auto kRefPayloadSize = sizeof...(BoundArgs) > 0
-                                                ? sizeof(PayloadImplArgs<F, BoundArgs...>)
-                                                : 0;
+    static constexpr auto kRefPayloadSize =
+        sizeof...(BoundArgs) > 0 ? sizeof(PayloadImplArgs<F, BoundArgs...>) : 0;
     using TypeTraits = StripBoundArgs::type;
     using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
@@ -406,7 +405,8 @@ struct TaskTypeDeductorAuto {
 template <typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
 struct NamedTaskTypeDeductor {
-    using F = std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
+    using F = std::decay_t<Ft>;  // std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
+    using F_Unwrapped = std::remove_reference_t<std::unwrap_reference_t<F>>;
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>;
         using AllArgs = Traits::args_tuple;
@@ -418,27 +418,27 @@ struct NamedTaskTypeDeductor {
         using SlicedTuple = slice_first<kRemainingCount, AllArgs>::type;
         using SlicedTupleReverse = slice_last<kRemainingCount, AllArgs>::type;
 
-        template <typename Ret, typename Tuple, typename TupleReverse>
+        template <typename Ret, typename Tuple, typename TupleReverse, typename FilteredBoundArgs>
         struct rebuild;
-        template <typename Ret, typename... Ts, typename... TsR>
-        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
-            static constexpr bool kIsValid = is_compatible_invocable_v<F, Ts..., BoundArgs&&...> ||
-                                             is_compatible_invocable_v<F, BoundArgs&&..., TsR...>;
+        template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
+        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
+            static constexpr bool kIsValid =
+                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...> ||
+                is_compatible_invocable_v<F_Unwrapped, FiltBoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F, Ts..., BoundArgs&&...>;
+                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
-                Traits::kIsConst &&
                 ((kIsNormalOrder && std::is_invocable_v<const F, Ts..., const BoundArgs...>) ||
                  (!kIsNormalOrder && std::is_invocable_v<const F, const BoundArgs..., TsR...>));
             static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef &&
-                ((kIsNormalOrder && std::is_invocable_v<F&&, Ts..., BoundArgs&&...>) ||
-                 (!kIsNormalOrder && std::is_invocable_v<F&&, BoundArgs&&..., TsR...>));
+                ((kIsNormalOrder &&
+                  std::is_invocable_v<F_Unwrapped&&, Ts..., FiltBoundArgs&&...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<F_Unwrapped&&, FiltBoundArgs&&..., TsR...>));
             static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef &&
                 ((kIsNormalOrder && std::is_invocable_v<F&, Ts..., BoundArgs&...>) ||
                  (!kIsNormalOrder && std::is_invocable_v<F&, BoundArgs&..., TsR...>));
             using Signature = std::conditional_t<
@@ -485,7 +485,9 @@ struct NamedTaskTypeDeductor {
                             std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
         };
 
-        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
+        using type =
+            rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
+                    std::tuple<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>...>>;
     };
 
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
@@ -511,30 +513,29 @@ struct NamedTaskTypeDeductorAuto {
         using SlicedTuple = typename slice_first<kRemainingCount, AllArgs>::type;
         using SlicedTupleReverse = typename slice_last<kRemainingCount, AllArgs>::type;
 
-        template <typename Ret, typename Tuple, typename TupleReverse>
+        template <typename Ret, typename Tuple, typename TupleReverse, typename FiltBoundARgs>
         struct rebuild;
-        template <typename Ret, typename... Ts, typename... TsR>
-        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
+        template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
+        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
             static constexpr bool kIsValid =
-                is_compatible_invocable_v<std::decay_t<F>, Ts..., BoundArgs&&...> ||
-                is_compatible_invocable_v<std::decay_t<F>, BoundArgs&&..., TsR...>;
+                is_compatible_invocable_v<F, Ts..., FiltBoundArgs&&...> ||
+                is_compatible_invocable_v<F, FiltBoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<std::decay_t<F>, Ts..., BoundArgs&&...>;
+                is_compatible_invocable_v<F, Ts..., FiltBoundArgs&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>, Ts..., const BoundArgs...>) ||
+                ((kIsNormalOrder && std::is_invocable_v<const F, Ts..., const BoundArgs...>) ||
                  (!kIsNormalOrder &&
                   std::is_invocable_v<const std::decay_t<F>, const BoundArgs..., TsR...>));
             static constexpr bool kIsRValRef =
                 Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&, Ts..., BoundArgs&&...>) ||
+                  std::is_invocable_v<std::decay_t<F>&&, Ts..., FiltBoundArgs&&...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&, BoundArgs&&..., TsR...>));
+                  std::is_invocable_v<std::decay_t<F>&&, FiltBoundArgs&&..., TsR...>));
             static constexpr bool kIsLValRef =
                 Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
@@ -587,7 +588,9 @@ struct NamedTaskTypeDeductorAuto {
                             std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
         };
 
-        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
+        using type =
+            rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
+                    std::tuple<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>...>>;
     };
 
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
