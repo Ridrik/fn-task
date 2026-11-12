@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include <task/task.hpp>
@@ -23,14 +24,29 @@ struct A {
     }
 };
 
+struct B {
+    int a{};
+    std::string_view operator()(double& b) noexcept {
+        //++a;
+        return "";
+    }
+};
+
 int main() {
     // Task takes a callable and optionally capture arguments, which are expected to be part of
     // the erased callable. It automatically detects the task signature, mutability,
     // copiability, and size. Here, integer is captured (bind_front like), hence signature is
     // Task<void(std::string)>
     A a{};
+    B b{};
     double thisHere = 3.0;
-    auto thisTask = fn::makeRefTask(a, 3.0);
+    using ARef = std::reference_wrapper<A>;
+    using BRef = std::reference_wrapper<B>;
+    std::invoke(std::forward<A>(std::ref(a)), thisHere);
+    auto thisTask = fn::makeTask(std::cref(a), 3.0);
+    using unwrappedRefToF = std::decay_t<std::unwrap_ref_decay_t<decltype(std::cref(a))>>;
+    static_assert(fn::HasFunctionTraits<unwrappedRefToF>);
+    auto thisTaskCopy = fn::Task{thisTask};
     thisTask();
     auto task = fn::makeTask(
         [](int&& /*age*/, const std::string& name) mutable noexcept {  // NOLINT
@@ -123,6 +139,8 @@ int main() {
     // operator itself is &&, while captured argument std::size_t is taken as '&', hence signature
     // is a cv-less std::string()
     auto taskk2 = fn::makeTask(Wrapper{"Hello World"}, std::size_t{5});
+    static_assert(fn::HasFunctionTraits<std::decay_t<decltype(taskk2)>>);
+    auto taskk3 = fn::makeRefTask(taskk2);
     static_assert(decltype(taskk2)::matchesSignature<std::string()>());
     std::cout << "Message is " << taskk2() << '\n';
 

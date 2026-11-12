@@ -1,13 +1,10 @@
 #include <functional>
 #include <iostream>
-#include <iterator>
 #include <string>
+#include <type_traits>
 
 #include <task/named_task.hpp>
 #include <task/task.hpp>
-
-#include "task/function_traits.hpp"
-#include "task/payload.hpp"
 
 bool foo(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
          std::string& /*data*/, int /*version*/) {
@@ -24,18 +21,12 @@ bool bar_mimic(std::string& data, int /*version*/) {
     return false;
 }
 
+static constexpr auto kRefBar = std::ref(bar);
+
 int main() {
     // Make NamedTask with deduction guides, similarly to fn::Task/fn::makeTask
     auto task = fn::NamedTask([](int, double) {}, 2.0);
     auto task2 = fn::NamedTask([](int, double) {}, 2.0);
-
-    float c{5.0F};
-    auto fTask = fn::makeRefNamedTask([](int a, float kek) {}, c);
-    auto fTask2 = fTask;
-    fTask = fTask2;
-
-    const auto& doubleArg = task.getBoundArg<0>();
-
     // task = task2; // Error, even though they look identical, each lambda internally has a
     // different compiler generated type.
 
@@ -46,6 +37,17 @@ int main() {
     auto task4 = fn::makeNamedTask<true>([](int, double) {}, 2.0);
     // Now works
     task3 = task4;
+
+    float c{5.0F};
+    // Ref NamedTask automatically stores references with reference_wrapper (r-value values are
+    // still stored by value)
+    auto fTask = fn::makeRefNamedTask(fn::toFuncPtr([](int, double) {}), c);
+    // This is equivalent to calling base builder with reference_wrapping references
+    auto fTaskMimic = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), std::ref(c));
+    static_assert(std::is_same_v<decltype(fTask), decltype(fTaskMimic)>);
+    auto fTask2 = fTask;
+    fTask = fTask2;
+    const auto& doubleArg = task.getBoundArg<0>();
 
     // Common use case: 'this' pointer as void*
     class MyModule {};
@@ -70,6 +72,7 @@ int main() {
     static_assert(decltype(subTask)::matchesSignature<void(Payload) const & noexcept>());
     subscriberTask(5.5);
 
+    // NamedTask from free function (needs not to store it inside)
     auto compileFunc = fn::makeNamedTask<foo>("David");
     auto str = std::string("Hello World");
     compileFunc(str, 2);
@@ -77,27 +80,36 @@ int main() {
     compileFunc2("David", str);
     auto compileFunc3 = fn::makeNamedTask<foo>("David", std::ref(str));  // Captures as reference
     compileFunc3(2);
+    auto compileFunc4 = fn::makeRefNamedTask<foo>(str);
 
-    // This works
+    // All the following yield same NamedTask
     auto str2 = std::string{"Hi There"};
-    const auto compileFunc4 = fn::makeRefNamedTask<bar>(str2);
-    const auto compileFunc45 = fn::makeNamedTask<bar>(std::ref(str2));
-    auto compileFunc46 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), std::ref(str2));
-    auto compileFunc5 = fn::makeRefNamedTask(fn::toFuncPtr<bar_mimic>(), str2);
-    compileFunc4(1);
-    compileFunc5(1);
-    compileFunc45.getBoundArg<0>();
-    std::string& kekers = compileFunc5.getBoundArg<0>();
+    const auto compileFunc5 = fn::makeRefNamedTask<bar>(str2);
+    const auto compileFunc6 = fn::makeNamedTask<bar>(std::ref(str2));
+    std::string& strFetch = compileFunc5.getBoundArg<0>();
     using S1 = decltype(compileFunc5)::Signature;
-    using S2 = decltype(compileFunc46)::Signature;
-    compileFunc5 = compileFunc46;
-    compileFunc46 = compileFunc5;
+    using S2 = decltype(compileFunc6)::Signature;
+    const auto compileFunc6Copy = fn::makeNamedTask(compileFunc5);
+    const auto compileFunc6Copy2 = fn::NamedTask{compileFunc5};
+    static_assert(std::is_same_v<decltype(compileFunc6), decltype(compileFunc6Copy)>);
+    static_assert(std::is_same_v<decltype(compileFunc6), decltype(compileFunc6Copy2)>);
+    static_assert(std::is_same_v<decltype(compileFunc5), decltype(compileFunc6)>);
+
+    // Similar for constant template parameters
+    auto compileFunc7 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), std::ref(str2));
+    auto compileFunc8 = fn::makeRefNamedTask(fn::toFuncPtr<bar_mimic>(), str2);
+    static_assert(std::is_same_v<decltype(compileFunc7), decltype(compileFunc8)>);
+
+    // A NamedTask can shelter another NamedTask by reference
+    auto refNTaskFromAutoTask = fn::makeRefNamedTask(compileFunc5);
+    static_assert(sizeof(refNTaskFromAutoTask) ==
+                  sizeof(std::reference_wrapper<decltype(compileFunc5)>));
     std::cout << "str is " << str2 << '\n';
 
+    // A NamedTask allows to retrieve any bound argument in it
     auto str3 = std::string{"Hi!"};
     auto funcWithLiterals = fn::makeRefNamedTask(
         [](const char* a, int&& b, std::string& c) noexcept {}, "hi there", 3, str3);
-
     std::string& strArg = funcWithLiterals.getBoundArg<2>();
     using S = decltype(funcWithLiterals)::Signature;
 
@@ -105,7 +117,27 @@ int main() {
     static_assert(decltype(nTask)::matchesSignature<decltype(funcWithLiterals)::Signature>());
 
     // Bind support
-    auto bindBack = std::bind_back([](int a) {}, 42);
+    auto bindBack = std::bind_back([](int a, double b) {}, 42.0);
     auto bindBackTask = fn::NamedTask{bindBack};
-    bindBackTask();
+    bindBackTask(2);
+    auto bindBackTaskCopy = fn::makeNamedTask(bindBackTask);
+    auto refBindTask = fn::makeRefNamedTask(bindBackTask);
+
+    {
+        std::string s{"hi"};
+        struct Functor {
+            std::string data;
+
+            void operator()(std::string&& other) {
+                data += other;
+            }
+        };
+        auto sRef = std::ref(s);
+        std::string&& sRRef = std::move(sRef.get());
+        using strRefT = std::reference_wrapper<std::string>;
+        using unref = std::unwrap_ref_decay_t<strRefT>;
+        // static_assert(std::is_invocable_v<Functor, unref&&>);
+        // auto a = fn::makeNamedTask(Functor{}, std::ref(s));
+        auto aa = fn::makeTask(Functor{}, s);
+    }
 }

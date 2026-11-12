@@ -408,7 +408,7 @@ template <typename Ft, typename... BoundArgs>
 struct NamedTaskTypeDeductor {
     using F = std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
     struct StripBoundArgs {
-        using Traits = FunctionTraits<std::decay_t<F>>;
+        using Traits = FunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>;
         using AllArgs = Traits::args_tuple;
         using InternalFuncPtr = Traits::func_ptr;
 
@@ -422,47 +422,25 @@ struct NamedTaskTypeDeductor {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
-            static constexpr bool kIsValid =
-                is_compatible_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...>;
+            static constexpr bool kIsValid = is_compatible_invocable_v<F, Ts..., BoundArgs&&...> ||
+                                             is_compatible_invocable_v<F, BoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...>;
+                is_compatible_invocable_v<F, Ts..., BoundArgs&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<const F, Ts...,
-                                      const std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<const F,
-                                      const std::unwrap_reference_t<
-                                          typename RefToConstRef<std::decay_t<BoundArgs>>::Type>...,
-                                      TsR...>));
+                ((kIsNormalOrder && std::is_invocable_v<const F, Ts..., const BoundArgs...>) ||
+                 (!kIsNormalOrder && std::is_invocable_v<const F, const BoundArgs..., TsR...>));
             static constexpr bool kIsRValRef =
                 Traits::kIsRValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<F&&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<F&&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...,
-                                      TsR...>));
+                ((kIsNormalOrder && std::is_invocable_v<F&&, Ts..., BoundArgs&&...>) ||
+                 (!kIsNormalOrder && std::is_invocable_v<F&&, BoundArgs&&..., TsR...>));
             static constexpr bool kIsLValRef =
                 Traits::kIsLValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<F&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<F&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...,
-                                      TsR...>));
+                ((kIsNormalOrder && std::is_invocable_v<F&, Ts..., BoundArgs&...>) ||
+                 (!kIsNormalOrder && std::is_invocable_v<F&, BoundArgs&..., TsR...>));
             using Signature = std::conditional_t<
                 Traits::kIsNoExcept,
                 // --- NOEXCEPT BRANCH ---
@@ -516,14 +494,14 @@ struct NamedTaskTypeDeductor {
     using Signature = typename TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
-    using Type = NamedTask<Signature, F, BoundArgs...>;
+    using Type = NamedTask<Signature, Ft, BoundArgs...>;
 };
 
 template <auto F_auto, typename... BoundArgs>
     requires(HasFunctionTraits<decltype(F_auto)>)
 struct NamedTaskTypeDeductorAuto {
     struct StripBoundArgs {
-        using F = decltype(F_auto);
+        using F = std::remove_reference_t<std::unwrap_ref_decay_t<decltype(F_auto)>>;
         using Traits = FunctionTraits<std::decay_t<F>>;
         using AllArgs = typename Traits::args_tuple;
 
@@ -538,49 +516,31 @@ struct NamedTaskTypeDeductorAuto {
         template <typename Ret, typename... Ts, typename... TsR>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             static constexpr bool kIsValid =
-                is_compatible_invocable_v<std::decay_t<F>, Ts...,
-                                          std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<std::decay_t<F>, std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                          TsR...>;
+                is_compatible_invocable_v<std::decay_t<F>, Ts..., BoundArgs&&...> ||
+                is_compatible_invocable_v<std::decay_t<F>, BoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<std::decay_t<F>, Ts...,
-                                          std::unwrap_ref_decay_t<BoundArgs>&&...>;
+                is_compatible_invocable_v<std::decay_t<F>, Ts..., BoundArgs&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>, Ts...,
-                                      const std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>...>) ||
+                  std::is_invocable_v<const std::decay_t<F>, Ts..., const BoundArgs...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>,
-                                      const std::unwrap_reference_t<
-                                          typename RefToConstRef<std::decay_t<BoundArgs>>::Type>...,
-                                      TsR...>));
+                  std::is_invocable_v<const std::decay_t<F>, const BoundArgs..., TsR...>));
             static constexpr bool kIsRValRef =
                 Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...>) ||
+                  std::is_invocable_v<std::decay_t<F>&&, Ts..., BoundArgs&&...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...,
-                                      TsR...>));
+                  std::is_invocable_v<std::decay_t<F>&&, BoundArgs&&..., TsR...>));
             static constexpr bool kIsLValRef =
                 Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...>) ||
+                  std::is_invocable_v<const std::decay_t<F>&, Ts..., BoundArgs&...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...,
-                                      TsR...>));
+                  std::is_invocable_v<const std::decay_t<F>&, BoundArgs&..., TsR...>));
             static constexpr bool kIsQualifierLess = !kIsRValRef && !kIsLValRef && kIsConst;
 
             using Signature = std::conditional_t<
