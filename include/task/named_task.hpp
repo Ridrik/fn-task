@@ -26,14 +26,12 @@ struct NamedTaskInvoker;
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        is_compatible_invocable_v<
-            UnwrapF, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...> ||
-        is_compatible_invocable_v<
-            UnwrapF, Args..., std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...>);
-    static constexpr bool kIsFront = is_compatible_invocable_v<
-        UnwrapF, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...>;
+        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...> ||
+        is_compatible_invocable_v<UnwrapF, Args..., std::unwrap_reference_t<BoundArgs>...>);
+    static constexpr bool kIsFront =
+        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -47,14 +45,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcept> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        is_compatible_invocable_v<
-            UnwrapF, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...> ||
-        is_compatible_invocable_v<
-            UnwrapF, Args..., std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...>);
-    static constexpr bool kIsFront = is_compatible_invocable_v<
-        UnwrapF, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...>;
+        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...> ||
+        is_compatible_invocable_v<UnwrapF, Args..., std::unwrap_reference_t<BoundArgs>...>);
+    static constexpr bool kIsFront =
+        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -68,7 +64,7 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcep
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...> ||
                   std::is_invocable_v<const UnwrapF, Args..., const BoundArgs...>);
     static constexpr bool kIsFront =
@@ -85,7 +81,7 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const> 
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const noexcept> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...> ||
                   std::is_invocable_v<const UnwrapF, Args..., const BoundArgs...>);
     static constexpr bool kIsFront =
@@ -102,7 +98,7 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const n
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(std::is_invocable_v<const F&, const BoundArgs&..., Args...> ||
                   std::is_invocable_v<const F&, Args..., const BoundArgs&...>);
     static constexpr bool kIsFront = std::is_invocable_v<const F&, const BoundArgs&..., Args...>;
@@ -118,7 +114,7 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&>
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const & noexcept> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(std::is_invocable_v<const UnwrapF&, const BoundArgs&..., Args...> ||
                   std::is_invocable_v<const UnwrapF&, Args..., const BoundArgs&...>);
     static constexpr bool kIsFront =
@@ -135,7 +131,7 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const &
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...> ||
                   std::is_invocable_v<UnwrapF&, Args..., BoundArgs&...>);
     static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...>;
@@ -150,7 +146,7 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &> {
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) & noexcept> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...> ||
                   std::is_invocable_v<UnwrapF&, Args..., BoundArgs&...>);
     static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...>;
@@ -165,14 +161,19 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) & noexc
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        std::is_invocable_v<
-            UnwrapF&&, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...> ||
-        std::is_invocable_v<UnwrapF&&, Args...,
-                            std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...>);
+        std::is_invocable_v<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>,
+                            std::add_rvalue_reference_t<
+                                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...,
+                            Args...> ||
+        std::is_invocable_v<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>, Args...,
+                            std::add_rvalue_reference_t<
+                                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...>);
     static constexpr bool kIsFront = std::is_invocable_v<
-        UnwrapF&&, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...>;
+        std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>,
+        std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...,
+        Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -186,14 +187,19 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) && noexcept> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        std::is_invocable_v<
-            UnwrapF&&, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...> ||
-        std::is_invocable_v<UnwrapF&&, Args...,
-                            std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...>);
+        std::is_invocable_v<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>,
+                            std::add_rvalue_reference_t<
+                                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...,
+                            Args...> ||
+        std::is_invocable_v<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>, Args...,
+                            std::add_rvalue_reference_t<
+                                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...>);
     static constexpr bool kIsFront = std::is_invocable_v<
-        UnwrapF&&, std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&..., Args...>;
+        std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>,
+        std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...,
+        Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -207,18 +213,23 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) && noex
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&&> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        std::is_invocable_v<const UnwrapF&&,
-                            const std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...,
-                            Args...> ||
         std::is_invocable_v<
-            const UnwrapF&&, Args...,
-            const std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...>);
-    static constexpr bool kIsFront =
-        std::is_invocable_v<const UnwrapF&&,
-                            const std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...,
-                            Args...>;
+            std::add_const_t<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>>,
+            std::add_const_t<std::add_rvalue_reference_t<
+                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...,
+            Args...> ||
+        std::is_invocable_v<
+            std::add_const_t<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>>,
+            Args...,
+            std::add_const_t<std::add_rvalue_reference_t<
+                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...>);
+    static constexpr bool kIsFront = std::is_invocable_v<
+        std::add_const_t<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>>,
+        std::add_const_t<std::add_rvalue_reference_t<
+            std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...,
+        Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<const Task>(self)).payload_)
@@ -232,18 +243,23 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&&
 
 template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const && noexcept> {
-    using UnwrapF = std::remove_reference_t<std::unwrap_ref_decay_t<F>>;
+    using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        std::is_invocable_v<const UnwrapF&&,
-                            const std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...,
-                            Args...> ||
         std::is_invocable_v<
-            const UnwrapF&&, Args...,
-            const std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...>);
-    static constexpr bool kIsFront =
-        std::is_invocable_v<const UnwrapF&&,
-                            const std::remove_reference_t<std::unwrap_ref_decay_t<BoundArgs>>&&...,
-                            Args...>;
+            std::add_const_t<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>>,
+            std::add_const_t<std::add_rvalue_reference_t<
+                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...,
+            Args...> ||
+        std::is_invocable_v<
+            std::add_const_t<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>>,
+            Args...,
+            std::add_const_t<std::add_rvalue_reference_t<
+                std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...>);
+    static constexpr bool kIsFront = std::is_invocable_v<
+        std::add_const_t<std::add_rvalue_reference_t<std::remove_reference_t<UnwrapF>>>,
+        std::add_const_t<std::add_rvalue_reference_t<
+            std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...,
+        Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
         if constexpr (kIsFront) {
             return std::move((static_cast<const Task>(self)).payload_)

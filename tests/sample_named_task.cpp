@@ -112,9 +112,9 @@ int main() {
         [](const char* a, int&& b, std::string& c) noexcept {}, "hi there", 3, str3);
     std::string& strArg = funcWithLiterals.getBoundArg<2>();
     using S = decltype(funcWithLiterals)::Signature;
-
+    static_assert(std::is_invocable_v<const std::decay_t<decltype(funcWithLiterals)>&>);
     auto nTask = fn::Task{funcWithLiterals};
-    static_assert(decltype(nTask)::matchesSignature<decltype(funcWithLiterals)::Signature>());
+    auto nTask2 = fn::makeTask(funcWithLiterals);
 
     // Bind support
     auto bindBack = std::bind_back([](int a, double b) {}, 42.0);

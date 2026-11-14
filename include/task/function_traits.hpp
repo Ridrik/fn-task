@@ -265,15 +265,18 @@ template <typename Sig>
 concept IsRvRefSignature = FunctionTraits<Sig>::kIsRValueRef;
 
 template <typename SigFrom, typename SigTo>
-concept SignatureConstConvertible = BaseSignatureMatches<SigFrom, SigTo> && IsConst<SigFrom> &&
-                                    IsConst<SigTo> && (IsNoExcept<SigFrom> || !IsNoExcept<SigTo>);
+concept IsDiffRefSignature = (IsLvRefSignature<SigFrom> && IsRvRefSignature<SigTo>) ||
+                             (IsRvRefSignature<SigFrom> && IsLvRefSignature<SigTo>);
+
+template <typename SigFrom, typename SigTo>
+concept SignatureConstConvertible =
+    BaseSignatureMatches<SigFrom, SigTo> && IsConst<SigFrom> && IsConst<SigTo> &&
+    !IsDiffRefSignature<SigFrom, SigTo> && (IsNoExcept<SigFrom> || !IsNoExcept<SigTo>);
 
 template <typename SigFrom, typename SigTo>
 concept SignatureConstToNonConstConvertible =
     BaseSignatureMatches<SigFrom, SigTo> && IsConst<SigFrom> && !IsConst<SigTo> &&
-    ((IsRvRefSignature<SigFrom> && IsRvRefSignature<SigTo>) ||
-     (!IsRvRefSignature<SigFrom> && IsLvRefSignature<SigTo>)) &&
-    (IsNoExcept<SigFrom> || !IsNoExcept<SigTo>);
+    !IsDiffRefSignature<SigFrom, SigTo> && (IsNoExcept<SigFrom> || !IsNoExcept<SigTo>);
 
 template <typename SigFrom, typename SigTo>
 concept AnySignatureConvertibleToItsBase =
@@ -290,6 +293,9 @@ concept NoExceptMapsToThrowingSignature =
 
 template <typename SigFrom, typename SigTo>
 struct IsSignatureCompatible : std::false_type {};
+
+template <typename SigFrom, typename SigTo>
+static constexpr auto kIsSignatureCompatibleB = IsSignatureCompatible<SigFrom, SigTo>::value;
 
 template <typename SigFrom, typename SigTo>
     requires(std::is_same_v<SigFrom, SigTo> || AnySignatureConvertibleToItsBase<SigFrom, SigTo> ||

@@ -19,7 +19,7 @@ bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) no
 
 struct A {
     int a{};
-    std::string_view operator()(const double& b) const&& noexcept {
+    std::string_view operator()(const double& b) const noexcept {
         //++a;
         return "";
     }
@@ -41,9 +41,8 @@ int main() {
     A a{};
     B b{};
     double thisHere = 3.0;
-    auto thisTask = fn::makeTask(std::cref(a), 3.0);
-    using unwrappedRefToF = std::decay_t<std::unwrap_ref_decay_t<decltype(std::cref(a))>>;
-    static_assert(fn::HasFunctionTraits<unwrappedRefToF>);
+    auto thisTask = fn::makeTask<std::string_view() const>(std::cref(a), thisHere);
+    static_assert(decltype(thisTask)::matchesSignature<std::string_view() const>());
     auto thisTaskCopy = fn::Task{thisTask};
     thisTask();
     auto task = fn::makeTask(

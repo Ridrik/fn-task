@@ -252,14 +252,11 @@ struct TaskTypeDeductor {
 };*/
 
 template <typename Ft, typename... BoundArgs>
-    requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
+    requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
 struct TaskTypeDeductor {
-    using F_decay = std::decay_t<Ft>;  // std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
-    using F_Unwrapped = std::unwrap_reference_t<F_decay>;
-    using F = std::conditional_t<std::is_same_v<F_Unwrapped, F_decay>, Ft, F_Unwrapped>;
-
+    using F = std::unwrap_reference_t<Ft>;
     struct StripBoundArgs {
-        using Traits = FunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>;
+        using Traits = FunctionTraits<std::remove_cvref_t<F>>;
         using AllArgs = Traits::args_tuple;
         using InternalFuncPtr = Traits::func_ptr;
 
@@ -368,165 +365,14 @@ struct TaskTypeDeductor {
     using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
-    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
-              Triviality t = kTriviality, Alignment align = kAlignment>
-    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
+    template <typename Sig = Signature>
+    using Type =
+        Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
 
     template <InlineSize size>
-    using SizedType =
+    using HeapType =
         Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 };
-
-/*template <auto F, typename... BoundArgs>
-    requires(HasFunctionTraits<decltype(F)>)
-struct TaskTypeDeductorAuto {
-    using F_Type = std::decay_t<decltype(F)>;
-    struct StripBoundArgs {
-        using Traits = FunctionTraits<F_Type>;
-        using AllArgs = typename Traits::args_tuple;
-
-        static constexpr std::size_t kRemainingCount =
-            std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
-
-        using SlicedTuple = slice_first<kRemainingCount, AllArgs>::type;
-        using SlicedTupleReverse = slice_last<kRemainingCount, AllArgs>::type;
-
-        template <typename Ret, typename Tuple, typename TupleReverse>
-        struct rebuild;
-        template <typename Ret, typename... Ts, typename... TsR>
-        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
-            static constexpr bool kIsValid =
-                is_compatible_invocable_v<std::decay_t<F_Type>&&, Ts...,
-                                          std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<std::decay_t<F_Type>&&,
-                                          std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...>;
-            static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<std::decay_t<F_Type>&&, Ts...,
-                                          std::unwrap_ref_decay_t<BoundArgs>&&...>;
-            static constexpr bool kIsReverse = !kIsNormalOrder;
-            using R = Ret;
-            using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
-            static constexpr bool kIsConst =
-                Traits::kIsConst &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F_Type>, Ts...,
-                                      const std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F_Type>,
-                                      const std::unwrap_reference_t<
-                                          typename RefToConstRef<std::decay_t<BoundArgs>>::Type>...,
-                                      TsR...>));
-            static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F_Type>&&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F_Type>&&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...,
-                                      TsR...>));
-            static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F_Type>&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F_Type>&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...,
-                                      TsR...>));
-            static constexpr bool kIsQualifierLess = !kIsRValRef && !kIsLValRef && kIsConst;
-
-            using Signature = std::conditional_t<
-                Traits::kIsNoExcept,
-                // --- NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
-                                               Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                                              Ret(TsR...) noexcept>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
-                                               Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                                              Ret(Ts...) noexcept>>>>,
-                // --- NON-NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const&,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) &,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const&,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) &,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
-        };
-
-        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
-    };
-
-    // To complete one needs case where F is static (no decay), but in that case it would be trivial
-    // anyway, hence not urgent to change for now
-    using PayloadType = PayloadImplArgs<F, std::unwrap_ref_decay_t<BoundArgs>...>;
-    using PayloadRefType = PayloadImplArgs<F, BoundArgs...>;
-    static constexpr auto kCopyable = std::is_copy_constructible_v<PayloadType>
-                                          ? Copyability::kCopyable
-                                          : Copyability::kNonCopyable;
-    static constexpr auto kRefCopyable = std::is_copy_constructible_v<PayloadRefType>
-                                             ? Copyability::kCopyable
-                                             : Copyability::kNonCopyable;
-
-    static constexpr Alignment kAlignment =
-        std::max(alignof(PayloadType), alignof(std::max_align_t));
-    static constexpr Alignment kRefAlignment =
-        std::max(alignof(PayloadRefType), alignof(std::max_align_t));
-    static constexpr auto kTriviality =
-        TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
-    static constexpr auto kRefTriviality = TrivialUse<PayloadRefType, kCopyable>::value
-                                               ? Triviality::kTrivial
-                                               : Triviality::kNonTrivial;
-    static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    static constexpr auto kRefPayloadSize =
-        sizeof...(BoundArgs) > 0 ? sizeof(PayloadImplArgs<F, BoundArgs...>) : 0;
-    using TypeTraits = StripBoundArgs::type;
-    using Signature = TypeTraits::Signature;
-    static constexpr bool kIsValid = TypeTraits::kIsValid;
-
-    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
-              Triviality t = kTriviality, Alignment align = kAlignment>
-    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
-
-    template <InlineSize size>
-    using FlexType =
-        Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
-
-    template <Copyability cb = kRefCopyable, InlineSize size = kRefPayloadSize,
-              Triviality t = kRefTriviality, Alignment align = kRefAlignment>
-    using RefType = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
-};*/
 
 template <auto F_auto, typename... BoundArgs>
     requires(HasFunctionTraits<decltype(F_auto)>)
@@ -642,9 +488,9 @@ struct TaskTypeDeductorAuto {
     using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
-    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
-              Triviality t = kTriviality, Alignment align = kAlignment>
-    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
+    template <typename Sig = Signature>
+    using Type =
+        Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
 
     template <InlineSize size>
     using SizedType =
@@ -654,7 +500,7 @@ struct TaskTypeDeductorAuto {
 template <typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
 struct NamedTaskTypeDeductor {
-    using F = std::decay_t<Ft>;  // std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
+    using F = std::decay_t<Ft>;
     using F_Unwrapped = std::unwrap_reference_t<F>;
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>;

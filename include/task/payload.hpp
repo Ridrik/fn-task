@@ -197,11 +197,15 @@ constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
 
 template <typename F, typename... Args>
 inline constexpr bool is_compatible_invocable_v =  // NOLINT
-    detail::search<F, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid ||
-    detail::search<std::add_lvalue_reference_t<F>, detail::TypeList<Args&&...>,
+    detail::search<F,
+                   detail::TypeList<std::add_rvalue_reference_t<std::remove_reference_t<Args>>...>,
+                   detail::TypeList<>>::kValid ||
+    detail::search<std::add_lvalue_reference_t<F>,
+                   detail::TypeList<std::add_rvalue_reference_t<std::remove_reference_t<Args>>...>,
                    detail::TypeList<>>::kValid ||
     detail::search<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
-                   detail::TypeList<Args&&...>, detail::TypeList<>>::kValid;
+                   detail::TypeList<std::add_rvalue_reference_t<std::remove_reference_t<Args>>...>,
+                   detail::TypeList<>>::kValid;
 
 template <typename... Ts>
 struct PayloadTuple;
@@ -236,12 +240,12 @@ struct unwrap_reference_qualifiers<std::reference_wrapper<T>&&> {
 
 template <typename T>
 struct unwrap_reference_qualifiers<std::reference_wrapper<T> const&&> {
-    using type = T const&&;
+    using type = T&&;
 };
 
 template <typename T>
 struct unwrap_reference_qualifiers<const std::reference_wrapper<T>> {
-    using type = const T;
+    using type = T;
 };
 
 template <typename T>
@@ -251,7 +255,7 @@ struct unwrap_reference_qualifiers<std::reference_wrapper<T>&> {
 
 template <typename T>
 struct unwrap_reference_qualifiers<const std::reference_wrapper<T>&> {
-    using type = const T&;
+    using type = T&;
 };
 
 template <typename T>
