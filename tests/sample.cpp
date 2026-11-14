@@ -79,6 +79,10 @@ int main() {
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
     auto flexTask = fn::makeFlexTask<void(int) const&>(
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; });
+    auto flexTaskCopy = fn::makeTask(flexTask);
+    auto flexTaskCopy2 = fn::makeFlexTask(flexTask);
+    static_assert(std::is_same_v<decltype(flexTask), decltype(flexTaskCopy)>);
+    static_assert(std::is_same_v<decltype(flexTask), decltype(flexTaskCopy2)>);
 
     // Or, have it on the stack -> way faster copies and moves if you frequently transfer tasks (e.g
     // thread pools, producer/consumer schemes)

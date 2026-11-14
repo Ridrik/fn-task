@@ -602,7 +602,8 @@ struct NamedTaskTypeDeductor {
     using Signature = typename TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
-    using Type = NamedTask<Signature, Ft, BoundArgs...>;
+    template <typename Sig = Signature>
+    using Type = NamedTask<Sig, Ft, BoundArgs...>;
 };
 
 template <auto F_auto, typename... BoundArgs>
@@ -709,7 +710,8 @@ struct NamedTaskTypeDeductorAuto {
     using Signature = typename TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
-    using Type = NamedTask<Signature, StaticFn<F_auto>, BoundArgs...>;
+    template <typename Sig = Signature>
+    using Type = NamedTask<Sig, StaticFn<F_auto>, BoundArgs...>;
 };
 
 // Support for std::bind, std::bind_front, std::bind_back... (Note, it's implementation defined,

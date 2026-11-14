@@ -471,17 +471,10 @@ NamedTask(F&&, BoundArgs&&...) -> NamedTask<
 template <auto F, typename... BoundArgs>
     requires HasFunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>> &&
              NamedTaskTypeDeductorAuto<F, BoundArgs...>::kIsValid
-FORCE_INLINE auto makeNamedTask(BoundArgs&&... args) {
-    return typename NamedTaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::Type{
-        std::forward<BoundArgs>(args)...};
-}
-
-template <auto F, typename... BoundArgs>
-    requires HasFunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>> &&
-             NamedTaskTypeDeductorAuto<F, BoundArgs...>::kIsValid
 FORCE_INLINE auto makeRefNamedTask(BoundArgs&&... args) {
-    return typename NamedTaskTypeDeductorAuto<F, AddRefWrapperToRef_t<BoundArgs>...>::Type{
-        std::forward<BoundArgs>(args)...};
+    return
+        typename NamedTaskTypeDeductorAuto<F, AddRefWrapperToRef_t<BoundArgs>...>::template Type<>{
+            std::forward<BoundArgs>(args)...};
 }
 
 template <typename F>
@@ -517,19 +510,28 @@ template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
 FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
     if constexpr (StoreFuncAsPtr) {
         using func_ptr = typename FunctionTraits<std::decay_t<std::unwrap_reference<F>>>::func_ptr;
-        return typename NamedTaskTypeDeductor<func_ptr, std::decay_t<BoundArgs>...>::Type{
-            std::forward<F>(f), std::forward<BoundArgs>(args)...};
+        return
+            typename NamedTaskTypeDeductor<func_ptr, std::decay_t<BoundArgs>...>::template Type<>{
+                std::forward<F>(f), std::forward<BoundArgs>(args)...};
     } else {
-        return typename NamedTaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::Type{
+        return typename NamedTaskTypeDeductor<std::decay_t<F>,
+                                              std::decay_t<BoundArgs>...>::template Type<>{
             std::forward<F>(f), std::forward<BoundArgs>(args)...};
     }
+}
+
+template <auto F, typename... BoundArgs>
+    requires HasFunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>> &&
+             NamedTaskTypeDeductorAuto<F, BoundArgs...>::kIsValid
+FORCE_INLINE auto makeNamedTask(BoundArgs&&... args) {
+    return typename NamedTaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::template Type<>{
+        std::forward<BoundArgs>(args)...};
 }
 
 template <bool StoreFuncAsPtr = false>
 FORCE_INLINE auto makeNamedTask(auto&& f)
     requires IsNamedTask<std::decay_t<decltype(f)>>::value
 {
-    // static_assert(!IsNamedTask<std::decay_t<decltype(f)>>::kIsRef, "");
     using NamedTaskSrc = std::decay_t<decltype(f)>;
     return NamedTaskSrc{std::forward<decltype(f)>(f)};
 }
@@ -542,11 +544,12 @@ template <bool StoreFuncAsPtr = false, typename F, typename... BoundArgs>
 FORCE_INLINE auto makeRefNamedTask(F&& f, BoundArgs&&... args) {
     if constexpr (StoreFuncAsPtr) {
         using func_ptr = typename FunctionTraits<std::decay_t<F>>::func_ptr;
-        return typename NamedTaskTypeDeductor<func_ptr, AddRefWrapperToRef_t<BoundArgs>...>::Type{
+        return typename NamedTaskTypeDeductor<func_ptr,
+                                              AddRefWrapperToRef_t<BoundArgs>...>::template Type<>{
             std::forward<F>(f), std::forward<BoundArgs>(args)...};
     } else {
         return typename NamedTaskTypeDeductor<AddRefWrapperToRef_t<F>,
-                                              AddRefWrapperToRef_t<BoundArgs>...>::Type{
+                                              AddRefWrapperToRef_t<BoundArgs>...>::template Type<>{
             std::forward<F>(f), std::forward<BoundArgs>(args)...};
     }
 }

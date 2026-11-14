@@ -1958,17 +1958,20 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     friend struct InvokerBuilder;
 
     // NOLINTBEGIN
-    static constexpr bool IsTrivial = t == Triviality::kTrivial;
-    static constexpr bool AllowHeap = hp == HeapPolicy::kAllow;
-    static constexpr bool Copyable = cb == Copyability::kCopyable;
+    static constexpr std::size_t kSize = size;
+    static constexpr bool kIsTrivial = t == Triviality::kTrivial;
+    static constexpr bool kAllowHeap = hp == HeapPolicy::kAllow;
+    static constexpr bool kCopyable = cb == Copyability::kCopyable;
+    static constexpr bool kIsExtended = Extended;
+    static constexpr std::size_t kAlignment = align;
     // NOLINTEND
 
-    static_assert(!IsTrivial || !AllowHeap, "Trivial Task should not allow heap usage");
-    static_assert(size > 0 || IsTrivial, "0 buffer size is only allowed on trivial types");
-    static_assert(!Extended || !AllowHeap,
+    static_assert(!kIsTrivial || !kAllowHeap, "Trivial Task should not allow heap usage");
+    static_assert(size > 0 || kIsTrivial, "0 buffer size is only allowed on trivial types");
+    static_assert(!Extended || !kAllowHeap,
                   "Extended mode with heap under development. Switch one off");
     static_assert(align > 0 && (align & (align - 1)) == 0, "Alignment must be a power of 2");
-    static_assert(Copyable || !Extended, "Move only types under development for Extended option.");
+    static_assert(kCopyable || !Extended, "Move only types under development for Extended option.");
 
     using Signature = S;
     using traits = FunctionTraits<Signature>;
@@ -1983,7 +1986,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
               HeapPolicy hpSrc>
     constexpr void doConvert(auto&& other) noexcept(  // NOLINT
         (op == Op::kMove || op == Op::kMoveAssign) &&
-        (tSrc == Triviality::kNonTrivial || IsTrivial || !AllowHeap || sizeSrc <= size))
+        (tSrc == Triviality::kNonTrivial || kIsTrivial || !kAllowHeap || sizeSrc <= size))
         requires std::same_as<std::remove_cvref_t<decltype(other)>,
                               Task<SigOther, cbSrc, sizeSrc, tSrc, ExtSrc, hpSrc>>
     {
@@ -1993,24 +1996,25 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
                       "T must be const& or rvalue&&");
         constexpr bool kIsMovable = std::is_rvalue_reference_v<decltype(other)>;
         auto& dest = *this;
-        static_assert(size >= sizeSrc || (AllowHeap && SrcType::IsTrivial && !SrcType::AllowHeap),
-                      "Payload too large to move into this storage");
         static_assert(
-            !SrcType::AllowHeap || AllowHeap,
+            size >= sizeSrc || (kAllowHeap && SrcType::kIsTrivial && !SrcType::kAllowHeap),
+            "Payload too large to move into this storage");
+        static_assert(
+            !SrcType::kAllowHeap || kAllowHeap,
             "Cannot convert a task with heap storage option into one where it is disabled");
         static_assert(kMutable || !MutSrc);
-        static_assert(!IsTrivial || SrcType::IsTrivial,
+        static_assert(!kIsTrivial || SrcType::kIsTrivial,
                       "Cannot copy/move non-trivial task into trivial one");
-        static_assert(SrcType::Copyable || (op != Op::kClone && op != Op::kAssign));
+        static_assert(SrcType::kCopyable || (op != Op::kClone && op != Op::kAssign));
 
-        static_assert((Extended == ExtSrc) || (IsTrivial && SrcType::IsTrivial));
+        static_assert((Extended == ExtSrc) || (kIsTrivial && SrcType::kIsTrivial));
         static_assert(op != Op::kDestroy, "Called Task converter with invalid (destroy) flag");
         static_assert((kIsMovable && (op == Op::kMove || op == Op::kMoveAssign)) ||
                       (op == Op::kClone || op == Op::kAssign));
         dest.storage_.invoker = other.storage_.invoker;
 
-        if constexpr (SrcType::IsTrivial) {
-            if constexpr (IsTrivial) {
+        if constexpr (SrcType::kIsTrivial) {
+            if constexpr (kIsTrivial) {
                 if constexpr (sizeSrc > 0) {
                     std::memcpy(dest.storage_.data.data(), other.storage_.data.data(), sizeSrc);
                 }
@@ -2086,15 +2090,15 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     }
 
     [[nodiscard]] static constexpr auto isCopyable() noexcept -> bool {
-        return Copyable;
+        return kCopyable;
     }
 
     [[nodiscard]] static constexpr auto isMoveOnly() noexcept -> bool {
-        return !Copyable;
+        return !kCopyable;
     }
 
     [[nodiscard]] static constexpr auto isTrivial() noexcept -> bool {
-        return IsTrivial;
+        return kIsTrivial;
     }
 
     [[nodiscard]] static constexpr auto isMutable() noexcept -> bool {
@@ -2102,11 +2106,11 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     }
 
     [[nodiscard]] static constexpr auto isExtended() noexcept -> bool {
-        return Extended;
+        return kIsExtended;
     }
 
     [[nodiscard]] static constexpr auto allowsHeap() noexcept -> bool {
-        return AllowHeap;
+        return kAllowHeap;
     }
 
     [[nodiscard]] constexpr bool operator==(std::nullptr_t) const noexcept {
@@ -2130,9 +2134,9 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         const Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc, align>& other)
         requires((kMutable || !Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc,
                                     align>::kMutable) &&
-                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
-                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
-                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 (!kIsTrivial || tSrc == Triviality::kTrivial) &&
+                 (kIsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (kAllowHeap || hpSrc == HeapPolicy::kDisallow) &&
                  IsSignatureCompatible<SigOther, Signature>::value)
     {
         doConvert<Op::kAssign, SigOther, true, sizeSrc,
@@ -2145,9 +2149,9 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     Task(const Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc, align>& other)
         requires((kMutable || !Task<SigOther, Copyability::kCopyable, sizeSrc, tSrc, Ext2, hpSrc,
                                     align>::kMutable) &&
-                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
-                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
-                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 (!kIsTrivial || tSrc == Triviality::kTrivial) &&
+                 (kIsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (kAllowHeap || hpSrc == HeapPolicy::kDisallow) &&
                  IsSignatureCompatible<SigOther, Signature>::value)
     {
         doConvert<
@@ -2157,25 +2161,25 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     };
 
     Task(const Task& /*other*/)
-        requires(IsTrivial && Copyable)
+        requires(kIsTrivial && kCopyable)
     = default;
 
     Task(const Task& other)
-        requires(!IsTrivial && Copyable)
+        requires(!kIsTrivial && kCopyable)
     {
         doConvert<Op::kClone, Signature, cb, size, kMutable, t, Extended, hp>(other);
     }
 
     Task(const Task& /*other*/)
-        requires(!Copyable)
+        requires(!kCopyable)
     = delete;
 
     Task& operator=(const Task& /*other*/)
-        requires(IsTrivial && Copyable)
+        requires(kIsTrivial && kCopyable)
     = default;
 
     Task& operator=(const Task& other)
-        requires(!IsTrivial && Copyable)
+        requires(!kIsTrivial && kCopyable)
     {
         if (this == &other) {
             return *this;
@@ -2185,18 +2189,18 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     }
 
     Task& operator=(const Task& /*other*/)
-        requires(!Copyable)
+        requires(!kCopyable)
     = delete;
 
     template <typename SigOther, Copyability cbSrc, InlineSize sizeSrc, Triviality tSrc, bool Ext2,
               HeapPolicy hpSrc>
     Task(Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>&& other) noexcept(
-        tSrc == Triviality::kNonTrivial || IsTrivial || !AllowHeap || sizeSrc <= size)
+        tSrc == Triviality::kNonTrivial || kIsTrivial || !kAllowHeap || sizeSrc <= size)
         requires((kMutable ||
                   !Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable) &&
-                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
-                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
-                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 (!kIsTrivial || tSrc == Triviality::kTrivial) &&
+                 (kIsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (kAllowHeap || hpSrc == HeapPolicy::kDisallow) &&
                  IsSignatureCompatible<SigOther, Signature>::value)
     {
         doConvert<Op::kMove, SigOther, cbSrc, sizeSrc,
@@ -2207,12 +2211,12 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     template <typename SigOther, Copyability cbSrc, InlineSize sizeSrc, Triviality tSrc, bool Ext2,
               HeapPolicy hpSrc>
     Task& operator=(Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>&& other) noexcept(
-        tSrc == Triviality::kNonTrivial || IsTrivial || !AllowHeap || sizeSrc <= size)
+        tSrc == Triviality::kNonTrivial || kIsTrivial || !kAllowHeap || sizeSrc <= size)
         requires((kMutable ||
                   !Task<SigOther, cbSrc, sizeSrc, tSrc, Ext2, hpSrc, align>::kMutable) &&
-                 (!IsTrivial || tSrc == Triviality::kTrivial) &&
-                 (IsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
-                 (AllowHeap || hpSrc == HeapPolicy::kDisallow) &&
+                 (!kIsTrivial || tSrc == Triviality::kTrivial) &&
+                 (kIsTrivial || tSrc == Triviality::kTrivial || Extended == Ext2) &&
+                 (kAllowHeap || hpSrc == HeapPolicy::kDisallow) &&
                  IsSignatureCompatible<SigOther, Signature>::value)
     {
         doConvert<Op::kMoveAssign, SigOther, cbSrc, sizeSrc,
@@ -2222,21 +2226,21 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     }
 
     Task(Task&& /*other*/) noexcept
-        requires IsTrivial
+        requires kIsTrivial
     = default;
 
     Task(Task&& other) noexcept
-        requires(!IsTrivial)
+        requires(!kIsTrivial)
     {
         doConvert<Op::kMove, Signature, cb, size, kMutable, t, Extended, hp>(std::move(other));
     }
 
     Task& operator=(Task&& /*other*/) noexcept
-        requires IsTrivial
+        requires kIsTrivial
     = default;
 
     Task& operator=(Task&& other) noexcept
-        requires(!IsTrivial)
+        requires(!kIsTrivial)
     {
         if (this == &other) {
             return *this;
@@ -2256,11 +2260,11 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     constexpr Task(std::nullptr_t) {};
 
     constexpr ~Task() noexcept
-        requires IsTrivial
+        requires kIsTrivial
     = default;
 
     constexpr ~Task() noexcept
-        requires(!IsTrivial)
+        requires(!kIsTrivial)
     {
         storage_.doDelete();
     }
@@ -2277,18 +2281,18 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
             static_assert(
-                !Copyable || std::is_copy_constructible_v<PayloadType>,
+                !kCopyable || std::is_copy_constructible_v<PayloadType>,
                 "Given payload is not copy constructible. Check types or create a unique task");
             static_assert(
                 std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
                 "Given payload is not constructible, move constructible or destructible");
             static_assert(
-                sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
+                sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
                 "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                 "storage (template option, or via FlexTask aliases)");
             static_assert(alignof(PayloadType) <= align,
                           "Alignment requirement too high for buffer. Increase template alignment");
-            if constexpr (IsTrivial) {
+            if constexpr (kIsTrivial) {
                 static_assert(TrivialUse<PayloadType, cb>::value,
                               "Payload needs to be trivially move & copy constructible, and "
                               "trivially destructible to be allowed within a Trivial Task");
@@ -2300,7 +2304,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
                 static_assert(alignof(void*) <= align,
                               "Alignment requirement too high to store heap pointer. Increase "
                               "template alignment");
-                static_assert(AllowHeap);
+                static_assert(kAllowHeap);
                 if constexpr (align <= alignof(std::max_align_t)) {
                     void* heapPtr = ::operator new(sizeof(PayloadType));
                     auto* payload =  // NOLINT
@@ -2329,18 +2333,18 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
-        static_assert(sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
+        static_assert(sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
                       "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                       "storage (template option, or via FlexTask aliases)");
         static_assert(alignof(PayloadType) <= align,
                       "Alignment requirement too high for buffer. Increase template alignment");
         static_assert(
-            !Copyable || std::is_copy_constructible_v<PayloadType>,
+            !kCopyable || std::is_copy_constructible_v<PayloadType>,
             "Given payload is not copy constructible. Check types or create a unique task");
         static_assert(
             std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
             "Given payload is not move constructible or destructible");
-        if constexpr (IsTrivial) {
+        if constexpr (kIsTrivial) {
             static_assert(TrivialUse<PayloadType, cb>::value,
                           "Payload needs to be trivially move & copy constructible, and "
                           "trivially destructible to be allowed within a Trivial Task");
@@ -2350,7 +2354,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
             new (storage_.data.data())
                 PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
         } else {
-            static_assert(AllowHeap);
+            static_assert(kAllowHeap);
             static_assert(alignof(void*) <= align,
                           "Alignment requirement too high to store heap pointer. Increase "
                           "template alignment");
@@ -2384,18 +2388,18 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
              ...));
         using PayloadType = PayloadImpl<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
-        static_assert(sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
+        static_assert(sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
                       "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                       "storage (template option, or via FlexTask aliases)");
         static_assert(alignof(PayloadType) <= align,
                       "Alignment requirement too high for buffer. Increase template alignment");
         static_assert(
-            !Copyable || std::is_copy_constructible_v<PayloadType>,
+            !kCopyable || std::is_copy_constructible_v<PayloadType>,
             "Given payload is not copy constructible. Check types or create a unique task");
         static_assert(
             std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
             "Given payload is not constructible, move constructible or destructible");
-        if constexpr (IsTrivial) {
+        if constexpr (kIsTrivial) {
             static_assert(TrivialUse<PayloadType, cb>::value,
                           "Payload needs to be trivially move & copy constructible, and "
                           "trivially destructible to be allowed within a Trivial Task");
@@ -2405,7 +2409,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
             new (storage_.data.data())
                 PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
         } else {
-            static_assert(AllowHeap);
+            static_assert(kAllowHeap);
             static_assert(alignof(void*) <= align,
                           "Alignment requirement too high to store heap pointer. Increase "
                           "template alignment");
@@ -2441,18 +2445,18 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
             static_assert(
-                sizeof(PayloadType) <= size || (AllowHeap && sizeof(PayloadType*) <= size),
+                sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
                 "Size exceeds buffer. Increase Stack size or activate option to allow heap "
                 "storage (template option, or via FlexTask aliases)");
             static_assert(alignof(PayloadType) <= align,
                           "Alignment requirement too high for buffer. Increase template alignment");
             static_assert(
-                !Copyable || std::is_copy_constructible_v<PayloadType>,
+                !kCopyable || std::is_copy_constructible_v<PayloadType>,
                 "Given payload is not copy constructible. Check types or create a unique task");
             static_assert(
                 std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
                 "Given payload is not constructible, move constructible or destructible");
-            if constexpr (IsTrivial) {
+            if constexpr (kIsTrivial) {
                 static_assert(TrivialUse<PayloadType, cb>::value,
                               "Payload needs to be trivially move & copy constructible, and "
                               "trivially destructible to be allowed within a Trivial Task");
@@ -2461,7 +2465,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
             if constexpr (sizeof(PayloadType) <= size) {
                 new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
             } else {
-                static_assert(AllowHeap);
+                static_assert(kAllowHeap);
                 static_assert(alignof(void*) <= align,
                               "Alignment requirement too high to store heap pointer. Increase "
                               "template alignment");
@@ -2483,7 +2487,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
 
     constexpr void clear() noexcept {
         storage_.invoker = nullptr;
-        if constexpr (!IsTrivial) {
+        if constexpr (!kIsTrivial) {
             storage_.doDelete();
         }
     }
@@ -2622,32 +2626,52 @@ Task(RefTag, FunctionTag<F>, BoundArgs&&...)
             TaskTypeDeductorAuto<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
             TaskTypeDeductorAuto<F, BoundArgs...>::kAlignment>;
 
-template <typename F, typename... Args>
-FORCE_INLINE constexpr auto makeTask(F&& f, Args&&... args) {
+template <typename F, typename... BoundArgs>
+    requires(!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0)
+FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>;
+    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<>{std::forward<F>(f), std::forward<Args>(args)...};
+    return typename Deductor::template Type<>{std::forward<F>(f), std::forward<BoundArgs>(args)...};
 }
 
-template <auto F, typename... Args>
-FORCE_INLINE constexpr auto makeTask(Args&&... args) {
+FORCE_INLINE constexpr auto makeTask(auto&& f)
+    requires IsTask<std::decay_t<decltype(f)>>::value
+{
+    return std::decay_t<decltype(f)>{std::forward<decltype(f)>(f)};
+}
+
+template <auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<Args>...>;
+    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<>{FunctionTag<F>{}, std::forward<Args>(args)...};
+    return typename Deductor::template Type<>{FunctionTag<F>{}, std::forward<BoundArgs>(args)...};
 }
 
-template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr auto makeTask(F&& f, Args&&... args) {
+template <typename Sig, typename F, typename... BoundArgs>
+    requires(!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0)
+FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>;
+    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<Sig>{std::forward<F>(f), std::forward<Args>(args)...};
+    return
+        typename Deductor::template Type<Sig>{std::forward<F>(f), std::forward<BoundArgs>(args)...};
+}
+
+template <typename Sig>
+FORCE_INLINE constexpr auto makeTask(auto&& f)
+    requires IsTask<std::decay_t<decltype(f)>>::value
+{
+    using TaskSrc = std::decay_t<decltype(f)>;
+    static_assert(kIsSignatureCompatibleB<typename TaskSrc::Signature, Sig>,
+                  "Argument signature is not compatible with requested signature");
+    return Task<Sig, TaskSrc::Copyable, TaskSrc::Size, TaskSrc::IsTrivial, TaskSrc::kIsExtended,
+                TaskSrc::AllowHeap, TaskSrc::kAlignment>{std::forward<decltype(f)>(f)};
 }
 
 template <typename Sig, auto F, typename... Args>
@@ -2670,7 +2694,7 @@ FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
         typename Deductor::template HeapType<size>{std::forward<F>(f), std::forward<Args>(args)...};
 }
 
-template <typename Sig, InlineSize size = alignof(std::max_align_t), typename F, typename... Args>
+template <typename Sig, InlineSize size = 16, typename F, typename... Args>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
