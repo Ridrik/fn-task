@@ -106,7 +106,7 @@ struct IsNamedTask<NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>> : std::
     static constexpr bool kIsAuto{true};
 };
 
-template <typename Ft, typename... BoundArgs>
+/*template <typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
 struct TaskTypeDeductor {
     using F = std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
@@ -173,20 +173,20 @@ struct TaskTypeDeductor {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const & noexcept,
+                            kIsLValRef, Ret(TsR...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
                                                Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
                                                               Ret(TsR...) noexcept>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const & noexcept,
+                            kIsLValRef, Ret(Ts...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
                                                Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
                                                               Ret(Ts...) noexcept>>>>,
                 // --- NON-NOEXCEPT BRANCH ---
                 std::conditional_t<
@@ -194,19 +194,19 @@ struct TaskTypeDeductor {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const&, Ret(TsR...) const>>,
+                            kIsLValRef, Ret(TsR...) const&,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) &&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) &, Ret(TsR...)>>>,
+                            kIsLValRef, Ret(TsR...) &,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const&, Ret(Ts...) const>>,
+                            kIsLValRef, Ret(Ts...) const&,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) &&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
+                            kIsLValRef, Ret(Ts...) &,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
         };
 
         using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
@@ -249,9 +249,135 @@ struct TaskTypeDeductor {
     template <Copyability cb = kRefCopyable, InlineSize size = kRefPayloadSize,
               Triviality t = kRefTriviality, Alignment align = kRefAlignment>
     using RefType = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
+};*/
+
+template <typename Ft, typename... BoundArgs>
+    requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
+struct TaskTypeDeductor {
+    using F_decay = std::decay_t<Ft>;  // std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
+    using F_Unwrapped = std::unwrap_reference_t<F_decay>;
+    using F = std::conditional_t<std::is_same_v<F_Unwrapped, F_decay>, Ft, F_Unwrapped>;
+
+    struct StripBoundArgs {
+        using Traits = FunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>;
+        using AllArgs = Traits::args_tuple;
+        using InternalFuncPtr = Traits::func_ptr;
+
+        static constexpr std::size_t kRemainingCount =
+            std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
+
+        using SlicedTuple = slice_first<kRemainingCount, AllArgs>::type;
+        using SlicedTupleReverse = slice_last<kRemainingCount, AllArgs>::type;
+
+        template <typename Ret, typename Tuple, typename TupleReverse, typename FilteredBoundArgs>
+        struct rebuild;
+        template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
+        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
+            static constexpr bool kIsValid =
+                is_compatible_invocable_v<F, Ts..., FiltBoundArgs...> ||
+                is_compatible_invocable_v<F, FiltBoundArgs..., TsR...>;
+            static constexpr bool kIsNormalOrder =
+                is_compatible_invocable_v<F, Ts..., FiltBoundArgs...>;
+            static constexpr bool kIsReverse = !kIsNormalOrder;
+            using R = Ret;
+            using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
+            static constexpr bool kIsConst =
+                ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F>, Ts...,
+                                                        std::add_const_t<FiltBoundArgs>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<std::add_const_t<F>, std::add_const_t<FiltBoundArgs>...,
+                                      TsR...>));
+            static constexpr bool kIsRValRef =
+                ((kIsNormalOrder &&
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F>>, Ts...,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F>>,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
+                      TsR...>));
+            static constexpr bool kIsLValRef =
+                ((kIsNormalOrder &&
+                  std::is_invocable_v<std::add_lvalue_reference_t<F>, Ts...,
+                                      std::add_lvalue_reference_t<BoundArgs>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<std::add_lvalue_reference_t<F>,
+                                      std::add_lvalue_reference_t<BoundArgs>..., TsR...>));
+            using Signature = std::conditional_t<
+                Traits::kIsNoExcept,
+                // --- NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(TsR...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
+                                               Ret(TsR...) const noexcept>>,
+                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
+                                                              Ret(TsR...) noexcept>>>,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(Ts...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
+                                               Ret(Ts...) const noexcept>>,
+                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
+                                                              Ret(Ts...) noexcept>>>>,
+                // --- NON-NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(TsR...) const&,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
+                        std::conditional_t<
+                            kIsLValRef, Ret(TsR...) &,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(Ts...) const&,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
+                        std::conditional_t<
+                            kIsLValRef, Ret(Ts...) &,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
+        };
+
+        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
+                             std::tuple<std::unwrap_reference_t<BoundArgs>...>>;
+    };
+
+    // To complete one needs case where F is static (no decay), but in that case it would be trivial
+    // anyway, hence not urgent to change for now
+    using PayloadType = PayloadImpl<Ft, BoundArgs...>;
+
+    static constexpr auto kCopyable = std::is_copy_constructible_v<PayloadType>
+                                          ? Copyability::kCopyable
+                                          : Copyability::kNonCopyable;
+    static constexpr auto kTriviality =
+        TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
+    static constexpr Alignment kAlignment =
+        std::max(alignof(PayloadType), alignof(std::max_align_t));
+    static constexpr auto kPayloadSize = sizeof(PayloadType);
+    using TypeTraits = StripBoundArgs::type;
+    using Signature = TypeTraits::Signature;
+    static constexpr bool kIsValid = TypeTraits::kIsValid;
+
+    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
+              Triviality t = kTriviality, Alignment align = kAlignment>
+    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
+
+    template <InlineSize size>
+    using SizedType =
+        Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 };
 
-template <auto F, typename... BoundArgs>
+/*template <auto F, typename... BoundArgs>
     requires(HasFunctionTraits<decltype(F)>)
 struct TaskTypeDeductorAuto {
     using F_Type = std::decay_t<decltype(F)>;
@@ -323,20 +449,20 @@ struct TaskTypeDeductorAuto {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const & noexcept,
+                            kIsLValRef, Ret(TsR...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
                                                Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
                                                               Ret(TsR...) noexcept>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const & noexcept,
+                            kIsLValRef, Ret(Ts...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
                                                Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
                                                               Ret(Ts...) noexcept>>>>,
                 // --- NON-NOEXCEPT BRANCH ---
                 std::conditional_t<
@@ -344,19 +470,19 @@ struct TaskTypeDeductorAuto {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const&, Ret(TsR...) const>>,
+                            kIsLValRef, Ret(TsR...) const&,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) &&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) &, Ret(TsR...)>>>,
+                            kIsLValRef, Ret(TsR...) &,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const&, Ret(Ts...) const>>,
+                            kIsLValRef, Ret(Ts...) const&,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) &&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
+                            kIsLValRef, Ret(Ts...) &,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
         };
 
         using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
@@ -400,13 +526,136 @@ struct TaskTypeDeductorAuto {
     template <Copyability cb = kRefCopyable, InlineSize size = kRefPayloadSize,
               Triviality t = kRefTriviality, Alignment align = kRefAlignment>
     using RefType = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
+};*/
+
+template <auto F_auto, typename... BoundArgs>
+    requires(HasFunctionTraits<decltype(F_auto)>)
+struct TaskTypeDeductorAuto {
+    struct StripBoundArgs {
+        using F = std::decay_t<decltype(F_auto)>;
+        using F_Unwrapped = F;
+        using Traits = FunctionTraits<F>;
+        using AllArgs = typename Traits::args_tuple;
+
+        static constexpr std::size_t kRemainingCount =
+            std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
+
+        using SlicedTuple = typename slice_first<kRemainingCount, AllArgs>::type;
+        using SlicedTupleReverse = typename slice_last<kRemainingCount, AllArgs>::type;
+
+        template <typename Ret, typename Tuple, typename TupleReverse, typename FiltBoundARgs>
+        struct rebuild;
+        template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
+        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
+            static constexpr bool kIsValid =
+                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...> ||
+                is_compatible_invocable_v<F_Unwrapped, FiltBoundArgs&&..., TsR...>;
+            static constexpr bool kIsNormalOrder =
+                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...>;
+            static constexpr bool kIsReverse = !kIsNormalOrder;
+            using R = Ret;
+            using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
+            static constexpr bool kIsConst =
+                ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F_Unwrapped>, Ts...,
+                                                        std::add_const_t<FiltBoundArgs>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<std::add_const_t<F_Unwrapped>,
+                                      std::add_const_t<FiltBoundArgs>..., TsR...>));
+            static constexpr bool kIsRValRef =
+                ((kIsNormalOrder &&
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>, Ts...,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
+                      TsR...>));
+            static constexpr bool kIsLValRef =
+                ((kIsNormalOrder &&
+                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>, Ts...,
+                                      std::add_lvalue_reference_t<BoundArgs>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>,
+                                      std::add_lvalue_reference_t<BoundArgs>..., TsR...>));
+            using Signature = std::conditional_t<
+                Traits::kIsNoExcept,
+                // --- NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(TsR...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
+                                               Ret(TsR...) const noexcept>>,
+                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
+                                                              Ret(TsR...) noexcept>>>,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(Ts...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
+                                               Ret(Ts...) const noexcept>>,
+                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
+                                                              Ret(Ts...) noexcept>>>>,
+                // --- NON-NOEXCEPT BRANCH ---
+                std::conditional_t<
+                    kIsReverse,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(TsR...) const&,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
+                        std::conditional_t<
+                            kIsLValRef, Ret(TsR...) &,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
+                    std::conditional_t<
+                        kIsConst,
+                        std::conditional_t<
+                            kIsLValRef, Ret(Ts...) const&,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
+                        std::conditional_t<
+                            kIsLValRef, Ret(Ts...) &,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
+        };
+
+        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
+                             std::tuple<std::unwrap_reference_t<BoundArgs>...>>;
+    };
+
+    // To complete one needs case where F is static (no decay), but in that case it would be trivial
+    // anyway, hence not urgent to change for now
+    using PayloadType = PayloadImplArgs<F_auto, BoundArgs...>;
+    static constexpr auto kCopyable = std::is_copy_constructible_v<PayloadType>
+                                          ? Copyability::kCopyable
+                                          : Copyability::kNonCopyable;
+
+    static constexpr Alignment kAlignment =
+        std::max(alignof(PayloadType), alignof(std::max_align_t));
+    static constexpr auto kTriviality =
+        TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
+    static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
+    using TypeTraits = StripBoundArgs::type;
+    using Signature = TypeTraits::Signature;
+    static constexpr bool kIsValid = TypeTraits::kIsValid;
+
+    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
+              Triviality t = kTriviality, Alignment align = kAlignment>
+    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
+
+    template <InlineSize size>
+    using SizedType =
+        Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 };
 
 template <typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
 struct NamedTaskTypeDeductor {
     using F = std::decay_t<Ft>;  // std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
-    using F_Unwrapped = std::remove_reference_t<std::unwrap_reference_t<F>>;
+    using F_Unwrapped = std::unwrap_reference_t<F>;
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>;
         using AllArgs = Traits::args_tuple;
@@ -431,16 +680,28 @@ struct NamedTaskTypeDeductor {
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
-                ((kIsNormalOrder && std::is_invocable_v<const F, Ts..., const BoundArgs...>) ||
-                 (!kIsNormalOrder && std::is_invocable_v<const F, const BoundArgs..., TsR...>));
+                ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F_Unwrapped>, Ts...,
+                                                        std::add_const_t<FiltBoundArgs>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<std::add_const_t<F_Unwrapped>,
+                                      std::add_const_t<FiltBoundArgs>..., TsR...>));
             static constexpr bool kIsRValRef =
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<F_Unwrapped&&, Ts..., FiltBoundArgs&&...>) ||
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>, Ts...,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<F_Unwrapped&&, FiltBoundArgs&&..., TsR...>));
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
+                      TsR...>));
             static constexpr bool kIsLValRef =
-                ((kIsNormalOrder && std::is_invocable_v<F&, Ts..., BoundArgs&...>) ||
-                 (!kIsNormalOrder && std::is_invocable_v<F&, BoundArgs&..., TsR...>));
+                ((kIsNormalOrder &&
+                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>, Ts...,
+                                      std::add_lvalue_reference_t<BoundArgs>...>) ||
+                 (!kIsNormalOrder &&
+                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>,
+                                      std::add_lvalue_reference_t<BoundArgs>..., TsR...>));
             using Signature = std::conditional_t<
                 Traits::kIsNoExcept,
                 // --- NOEXCEPT BRANCH ---
@@ -449,20 +710,20 @@ struct NamedTaskTypeDeductor {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const & noexcept,
+                            kIsLValRef, Ret(TsR...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
                                                Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
                                                               Ret(TsR...) noexcept>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const & noexcept,
+                            kIsLValRef, Ret(Ts...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
                                                Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
                                                               Ret(Ts...) noexcept>>>>,
                 // --- NON-NOEXCEPT BRANCH ---
                 std::conditional_t<
@@ -470,24 +731,23 @@ struct NamedTaskTypeDeductor {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const&, Ret(TsR...) const>>,
+                            kIsLValRef, Ret(TsR...) const&,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) &&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) &, Ret(TsR...)>>>,
+                            kIsLValRef, Ret(TsR...) &,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const&, Ret(Ts...) const>>,
+                            kIsLValRef, Ret(Ts...) const&,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) &&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
+                            kIsLValRef, Ret(Ts...) &,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
         };
 
-        using type =
-            rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
-                    std::tuple<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>...>>;
+        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
+                             std::tuple<std::unwrap_reference_t<BoundArgs>...>>;
     };
 
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
@@ -503,8 +763,9 @@ template <auto F_auto, typename... BoundArgs>
     requires(HasFunctionTraits<decltype(F_auto)>)
 struct NamedTaskTypeDeductorAuto {
     struct StripBoundArgs {
-        using F = std::remove_reference_t<std::unwrap_ref_decay_t<decltype(F_auto)>>;
-        using Traits = FunctionTraits<std::decay_t<F>>;
+        using F = std::decay_t<decltype(F_auto)>;
+        using F_Unwrapped = F;
+        using Traits = FunctionTraits<F>;
         using AllArgs = typename Traits::args_tuple;
 
         static constexpr std::size_t kRemainingCount =
@@ -518,32 +779,36 @@ struct NamedTaskTypeDeductorAuto {
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
             static constexpr bool kIsValid =
-                is_compatible_invocable_v<F, Ts..., FiltBoundArgs&&...> ||
-                is_compatible_invocable_v<F, FiltBoundArgs&&..., TsR...>;
+                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...> ||
+                is_compatible_invocable_v<F_Unwrapped, FiltBoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F, Ts..., FiltBoundArgs&&...>;
+                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
-                Traits::kIsConst &&
-                ((kIsNormalOrder && std::is_invocable_v<const F, Ts..., const BoundArgs...>) ||
+                ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F_Unwrapped>, Ts...,
+                                                        std::add_const_t<FiltBoundArgs>...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>, const BoundArgs..., TsR...>));
+                  std::is_invocable_v<std::add_const_t<F_Unwrapped>,
+                                      std::add_const_t<FiltBoundArgs>..., TsR...>));
             static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&, Ts..., FiltBoundArgs&&...>) ||
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>, Ts...,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<std::decay_t<F>&&, FiltBoundArgs&&..., TsR...>));
+                  std::is_invocable_v<
+                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>,
+                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
+                      TsR...>));
             static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>&, Ts..., BoundArgs&...>) ||
+                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>, Ts...,
+                                      std::add_lvalue_reference_t<BoundArgs>...>) ||
                  (!kIsNormalOrder &&
-                  std::is_invocable_v<const std::decay_t<F>&, BoundArgs&..., TsR...>));
-            static constexpr bool kIsQualifierLess = !kIsRValRef && !kIsLValRef && kIsConst;
-
+                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>,
+                                      std::add_lvalue_reference_t<BoundArgs>..., TsR...>));
             using Signature = std::conditional_t<
                 Traits::kIsNoExcept,
                 // --- NOEXCEPT BRANCH ---
@@ -552,20 +817,20 @@ struct NamedTaskTypeDeductorAuto {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const & noexcept,
+                            kIsLValRef, Ret(TsR...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
                                                Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
                                                               Ret(TsR...) noexcept>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const && noexcept,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const & noexcept,
+                            kIsLValRef, Ret(Ts...) const & noexcept,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
                                                Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                           std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
+                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
                                                               Ret(Ts...) noexcept>>>>,
                 // --- NON-NOEXCEPT BRANCH ---
                 std::conditional_t<
@@ -573,24 +838,23 @@ struct NamedTaskTypeDeductorAuto {
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) const&, Ret(TsR...) const>>,
+                            kIsLValRef, Ret(TsR...) const&,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(TsR...) &&,
-                            std::conditional_t<kIsLValRef, Ret(TsR...) &, Ret(TsR...)>>>,
+                            kIsLValRef, Ret(TsR...) &,
+                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
                     std::conditional_t<
                         kIsConst,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) const&&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) const&, Ret(Ts...) const>>,
+                            kIsLValRef, Ret(Ts...) const&,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
                         std::conditional_t<
-                            kIsRValRef, Ret(Ts...) &&,
-                            std::conditional_t<kIsLValRef, Ret(Ts...) &, Ret(Ts...)>>>>>;
+                            kIsLValRef, Ret(Ts...) &,
+                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
         };
 
-        using type =
-            rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
-                    std::tuple<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>...>>;
+        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
+                             std::tuple<std::unwrap_reference_t<BoundArgs>...>>;
     };
 
     // To complete one needs case where F is static (no decay), but in that case it would be trivial

@@ -284,10 +284,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, size> {
                 return static_cast<const PayloadType*>(s)->invoke(std::forward<Args>(args)...);
             } else {
                 static_assert(PayloadNoRvalueRef<PayloadType>::value);
-                if constexpr (std::is_invocable_v<
-                                  const F&, Args...,
-                                  const std::unwrap_ref_decay_t<
-                                      typename RefToConstRef<BoundArgs>::Type>&...>) {
+                if constexpr (std::is_invocable_v<const F&, Args..., const BoundArgs&...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
@@ -295,11 +292,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, size> {
                         return (*static_cast<const PayloadType**>(s))
                             ->invoke(std::forward<Args>(args)...);
                     }
-                } else if constexpr (std::is_invocable_v<
-                                         const F&,
-                                         const std::unwrap_ref_decay_t<
-                                             typename RefToConstRef<BoundArgs>::Type>&...,
-                                         Args...>) {
+                } else if constexpr (std::is_invocable_v<const F&, const BoundArgs&..., Args...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
@@ -308,9 +301,9 @@ struct InvokerBuilder<Ret(Args...) const&, Task, size> {
                             ->invokeFront(std::forward<Args>(args)...);
                     }
                 } else if constexpr (is_compatible_invocable_v<
-                                         F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...> ||
+                                         F, std::unwrap_reference_t<BoundArgs>..., Args...> ||
                                      is_compatible_invocable_v<
-                                         F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+                                         F, Args..., std::unwrap_reference_t<BoundArgs>&&...>) {
                     static_assert(AlwaysFalse<F>::value,
                                   "F is not callable with the provided arguments since it wouldn't "
                                   "preserve signature qualifier");
@@ -819,13 +812,17 @@ struct InvokerBuilder<Ret(Args...) &&, Task, size> {
     template <typename PayloadType, typename F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
+        using F_Movable =
+            std::add_lvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<F>>>;
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<F&&, Args...>,
+                static_assert(std::is_invocable_v<F_Movable, Args...>,
                               "F is not callable with the provided arguments!");
                 return std::move(*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<F&&, Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (std::is_invocable_v<
+                                     F_Movable, Args...,
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
@@ -833,8 +830,11 @@ struct InvokerBuilder<Ret(Args...) &&, Task, size> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<F&&, std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
+            } else if constexpr (std::is_invocable_v<
+                                     F_Movable,
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...,
+                                     Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
@@ -842,10 +842,11 @@ struct InvokerBuilder<Ret(Args...) &&, Task, size> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 }
-            } else if constexpr (is_compatible_invocable_v<
-                                     F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...> ||
-                                 is_compatible_invocable_v<
-                                     F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_v<std::unwrap_reference_t<F>,
+                                                           std::unwrap_reference_t<BoundArgs>...,
+                                                           Args...> ||
+                                 is_compatible_invocable_v<std::unwrap_reference_t<F>, Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier");
@@ -864,31 +865,33 @@ struct InvokerBuilder<Ret(Args...) &&, Task, size> {
                 static_assert(std::is_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<decltype(F), Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= size) {
-                    return std::move(*static_cast<PayloadType*>(s))
-                        .invoke(std::forward<Args>(args)...);
-                } else {
-                    return std::move(**static_cast<PayloadType**>(s))
-                        .invoke(std::forward<Args>(args)...);
-                }
-            } else if constexpr (std::is_invocable_v<decltype(F),
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
-                if constexpr (sizeof(PayloadType) <= size) {
-                    return std::move(*static_cast<PayloadType*>(s))
-                        .invokeFront(std::forward<Args>(args)...);
-                } else {
-                    return std::move(**static_cast<PayloadType**>(s))
-                        .invokeFront(std::forward<Args>(args)...);
-                }
-            } else if constexpr (is_compatible_invocable_v<decltype(F),
-                                                           std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                           Args...> ||
-                                 is_compatible_invocable_v<
+            } else if constexpr (std::is_invocable_v<
                                      decltype(F), Args...,
-                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...>) {
+                if constexpr (sizeof(PayloadType) <= size) {
+                    return std::move(*static_cast<PayloadType*>(s))
+                        .invoke(std::forward<Args>(args)...);
+                } else {
+                    return std::move(**static_cast<PayloadType**>(s))
+                        .invoke(std::forward<Args>(args)...);
+                }
+            } else if constexpr (std::is_invocable_v<
+                                     decltype(F),
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...,
+                                     Args...>) {
+                if constexpr (sizeof(PayloadType) <= size) {
+                    return std::move(*static_cast<PayloadType*>(s))
+                        .invokeFront(std::forward<Args>(args)...);
+                } else {
+                    return std::move(**static_cast<PayloadType**>(s))
+                        .invokeFront(std::forward<Args>(args)...);
+                }
+            } else if constexpr (is_compatible_invocable_v<
+                                     decltype(F), std::unwrap_reference_t<BoundArgs>..., Args...> ||
+                                 is_compatible_invocable_v<decltype(F), Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier");
@@ -940,16 +943,17 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
     template <typename PayloadType, typename F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
+        using F_Movable =
+            std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<F>>>;
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<F&&, Args...>,
+                static_assert(std::is_invocable_v<F_Movable, Args...>,
                               "F is not callable with the provided arguments!");
                 return std::move(*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<F&&, Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                static_assert(std::is_nothrow_invocable_v<F&&, Args...,
-                                                          std::unwrap_ref_decay_t<BoundArgs>&&...>,
-                              "Callable must be noexcept given its signature");
+            } else if constexpr (std::is_invocable_v<
+                                     F_Movable, Args...,
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
@@ -957,12 +961,11 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<F&&, std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
-                static_assert(
-                    std::is_nothrow_invocable_v<F&&, std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                Args...>,
-                    "Callable must be noexcept given its signature");
+            } else if constexpr (std::is_invocable_v<
+                                     F_Movable,
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...,
+                                     Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
@@ -970,10 +973,11 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 }
-            } else if constexpr (is_compatible_invocable_v<
-                                     F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...> ||
-                                 is_compatible_invocable_v<
-                                     F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_v<std::unwrap_reference_t<F>,
+                                                           std::unwrap_reference_t<BoundArgs>...,
+                                                           Args...> ||
+                                 is_compatible_invocable_v<std::unwrap_reference_t<F>, Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier");
@@ -992,38 +996,33 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
                 static_assert(std::is_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<decltype(F), Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                static_assert(std::is_nothrow_invocable_v<decltype(F), Args...,
-                                                          std::unwrap_ref_decay_t<BoundArgs>&&...>,
-                              "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= size) {
-                    return std::move(*static_cast<PayloadType*>(s))
-                        .invoke(std::forward<Args>(args)...);
-                } else {
-                    return std::move(**static_cast<PayloadType**>(s))
-                        .invoke(std::forward<Args>(args)...);
-                }
-            } else if constexpr (std::is_invocable_v<decltype(F),
-                                                     std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
-                static_assert(
-                    std::is_nothrow_invocable_v<decltype(F),
-                                                std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>,
-                    "Callable must be noexcept given its signature");
-                if constexpr (sizeof(PayloadType) <= size) {
-                    return std::move(*static_cast<PayloadType*>(s))
-                        .invokeFront(std::forward<Args>(args)...);
-                } else {
-                    return std::move(**static_cast<PayloadType**>(s))
-                        .invokeFront(std::forward<Args>(args)...);
-                }
-            } else if constexpr (is_compatible_invocable_v<decltype(F),
-                                                           std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                           Args...> ||
-                                 is_compatible_invocable_v<
+            } else if constexpr (std::is_invocable_v<
                                      decltype(F), Args...,
-                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...>) {
+                if constexpr (sizeof(PayloadType) <= size) {
+                    return std::move(*static_cast<PayloadType*>(s))
+                        .invoke(std::forward<Args>(args)...);
+                } else {
+                    return std::move(**static_cast<PayloadType**>(s))
+                        .invoke(std::forward<Args>(args)...);
+                }
+            } else if constexpr (std::is_invocable_v<
+                                     decltype(F),
+                                     std::add_rvalue_reference_t<std::remove_reference_t<
+                                         std::unwrap_reference_t<BoundArgs>>>...,
+                                     Args...>) {
+                if constexpr (sizeof(PayloadType) <= size) {
+                    return std::move(*static_cast<PayloadType*>(s))
+                        .invokeFront(std::forward<Args>(args)...);
+                } else {
+                    return std::move(**static_cast<PayloadType**>(s))
+                        .invokeFront(std::forward<Args>(args)...);
+                }
+            } else if constexpr (is_compatible_invocable_v<
+                                     decltype(F), std::unwrap_reference_t<BoundArgs>..., Args...> ||
+                                 is_compatible_invocable_v<decltype(F), Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier");
@@ -1448,13 +1447,14 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, size> {
     template <typename PayloadType, typename F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
+        using F_Unwrap = std::unwrap_reference_t<F>;
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
                 static_assert(std::is_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (is_compatible_invocable_v<
-                                     F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_v<F_Unwrap, Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeCompatible(std::forward<Args>(args)...);
@@ -1463,7 +1463,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, size> {
                         .invokeCompatible(std::forward<Args>(args)...);
                 }
             } else if constexpr (is_compatible_invocable_v<
-                                     F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>) {
+                                     F_Unwrap, std::unwrap_reference_t<BoundArgs>..., Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeFrontCompatible(std::forward<Args>(args)...);
@@ -2301,8 +2301,10 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
 
     template <auto F, typename... BoundArgs>
     constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
-        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                       template getInvoker<PayloadArgsT<F, BoundArgs...>, F, BoundArgs...>()} {
+        : storage_{.invoker =
+                       InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>,
+                                      size>::template getInvoker<PayloadArgsT<F, BoundArgs...>, F,
+                                                                 std::decay_t<BoundArgs>...>()} {
         using PayloadType = PayloadArgsT<F, BoundArgs...>;
         if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
@@ -2355,8 +2357,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
                   template getInvoker<PayloadT<decltype(f), BoundArgs...>,
-                                      std::remove_reference_t<std::unwrap_ref_decay_t<decltype(f)>>,
-                                      std::decay_t<BoundArgs>...>()} {
+                                      std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
@@ -2405,10 +2406,8 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     template <typename F, typename... BoundArgs>
     constexpr Task([[maybe_unused]] RefTag /*unused*/, F&& f, BoundArgs&&... args)  // NOLINT
         requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value)
-        : storage_{.invoker =
-                       InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>,
-                                      size>::template getInvoker<PayloadImpl<F, BoundArgs...>,
-                                                                 std::decay_t<F>, BoundArgs...>()} {
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
+                       template getInvoker<PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
                std::is_lvalue_reference_v<BoundArgs>) ||
@@ -2615,128 +2614,139 @@ template <auto F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
              FunctionTraits<decltype(F)>::kValid && TaskTypeDeductorAuto<F, BoundArgs...>::kIsValid)
 Task(FunctionTag<F>, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductorAuto<F, BoundArgs...>::TypeTraits::Signature,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kCopyable,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kPayloadSize,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kAlignment>;
+    -> Task<typename TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::TypeTraits::Signature,
+            TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kCopyable,
+            TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kPayloadSize,
+            TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kTriviality, false,
+            HeapPolicy::kDisallow, TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
-    requires(!std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
-             FunctionTraits<std::decay_t<F>>::kValid &&
-             (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
+    requires(
+        !std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
+        FunctionTraits<std::remove_reference_t<std::unwrap_reference_t<std::decay_t<F>>>>::kValid &&
+        (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
+        TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kIsValid)
+Task(F&&, BoundArgs&&...) -> Task<
+    typename TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::TypeTraits::Signature,
+    TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kCopyable,
+    TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kPayloadSize,
+    TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kTriviality, false,
+    HeapPolicy::kDisallow,
+    TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kAlignment>;
+
+template <typename F, typename... BoundArgs>
+    requires(!IsFunctionTag<F>::value &&
+             FunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>::kValid &&
              TaskTypeDeductor<F, BoundArgs...>::kIsValid)
-Task(F&&, BoundArgs&&...)
+Task(RefTag, F&&, BoundArgs&&...)
     -> Task<typename TaskTypeDeductor<F, BoundArgs...>::TypeTraits::Signature,
             TaskTypeDeductor<F, BoundArgs...>::kCopyable,
             TaskTypeDeductor<F, BoundArgs...>::kPayloadSize,
             TaskTypeDeductor<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
             TaskTypeDeductor<F, BoundArgs...>::kAlignment>;
 
-template <typename F, typename... BoundArgs>
-    requires(!IsFunctionTag<F>::value && FunctionTraits<std::decay_t<F>>::kValid &&
-             TaskTypeDeductor<F, BoundArgs...>::kIsValid)
-Task(RefTag, F&&, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductor<F, BoundArgs...>::TypeTraits::Signature,
-            TaskTypeDeductor<F, BoundArgs...>::kRefCopyable,
-            TaskTypeDeductor<F, BoundArgs...>::kRefPayloadSize,
-            TaskTypeDeductor<F, BoundArgs...>::kRefTriviality, false, HeapPolicy::kDisallow,
-            TaskTypeDeductor<F, BoundArgs...>::kRefAlignment>;
-
 template <auto F, typename... BoundArgs>
     requires(FunctionTraits<decltype(F)>::kValid && TaskTypeDeductorAuto<F, BoundArgs...>::kIsValid)
 Task(RefTag, FunctionTag<F>, BoundArgs&&...)
     -> Task<typename TaskTypeDeductorAuto<F, BoundArgs...>::TypeTraits::Signature,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kRefCopyable,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kRefPayloadSize,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kRefCanUseTrivial, false, HeapPolicy::kDisallow,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kRefAlignment>;
+            TaskTypeDeductorAuto<F, BoundArgs...>::kCopyable,
+            TaskTypeDeductorAuto<F, BoundArgs...>::kPayloadSize,
+            TaskTypeDeductorAuto<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
+            TaskTypeDeductorAuto<F, BoundArgs...>::kAlignment>;
 
 template <typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeTask(
-    F&& f, Args&&... args) {
+FORCE_INLINE constexpr
+    typename TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>::template Type<>
+    makeTask(F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
+    static_assert(TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");
     return Task(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeTask(
-    Args&&... args) {
+FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, std::decay_t<Args>...>::template Type<>
+makeTask(Args&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
+    static_assert(TaskTypeDeductorAuto<F, std::decay_t<Args>...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");
     return Task(FunctionTag<F>{}, std::forward<Args>(args)...);
 }
 
 template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeTask(
-    F&& f, Args&&... args) {
+FORCE_INLINE constexpr
+    typename TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>::template Type<>
+    makeTask(F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    static_assert(std::is_same_v<typename TaskTypeDeductor<F, Args...>::TypeTraits::Signature, Sig>,
-                  "Forwarded callable and arguments do not match requested signature");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
+    static_assert(
+        std::is_same_v<typename TaskTypeDeductor<std::decay_t<F>,
+                                                 std::decay_t<Args>...>::TypeTraits::Signature,
+                       Sig>,
+        "Forwarded callable and arguments do not match requested signature");
+    static_assert(TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");
     return Task(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeTask(
-    Args&&... args) {
+FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, std::decay_t<Args>...>::template Type<>
+makeTask(Args&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
     static_assert(
-        std::is_same_v<typename TaskTypeDeductorAuto<F, Args...>::TypeTraits::Signature, Sig>,
+        std::is_same_v<
+            typename TaskTypeDeductorAuto<F, std::decay_t<Args>...>::TypeTraits::Signature, Sig>,
         "Forwarded callable and arguments do not match requested signature");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
+    static_assert(TaskTypeDeductorAuto<F, std::decay_t<Args>...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");
     return Task(FunctionTag<F>{}, std::forward<Args>(args)...);
 }
 
-template <std::size_t N = alignof(std::max_align_t), typename F, typename... Args>
+template <InlineSize size = 16, typename F, typename... Args>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<F, Args...>;
+    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template FlexType<N>{std::forward<F>(f), std::forward<Args>(args)...};
+    return typename Deductor::template SizedType<size>{std::forward<F>(f),
+                                                       std::forward<Args>(args)...};
 }
 
 template <typename Sig, InlineSize size = alignof(std::max_align_t), typename F, typename... Args>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<F, Args...>;
+    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>;
+    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
+    static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
+                  "Forwarded callable and arguments do not match requested signature");
+    return typename Deductor::template SizedType<size>{std::forward<F>(f),
+                                                       std::forward<Args>(args)...};
+}
+
+template <InlineSize size = 16, auto F, typename... Args>
+FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
+    static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
+    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<Args>...>;
+    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
+    return
+        typename Deductor::template SizedType<size>{FunctionTag<F>{}, std::forward<Args>(args)...};
+}
+
+template <typename Sig, InlineSize size = 16, auto F, typename... Args>
+FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
+    static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
+    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<Args>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
     return
-        typename Deductor::template FlexType<size>{std::forward<F>(f), std::forward<Args>(args)...};
-}
-
-template <std::size_t N = alignof(std::max_align_t), auto F, typename... Args>
-FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
-    static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, Args...>;
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template FlexType<N>{FunctionTag<F>{}, std::forward<Args>(args)...};
-}
-
-template <typename Sig, InlineSize size = alignof(std::max_align_t), auto F, typename... Args>
-FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
-    static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, Args...>;
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
-                  "Forwarded callable and arguments do not match requested signature");
-    return
-        typename Deductor::template FlexType<size>{FunctionTag<F>{}, std::forward<Args>(args)...};
+        typename Deductor::template SizedType<size>{FunctionTag<F>{}, std::forward<Args>(args)...};
 }
 
 template <typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<> makeRefTask(
+FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeRefTask(
     F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
@@ -2746,11 +2756,11 @@ FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<>
 }
 
 template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<> makeRefTask(
+FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeRefTask(
     F&& f, Args&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    static_assert(std::is_same_v<typename TaskTypeDeductor<F, Args...>::TypeTraits::Signature, Sig>,
+    static_assert(std::is_same_v<typename TaskTypeDeductor<F, Args...>::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
     static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");
@@ -2758,7 +2768,7 @@ FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<>
 }
 
 template <auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<> makeRefTask(
+FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeRefTask(
     Args&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
     static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
@@ -2767,220 +2777,131 @@ FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefTy
 }
 
 template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<> makeRefTask(
+FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeRefTask(
     Args&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
     static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
                   "Forwarded callable is not callable with given arguments");
-    static_assert(
-        std::is_same_v<typename TaskTypeDeductorAuto<F, Args...>::TypeTraits::Signature, Sig>,
-        "Forwarded callable and arguments do not match requested signature");
+    static_assert(std::is_same_v<typename TaskTypeDeductorAuto<F, Args...>::Signature, Sig>,
+                  "Forwarded callable and arguments do not match requested signature");
     return Task(RefTag{}, FunctionTag<F>{}, std::forward<Args>(args)...);
 }
 
 template <typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeMutTask(
-    F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-    return Task(std::forward<F>(f), std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutTask(F&& f, Args&&... args) {
+    static_assert(decltype(makeTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeMutTask(
-    Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-    return Task(FunctionTag<F>{}, std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutTask(Args&&... args) {
+    static_assert(decltype(makeTask<F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask<F>(std::forward<Args>(args)...);
 }
 
 template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeMutTask(
-    F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(std::is_same_v<typename TaskTypeDeductor<F, Args...>::TypeTraits::Signature, Sig>,
-                  "Forwarded callable and arguments do not match requested signature");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-    return Task(std::forward<F>(f), std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutTask(F&& f, Args&&... args) {
+    using TaskType = decltype(makeTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...));
+    static_assert(TaskType::kMutable, "Signature is immutable");
+    return makeTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeMutTask(
-    Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(
-        std::is_same_v<typename TaskTypeDeductorAuto<F, Args...>::TypeTraits::Signature, Sig>,
-        "Forwarded callable and arguments do not match requested signature");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-    return Task(FunctionTag<F>{}, std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutTask(Args&&... args) {
+    static_assert(decltype(makeTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask<Sig, F>(std::forward<Args>(args)...);
 }
 
 template <typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<> makeMutRefTask(
-    F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-    return Task(RefTag{}, std::forward<F>(f), std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutRefTask(F&& f, Args&&... args) {
+    static_assert(decltype(makeRefTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<> makeMutRefTask(
-    F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(std::is_same_v<typename TaskTypeDeductor<F, Args...>::TypeTraits::Signature, Sig>,
-                  "Forwarded callable and arguments do not match requested signature");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-
-    return Task(RefTag{}, std::forward<F>(f), std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutRefTask(F&& f, Args&&... args) {
+    using TaskType = decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...));
+    static_assert(TaskType::kMutable, "Signature is immutable");
+    return makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<> makeMutRefTask(
-    Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-    return Task(RefTag{}, FunctionTag<F>{}, std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutRefTask(Args&&... args) {
+    static_assert(decltype(makeRefTask<F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask<F>(std::forward<Args>(args)...);
 }
 
 template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<> makeMutRefTask(
-    Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::template Type<>::kMutable,
-                  "Callable is not mutable");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(
-        std::is_same_v<typename TaskTypeDeductorAuto<F, Args...>::TypeTraits::Signature, Sig>,
-        "Forwarded callable and arguments do not match requested signature");
-    return Task(RefTag{}, FunctionTag<F>{}, std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeMutRefTask(Args&&... args) {
+    static_assert(decltype(makeRefTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask<F, Sig>(std::forward<Args>(args)...);
 }
 
 template <typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeImmutTask(
-    F&& f, Args&&... args) {
-    static_assert(!TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not immutable");
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    return Task(std::forward<F>(f), std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeImmutTask(F&& f, Args&&... args) {
+    static_assert(!decltype(makeTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeImmutTask(
-    Args&&... args) {
-    using Deductor = TaskTypeDeductorAuto<F, Args...>;
-    using TaskType = typename Deductor::template Type<>;
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    static_assert(!TaskType::kMutable, "Callable is not immutable");
-    return Task(FunctionTag<F>{}, std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeImmutTask(Args&&... args) {
+    static_assert(!decltype(makeTask<F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask<F>(std::forward<Args>(args)...);
 }
 
 template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template Type<> makeImmutTask(
-    F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(!TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not immutable");
-    static_assert(std::is_same_v<typename TaskTypeDeductor<F, Args...>::TypeTraits::Signature, Sig>,
-                  "Forwarded callable and arguments do not match requested signature");
-    return Task(std::forward<F>(f), std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeImmutTask(F&& f, Args&&... args) {
+    static_assert(
+        !decltype(makeTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+        "Signature is immutable");
+    return makeTask(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template Type<> makeImmutTask(
-    Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(!TaskTypeDeductorAuto<F, Args...>::template Type<>::kMutable,
-                  "Callable is not immutable");
-    static_assert(
-        std::is_same_v<typename TaskTypeDeductorAuto<F, Args...>::TypeTraits::Signature, Sig>,
-        "Forwarded callable and arguments do not match requested signature");
-    return Task(FunctionTag<F>{}, std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeImmutTask(Args&&... args) {
+    static_assert(!decltype(makeTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask<F>(std::forward<Args>(args)...);
 }
 
 template <typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<> makeImmutRefTask(
-    F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(!TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not immutable");
-    return Task(RefTag{}, std::forward<F>(f), std::forward<Args>(args)...);
+FORCE_INLINE constexpr auto makeImmutRefTask(F&& f, Args&&... args) {
+    static_assert(!decltype(makeRefTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <typename Sig, typename F, typename... Args>
 FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<> makeImmutRefTask(
     F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    static_assert(std::is_same_v<typename TaskTypeDeductor<F, Args...>::TypeTraits::Signature, Sig>,
-                  "Forwarded callable and arguments do not match requested signature");
-    static_assert(TaskTypeDeductor<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(!TaskTypeDeductor<F, Args...>::template Type<>::kMutable,
-                  "Callable is not immutable");
-    return Task(RefTag{}, std::forward<F>(f), std::forward<Args>(args)...);
+    static_assert(
+        !decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+        "Signature is immutable");
+    return makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template <auto F, typename... Args>
 FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<>
 makeImmutRefTask(Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(!TaskTypeDeductorAuto<F, Args...>::template Type<>::kMutable,
-                  "Callable is not immutable");
-    return Task(RefTag{}, FunctionTag<F>{}, std::forward<Args>(args)...);
+    static_assert(!decltype(makeRefTask<F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask<F>(std::forward<Args>(args)...);
 }
 
 template <typename Sig, auto F, typename... Args>
 FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<>
 makeImmutRefTask(Args&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    static_assert(TaskTypeDeductorAuto<F, Args...>::kIsValid,
-                  "Forwarded callable is not callable with given arguments");
-    static_assert(!TaskTypeDeductorAuto<F, Args...>::template Type<>::kMutable,
-                  "Callable is not immutable");
-    static_assert(
-        std::is_same_v<typename TaskTypeDeductorAuto<F, Args...>::TypeTraits::Signature, Sig>,
-        "Forwarded callable and arguments do not match requested signature");
-    return Task(RefTag{}, FunctionTag<F>{}, std::forward<Args>(args)...);
+    static_assert(!decltype(makeRefTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask<Sig, F>(std::forward<Args>(args)...);
 }
 
 }  // namespace fn

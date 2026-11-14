@@ -11,6 +11,7 @@
 
 #include "task/deductors.hpp"
 #include "task/function_traits.hpp"
+#include "task/payload.hpp"
 
 bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) noexcept {
     return false;
@@ -18,7 +19,7 @@ bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) no
 
 struct A {
     int a{};
-    std::string_view operator()(double& b) const&& noexcept {
+    std::string_view operator()(const double& b) const&& noexcept {
         //++a;
         return "";
     }
@@ -40,9 +41,6 @@ int main() {
     A a{};
     B b{};
     double thisHere = 3.0;
-    using ARef = std::reference_wrapper<A>;
-    using BRef = std::reference_wrapper<B>;
-    std::invoke(std::forward<A>(std::ref(a)), thisHere);
     auto thisTask = fn::makeTask(std::cref(a), 3.0);
     using unwrappedRefToF = std::decay_t<std::unwrap_ref_decay_t<decltype(std::cref(a))>>;
     static_assert(fn::HasFunctionTraits<unwrappedRefToF>);
@@ -53,7 +51,7 @@ int main() {
             std::cout << "Name: {}" << name << '\n';
         },
         0);
-    static_assert(decltype(task)::matchesSignature<void(const std::string&) noexcept>());
+    static_assert(decltype(task)::matchesSignature<void(const std::string&) && noexcept>());
     auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
     auto taskMimic2 = fn::Task<void(const std::string&)>{task};
     task("Hello World");
@@ -61,7 +59,7 @@ int main() {
     auto task2 = fn::makeTask(
         [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
         std::string("Hello World"));
-    static_assert(decltype(task2)::matchesSignature<void(int) const noexcept>());
+    static_assert(decltype(task2)::matchesSignature<void(int) const & noexcept>());
     task2(10);
     auto str = std::string{"Hello World"};
     // You can capture by reference, equivalently to '&str' in lambda
@@ -80,7 +78,7 @@ int main() {
     // If you want to allow heap (similar to std::function), you may use 'FlexTask' alias.
     auto task4 = fn::FlexTask<void(int)>{
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
-    auto flexTask = fn::makeFlexTask<void(int) const>(
+    auto flexTask = fn::makeFlexTask<void(int) const&>(
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; });
 
     // Or, have it on the stack -> way faster copies and moves if you frequently transfer tasks (e.g
@@ -148,4 +146,19 @@ int main() {
     auto bindBack = std::bind_back([](int a) {}, 42);
     auto bindBackTask = fn::Task{bindBack};
     bindBackTask();
+
+    {
+        std::string s{"hi"};
+        struct Functor {
+            std::string data;
+
+            void operator()(std::string& other) const& {
+                // data += other;
+            }
+        };
+        auto functor = Functor{};
+        auto a = fn::makeTask(functor, std::ref(s));
+        a();
+        auto aa = fn::makeTask(Functor{}, s);
+    }
 }

@@ -198,8 +198,10 @@ constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
 template <typename F, typename... Args>
 inline constexpr bool is_compatible_invocable_v =  // NOLINT
     detail::search<F, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid ||
-    detail::search<F&, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid ||
-    detail::search<F&&, detail::TypeList<Args&&...>, detail::TypeList<>>::kValid;
+    detail::search<std::add_lvalue_reference_t<F>, detail::TypeList<Args&&...>,
+                   detail::TypeList<>>::kValid ||
+    detail::search<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
+                   detail::TypeList<Args&&...>, detail::TypeList<>>::kValid;
 
 template <typename... Ts>
 struct PayloadTuple;
