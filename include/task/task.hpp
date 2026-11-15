@@ -2674,215 +2674,218 @@ FORCE_INLINE constexpr auto makeTask(auto&& f)
                 TaskSrc::AllowHeap, TaskSrc::kAlignment>{std::forward<decltype(f)>(f)};
 }
 
-template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr auto makeTask(Args&&... args) {
+template <typename Sig, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<Args>...>;
+    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<Sig>{FunctionTag<F>{}, std::forward<Args>(args)...};
-}
-
-template <InlineSize size = 16, typename F, typename... Args>
-FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>;
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return
-        typename Deductor::template HeapType<size>{std::forward<F>(f), std::forward<Args>(args)...};
+        typename Deductor::template Type<Sig>{FunctionTag<F>{}, std::forward<BoundArgs>(args)...};
 }
 
-template <typename Sig, InlineSize size = 16, typename F, typename... Args>
-FORCE_INLINE constexpr auto makeFlexTask(F&& f, Args&&... args) {
+template <InlineSize size = 16, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<Args>...>;
+    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
+    return typename Deductor::template HeapType<size>{std::forward<F>(f),
+                                                      std::forward<BoundArgs>(args)...};
+}
+
+template <typename Sig, InlineSize size = 16, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args) {
+    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
+                  "Given callable is invalid");
+    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
-    return
-        typename Deductor::template HeapType<size>{std::forward<F>(f), std::forward<Args>(args)...};
+    return typename Deductor::template HeapType<size>{std::forward<F>(f),
+                                                      std::forward<BoundArgs>(args)...};
 }
 
-template <InlineSize size = 16, auto F, typename... Args>
-FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
+template <InlineSize size = 16, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeFlexTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<Args>...>;
+    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return
-        typename Deductor::template HeapType<size>{FunctionTag<F>{}, std::forward<Args>(args)...};
+    return typename Deductor::template HeapType<size>{FunctionTag<F>{},
+                                                      std::forward<BoundArgs>(args)...};
 }
 
-template <typename Sig, InlineSize size = 16, auto F, typename... Args>
+template <typename Sig, InlineSize size = 16, auto F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(Args&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<Args>...>;
+    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
-    return
-        typename Deductor::template HeapType<size>{FunctionTag<F>{}, std::forward<Args>(args)...};
+    return typename Deductor::template HeapType<size>{FunctionTag<F>{},
+                                                      std::forward<BoundArgs>(args)...};
 }
 
-template <typename F, typename... Args>
-FORCE_INLINE constexpr auto makeRefTask(F&& f, Args&&... args) {
+template <typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<F, Args...>;
+    using Deductor = TaskTypeDeductor<F, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{RefTag{}, std::forward<F>(f),
-                                              std::forward<Args>(args)...};
+                                              std::forward<BoundArgs>(args)...};
 }
 
-template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr auto makeRefTask(F&& f, Args&&... args) {
+template <typename Sig, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<F, Args...>;
+    using Deductor = TaskTypeDeductor<F, BoundArgs...>;
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{RefTag{}, std::forward<F>(f),
-                                              std::forward<Args>(args)...};
+                                              std::forward<BoundArgs>(args)...};
 }
 
-template <auto F, typename... Args>
-FORCE_INLINE constexpr auto makeRefTask(Args&&... args) {
+template <auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, Args...>;
+    using Deductor = TaskTypeDeductorAuto<F, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return
-        typename Deductor::template Type<>{RefTag{}, FunctionTag<F>{}, std::forward<Args>(args)...};
+    return typename Deductor::template Type<>{RefTag{}, FunctionTag<F>{},
+                                              std::forward<BoundArgs>(args)...};
 }
 
-template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr auto makeRefTask(Args&&... args) {
+template <typename Sig, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, Args...>;
+    using Deductor = TaskTypeDeductorAuto<F, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");
-    return
-        typename Deductor::template Type<>{RefTag{}, FunctionTag<F>{}, std::forward<Args>(args)...};
+    return typename Deductor::template Type<>{RefTag{}, FunctionTag<F>{},
+                                              std::forward<BoundArgs>(args)...};
 }
 
-template <typename F, typename... Args>
-FORCE_INLINE constexpr auto makeMutTask(F&& f, Args&&... args) {
-    static_assert(decltype(makeTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeTask(std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-template <auto F, typename... Args>
-FORCE_INLINE constexpr auto makeMutTask(Args&&... args) {
-    static_assert(decltype(makeTask<F>(std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeTask<F>(std::forward<Args>(args)...);
-}
-
-template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr auto makeMutTask(F&& f, Args&&... args) {
-    using TaskType = decltype(makeTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...));
-    static_assert(TaskType::kMutable, "Signature is immutable");
-    return makeTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr auto makeMutTask(Args&&... args) {
-    static_assert(decltype(makeTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeTask<Sig, F>(std::forward<Args>(args)...);
-}
-
-template <typename F, typename... Args>
-FORCE_INLINE constexpr auto makeMutRefTask(F&& f, Args&&... args) {
-    static_assert(decltype(makeRefTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeRefTask(std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr auto makeMutRefTask(F&& f, Args&&... args) {
-    using TaskType = decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...));
-    static_assert(TaskType::kMutable, "Signature is immutable");
-    return makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-template <auto F, typename... Args>
-FORCE_INLINE constexpr auto makeMutRefTask(Args&&... args) {
-    static_assert(decltype(makeRefTask<F>(std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeRefTask<F>(std::forward<Args>(args)...);
-}
-
-template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr auto makeMutRefTask(Args&&... args) {
-    static_assert(decltype(makeRefTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeRefTask<F, Sig>(std::forward<Args>(args)...);
-}
-
-template <typename F, typename... Args>
-FORCE_INLINE constexpr auto makeImmutTask(F&& f, Args&&... args) {
-    static_assert(!decltype(makeTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeTask(std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-template <auto F, typename... Args>
-FORCE_INLINE constexpr auto makeImmutTask(Args&&... args) {
-    static_assert(!decltype(makeTask<F>(std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeTask<F>(std::forward<Args>(args)...);
-}
-
-template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr auto makeImmutTask(F&& f, Args&&... args) {
+template <typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutTask(F&& f, BoundArgs&&... args) {
     static_assert(
-        !decltype(makeTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+        decltype(makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
         "Signature is immutable");
-    return makeTask(std::forward<F>(f), std::forward<Args>(args)...);
+    return makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
 }
 
-template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr auto makeImmutTask(Args&&... args) {
-    static_assert(!decltype(makeTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
+template <auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutTask(BoundArgs&&... args) {
+    static_assert(decltype(makeTask<F>(std::forward<BoundArgs>(args)...))::kMutable,
                   "Signature is immutable");
-    return makeTask<F>(std::forward<Args>(args)...);
+    return makeTask<F>(std::forward<BoundArgs>(args)...);
 }
 
-template <typename F, typename... Args>
-FORCE_INLINE constexpr auto makeImmutRefTask(F&& f, Args&&... args) {
-    static_assert(!decltype(makeRefTask(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+template <typename Sig, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutTask(F&& f, BoundArgs&&... args) {
+    using TaskType = decltype(makeTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...));
+    static_assert(TaskType::kMutable, "Signature is immutable");
+    return makeTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...);
+}
+
+template <typename Sig, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutTask(BoundArgs&&... args) {
+    static_assert(decltype(makeTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
                   "Signature is immutable");
-    return makeRefTask(std::forward<F>(f), std::forward<Args>(args)...);
+    return makeTask<Sig, F>(std::forward<BoundArgs>(args)...);
 }
 
-template <typename Sig, typename F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductor<F, Args...>::template RefType<> makeImmutRefTask(
-    F&& f, Args&&... args) {
+template <typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutRefTask(F&& f, BoundArgs&&... args) {
     static_assert(
-        !decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...))::kMutable,
+        decltype(makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
         "Signature is immutable");
-    return makeRefTask<Sig>(std::forward<F>(f), std::forward<Args>(args)...);
+    return makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
 }
 
-template <auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<>
-makeImmutRefTask(Args&&... args) {
-    static_assert(!decltype(makeRefTask<F>(std::forward<Args>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeRefTask<F>(std::forward<Args>(args)...);
+template <typename Sig, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutRefTask(F&& f, BoundArgs&&... args) {
+    using TaskType =
+        decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...));
+    static_assert(TaskType::kMutable, "Signature is immutable");
+    return makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...);
 }
 
-template <typename Sig, auto F, typename... Args>
-FORCE_INLINE constexpr typename TaskTypeDeductorAuto<F, Args...>::template RefType<>
-makeImmutRefTask(Args&&... args) {
-    static_assert(!decltype(makeRefTask<Sig, F>(std::forward<Args>(args)...))::kMutable,
+template <auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutRefTask(BoundArgs&&... args) {
+    static_assert(decltype(makeRefTask<F>(std::forward<BoundArgs>(args)...))::kMutable,
                   "Signature is immutable");
-    return makeRefTask<Sig, F>(std::forward<Args>(args)...);
+    return makeRefTask<F>(std::forward<BoundArgs>(args)...);
+}
+
+template <typename Sig, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeMutRefTask(BoundArgs&&... args) {
+    static_assert(decltype(makeRefTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask<F, Sig>(std::forward<BoundArgs>(args)...);
+}
+
+template <typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutTask(F&& f, BoundArgs&&... args) {
+    static_assert(
+        !decltype(makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
+        "Signature is immutable");
+    return makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
+}
+
+template <auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutTask(BoundArgs&&... args) {
+    static_assert(!decltype(makeTask<F>(std::forward<BoundArgs>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask<F>(std::forward<BoundArgs>(args)...);
+}
+
+template <typename Sig, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutTask(F&& f, BoundArgs&&... args) {
+    static_assert(
+        !decltype(makeTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
+        "Signature is immutable");
+    return makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
+}
+
+template <typename Sig, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutTask(BoundArgs&&... args) {
+    static_assert(!decltype(makeTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeTask<F>(std::forward<BoundArgs>(args)...);
+}
+
+template <typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutRefTask(F&& f, BoundArgs&&... args) {
+    static_assert(
+        !decltype(makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
+        "Signature is immutable");
+    return makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
+}
+
+template <typename Sig, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutRefTask(F&& f, BoundArgs&&... args) {
+    static_assert(
+        !decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
+        "Signature is immutable");
+    return makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...);
+}
+
+template <auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutRefTask(BoundArgs&&... args) {
+    static_assert(!decltype(makeRefTask<F>(std::forward<BoundArgs>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask<F>(std::forward<BoundArgs>(args)...);
+}
+
+template <typename Sig, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeImmutRefTask(BoundArgs&&... args) {
+    static_assert(!decltype(makeRefTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
+                  "Signature is immutable");
+    return makeRefTask<Sig, F>(std::forward<BoundArgs>(args)...);
 }
 
 }  // namespace fn
