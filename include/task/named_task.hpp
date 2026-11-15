@@ -33,12 +33,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
     static constexpr bool kIsFront =
         is_compatible_invocable_b<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (kIsFront) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
+        if constexpr (!kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
                 .invokeCompatible(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<Task>(self)).payload_)
+                .invokeFrontCompatible(std::forward<Args>(args)...);
         }
     }
 };
@@ -52,12 +52,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcep
     static constexpr bool kIsFront =
         is_compatible_invocable_b<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (kIsFront) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
+        if constexpr (!kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
                 .invokeCompatible(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<Task>(self)).payload_)
+                .invokeFrontCompatible(std::forward<Args>(args)...);
         }
     }
 };
@@ -70,12 +70,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const> 
     static constexpr bool kIsFront =
         std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (kIsFront) {
-            return std::move(static_cast<const Task>(self))
-                .payload_.invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
+        if constexpr (!kIsFront) {
             return std::move(static_cast<const Task>(self))
                 .payload_.invokeCompatible(std::forward<Args>(args)...);
+        } else {
+            return std::move(static_cast<const Task>(self))
+                .payload_.invokeFrontCompatible(std::forward<Args>(args)...);
         }
     }
 };
@@ -88,12 +88,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const n
     static constexpr bool kIsFront =
         std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (kIsFront) {
-            return std::move(static_cast<const Task>(self))
-                .payload_.invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
+        if constexpr (!kIsFront) {
             return std::move(static_cast<const Task>(self))
                 .payload_.invokeCompatible(std::forward<Args>(args)...);
+        } else {
+            return std::move(static_cast<const Task>(self))
+                .payload_.invokeFrontCompatible(std::forward<Args>(args)...);
         }
     }
 };
@@ -105,11 +105,11 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&>
                   std::is_invocable_v<const F&, Args..., const BoundArgs&...>);
     static constexpr bool kIsFront = std::is_invocable_v<const F&, const BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (kIsFront) {
+        if constexpr (!kIsFront) {
+            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
+        } else {
             return (static_cast<const Task&>(self))
                 .payload_.invokeFront(std::forward<Args>(args)...);
-        } else {
-            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
@@ -122,11 +122,11 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const &
     static constexpr bool kIsFront =
         std::is_invocable_v<const UnwrapF&, const BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (kIsFront) {
+        if constexpr (!kIsFront) {
+            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
+        } else {
             return (static_cast<const Task&>(self))
                 .payload_.invokeFront(std::forward<Args>(args)...);
-        } else {
-            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         }
     }
 };
@@ -138,10 +138,10 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &> {
                   std::is_invocable_v<UnwrapF&, Args..., BoundArgs&...>);
     static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (kIsFront) {
-            return (static_cast<Task>(self)).payload_.invokeFront(std::forward<Args>(args)...);
+        if constexpr (!kIsFront) {
+            return (const_cast<Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         } else {
-            return (static_cast<Task>(self)).payload_.invoke(std::forward<Args>(args)...);
+            return (const_cast<Task&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
         }
     }
 };
@@ -153,10 +153,10 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) & noexc
                   std::is_invocable_v<UnwrapF&, Args..., BoundArgs&...>);
     static constexpr bool kIsFront = std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (kIsFront) {
-            return (static_cast<Task>(self)).payload_.invokeFront(std::forward<Args>(args)...);
+        if constexpr (!kIsFront) {
+            return (const_cast<Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
         } else {
-            return (static_cast<Task>(self)).payload_.invoke(std::forward<Args>(args)...);
+            return (const_cast<Task&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
         }
     }
 };
@@ -177,12 +177,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
         std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...,
         Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (kIsFront) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
-        } else {
-            return std::move((static_cast<Task>(self)).payload_)
+        if constexpr (!kIsFront) {
+            return std::move((const_cast<Task&>(self)).payload_)
                 .invoke(std::forward<Args>(args)...);
+        } else {
+            return std::move((const_cast<Task&>(self)).payload_)
+                .invokeFront(std::forward<Args>(args)...);
         }
     }
 };
@@ -203,12 +203,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) && noex
         std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>...,
         Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (kIsFront) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
-        } else {
-            return std::move((static_cast<Task>(self)).payload_)
+        if constexpr (!kIsFront) {
+            return std::move((const_cast<Task&>(self)).payload_)
                 .invoke(std::forward<Args>(args)...);
+        } else {
+            return std::move((const_cast<Task&>(self)).payload_)
+                .invokeFront(std::forward<Args>(args)...);
         }
     }
 };
@@ -233,12 +233,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&&
             std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...,
         Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (kIsFront) {
-            return std::move((static_cast<const Task>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
-        } else {
+        if constexpr (!kIsFront) {
             return std::move((static_cast<const Task>(self)).payload_)
                 .invoke(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<const Task>(self)).payload_)
+                .invokeFront(std::forward<Args>(args)...);
         }
     }
 };
@@ -263,12 +263,12 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const &
             std::remove_reference_t<std::unwrap_reference_t<BoundArgs>>>>...,
         Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (kIsFront) {
-            return std::move((static_cast<const Task>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
-        } else {
+        if constexpr (!kIsFront) {
             return std::move((static_cast<const Task>(self)).payload_)
                 .invoke(std::forward<Args>(args)...);
+        } else {
+            return std::move((static_cast<const Task>(self)).payload_)
+                .invokeFront(std::forward<Args>(args)...);
         }
     }
 };

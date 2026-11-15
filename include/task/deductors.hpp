@@ -134,12 +134,14 @@ struct TaskTypeDeductor {
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
+                Traits::kIsConst &&
                 ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F>, Ts...,
                                                         std::add_const_t<FiltBoundArgs>...>) ||
                  (!kIsNormalOrder &&
                   std::is_invocable_v<std::add_const_t<F>, std::add_const_t<FiltBoundArgs>...,
                                       TsR...>));
             static constexpr bool kIsRValRef =
+                Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<
                       std::add_rvalue_reference_t<std::remove_reference_t<F>>, Ts...,
@@ -150,6 +152,7 @@ struct TaskTypeDeductor {
                       std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
                       TsR...>));
             static constexpr bool kIsLValRef =
+                Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<std::add_lvalue_reference_t<F>, Ts...,
                                       std::add_lvalue_reference_t<BoundArgs>...>) ||
@@ -258,12 +261,14 @@ struct TaskTypeDeductorAuto {
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
+                Traits::kIsConst &&
                 ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F_Unwrapped>, Ts...,
                                                         std::add_const_t<FiltBoundArgs>...>) ||
                  (!kIsNormalOrder &&
                   std::is_invocable_v<std::add_const_t<F_Unwrapped>,
                                       std::add_const_t<FiltBoundArgs>..., TsR...>));
             static constexpr bool kIsRValRef =
+                Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<
                       std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>, Ts...,
@@ -274,6 +279,7 @@ struct TaskTypeDeductorAuto {
                       std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
                       TsR...>));
             static constexpr bool kIsLValRef =
+                Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>, Ts...,
                                       std::add_lvalue_reference_t<BoundArgs>...>) ||
@@ -383,12 +389,14 @@ struct NamedTaskTypeDeductor {
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
+                Traits::kIsConst &&
                 ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F_Unwrapped>, Ts...,
                                                         std::add_const_t<FiltBoundArgs>...>) ||
                  (!kIsNormalOrder &&
                   std::is_invocable_v<std::add_const_t<F_Unwrapped>,
                                       std::add_const_t<FiltBoundArgs>..., TsR...>));
             static constexpr bool kIsRValRef =
+                Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<
                       std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>, Ts...,
@@ -399,6 +407,7 @@ struct NamedTaskTypeDeductor {
                       std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
                       TsR...>));
             static constexpr bool kIsLValRef =
+                Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>, Ts...,
                                       std::add_lvalue_reference_t<BoundArgs>...>) ||
@@ -492,12 +501,14 @@ struct NamedTaskTypeDeductorAuto {
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
+                Traits::kIsConst &&
                 ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F_Unwrapped>, Ts...,
                                                         std::add_const_t<FiltBoundArgs>...>) ||
                  (!kIsNormalOrder &&
                   std::is_invocable_v<std::add_const_t<F_Unwrapped>,
                                       std::add_const_t<FiltBoundArgs>..., TsR...>));
             static constexpr bool kIsRValRef =
+                Traits::kIsRValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<
                       std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>, Ts...,
@@ -508,6 +519,7 @@ struct NamedTaskTypeDeductorAuto {
                       std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
                       TsR...>));
             static constexpr bool kIsLValRef =
+                Traits::kIsLValueRef &&
                 ((kIsNormalOrder &&
                   std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>, Ts...,
                                       std::add_lvalue_reference_t<BoundArgs>...>) ||

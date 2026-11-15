@@ -40,6 +40,11 @@ struct slice_last<N, std::tuple<Args...>, std::index_sequence<Is...>> {
 };
 
 template <typename T>
+concept ConvertibleToPtr = !std::is_pointer_v<T> && requires(T&& t) {
+    requires std::is_pointer_v<decltype(+std::forward<T>(t))>;
+};
+
+template <typename T>
 struct FunctionTraits {
     static constexpr bool kValid{false};
     static constexpr bool kIsNoExcept{false};
@@ -49,7 +54,7 @@ struct FunctionTraits {
 };
 
 template <typename T>
-    requires(requires { &T::operator(); })
+    requires(!ConvertibleToPtr<T> && requires { &T::operator(); })
 struct FunctionTraits<T> : FunctionTraits<decltype(&T::operator())> {};
 
 template <typename Ret, typename... Args>
@@ -66,7 +71,7 @@ struct FunctionTraits<Ret (*)(Args...)> {
     static constexpr bool kIsNoExcept{false};
     static constexpr bool kIsConst{true};
     static constexpr bool kIsLValueRef{true};
-    static constexpr bool kIsRValueRef{false};
+    static constexpr bool kIsRValueRef{true};
 };
 
 template <typename Ret, typename... Args>
@@ -83,7 +88,7 @@ struct FunctionTraits<Ret (*)(Args...) noexcept> {
     static constexpr bool kIsNoExcept{true};
     static constexpr bool kIsConst{true};
     static constexpr bool kIsLValueRef{true};
-    static constexpr bool kIsRValueRef{false};
+    static constexpr bool kIsRValueRef{true};
 };
 
 // NOLINTBEGIN
@@ -226,6 +231,10 @@ DEFINE_MEMBER_FUNCTION_TRAITS_NOEXCEPT(const volatile&&, true, false, true);
 template <typename T>
     requires requires { typename T::Signature; }
 struct FunctionTraits<T> : FunctionTraits<typename T::Signature> {};
+
+template <typename T>
+    requires ConvertibleToPtr<T>
+struct FunctionTraits<T> : FunctionTraits<decltype(+std::declval<T>())> {};
 
 template <typename T>
 concept HasFunctionTraits = FunctionTraits<T>::kValid;

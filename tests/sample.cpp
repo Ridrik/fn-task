@@ -76,7 +76,7 @@ int main() {
     // If you want to allow heap (similar to std::function), you may use 'FlexTask' alias.
     auto task4 = fn::FlexTask<void(int)>{
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
-    auto flexTask = fn::makeFlexTask<void(int) const&>(
+    auto flexTask = fn::makeFlexTask<void(int) const>(
         [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; });
     auto flexTaskCopy = fn::makeTask(flexTask);
     auto flexTaskCopy2 = fn::makeFlexTask(flexTask);

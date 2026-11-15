@@ -1,3 +1,7 @@
+## v1.3.0 - November 2026
+### Updated
+- Better deductors and conversions, including Task to Task, NamedTask to NamedTask, Signature conversions, deduction fixes, etc.
+
 ## v1.2.0 - November 2026
 ### Added
 - Added qualifiers on signature, such as 'const', l-value/r-value reference, and noexcept, alongside updated deduction guides when making tasks.
