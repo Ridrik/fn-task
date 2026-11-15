@@ -3,7 +3,7 @@
 
 ### Description
 
-`fn::Task` is a type-erased callable for c++23+, meant as a flexible alternative to std::function. It supports manual selection of inline stack size, automatic bind_front/bind_back functionality, mutability and heap toggles, as well as move only callables and extensible set of deduction guides.
+`fn::Task` is a type-erased callable for c++23+, meant as a flexible alternative to std::function and alternative/enhanced version of newer std::move_only_function and std::copyable_function. It supports manual selection of inline stack size, automatic bind_front/bind_back functionality, mutability and heap toggles, as well as move only callables and extensible set of deduction guides.
 
 In addition, `fn::NamedTask` is the opposite: a typed callable. Its type is directly tied to the bound arguments that construct it. This allows the indirection of typical erased types to be eliminated, thus providing an even more performant callable, at the expense of losing flexibility for different tasks. Notable, `fn::NamedTask` can be used to hold 'this' pointer of each module using a single `void*` argument, allowing a top performance speed for regular invocations. It can also be naturally transferred to `fn::Task` when needed.
 
