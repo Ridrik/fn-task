@@ -120,10 +120,10 @@ constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) {
             using Selection3 = detail::invocable_combinator<
                 std::add_rvalue_reference_t<std::remove_reference_t<F>>, detail::TypeList<>,
                 detail::TypeList<Args...>>;
-            if constexpr (Selection2::kValid) {
+            if constexpr (Selection3::kValid) {
                 auto references = std::forward_as_tuple(std::forward<Args>(args)...);
                 return detail::invoke_selected(std::move(f), references,  // NOLINT
-                                               typename Selection2::Selected{},
+                                               typename Selection3::Selected{},
                                                std::index_sequence_for<Args...>{});
             } else {
                 static_assert(detail::AlwaysFalse<F>::value,

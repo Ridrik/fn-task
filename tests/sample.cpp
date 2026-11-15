@@ -107,8 +107,8 @@ int main() {
                                              std::make_unique<int>(5)};
     static_assert(!decltype(uniqueTask)::isCopyable());
     // This would fail
-    auto _ =
-        fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
+    // auto _ =
+    //    fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
 
     using sig = fn::FunctionTraits<decltype([a = std::string{}]() {})>::signature;
 
@@ -145,8 +145,11 @@ int main() {
     std::cout << "Message is " << taskk2() << '\n';
 
     // Bind support
-    auto bindBack = std::bind_back([](int a) {}, 42);
-    auto bindBackTask = fn::Task{bindBack};
+    double temp{};
+    auto mutLambda = [temp](int a) mutable {};
+    mutLambda(2);
+    auto bindBack = std::bind_back([temp](int a) mutable {}, 42);
+    auto bindBackTask = fn::makeTask(bindBack);
     bindBackTask();
 
     {
@@ -154,14 +157,13 @@ int main() {
         struct Functor {
             std::string data;
 
-            void operator()(std::string& other) const& {
+            void operator()(std::string&& other) const {
                 // data += other;
             }
         };
         auto functor = Functor{};
-        auto a = fn::makeTask(functor, std::ref(s));
-        static_assert(std::is_invocable_v<Functor const, std::string&>);
-        a();
-        auto aa = fn::makeTask(Functor{}, s);
+        auto funcTask = fn::makeTask(functor, std::ref(s));
+        funcTask();
+        auto funcTask2 = fn::makeTask(Functor{}, s);
     }
 }

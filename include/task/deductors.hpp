@@ -456,7 +456,7 @@ struct NamedTaskTypeDeductor {
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
     // anyway, hence not urgent to change for now
     using TypeTraits = StripBoundArgs::type;
-    using Signature = typename TypeTraits::Signature;
+    using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
     template <typename Sig = Signature>
@@ -565,7 +565,7 @@ struct NamedTaskTypeDeductorAuto {
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
     // anyway, hence not urgent to change for now
     using TypeTraits = StripBoundArgs::type;
-    using Signature = typename TypeTraits::Signature;
+    using Signature = TypeTraits::Signature;
     static constexpr bool kIsValid = TypeTraits::kIsValid;
 
     template <typename Sig = Signature>
