@@ -11,7 +11,6 @@
 
 #include "task/deductors.hpp"
 #include "task/function_traits.hpp"
-#include "task/payload.hpp"
 
 bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) noexcept {
     return false;
@@ -108,8 +107,8 @@ int main() {
                                              std::make_unique<int>(5)};
     static_assert(!decltype(uniqueTask)::isCopyable());
     // This would fail
-    // auto _ =
-    //    fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
+    auto _ =
+        fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
 
     using sig = fn::FunctionTraits<decltype([a = std::string{}]() {})>::signature;
 
@@ -161,6 +160,7 @@ int main() {
         };
         auto functor = Functor{};
         auto a = fn::makeTask(functor, std::ref(s));
+        static_assert(std::is_invocable_v<Functor const, std::string&>);
         a();
         auto aa = fn::makeTask(Functor{}, s);
     }

@@ -24,127 +24,45 @@ namespace detail {
 template <typename... Ts>
 struct TypeList {};
 
-template <typename List, typename T>
-struct push_back;
+template <typename F, typename TupleOfTested, typename TupleOfRemaining>
+struct invocable_combinator;
 
-template <typename... Ts, typename T>
-struct push_back<TypeList<Ts...>, T> {
-    using type = TypeList<Ts..., T>;
+// Base case: No arguments remaining, test std::is_invocable with the accumulated tested types
+template <typename F, typename... Tested>
+struct invocable_combinator<F, TypeList<Tested...>, TypeList<>> {
+    static constexpr bool kValid = std::is_invocable_v<F, Tested...>;
+    using Selected = TypeList<Tested...>;
 };
 
-template <typename List, typename T>
-using push_back_t = typename push_back<List, T>::type;
-
-// ------------------------------------------------------------
-// Permitted argument categories, in priority order
-// ------------------------------------------------------------
-
-template <typename T>
-struct InvocationOptions {
+// Recursive step: Take the next argument T, branch out into its common value/cv-ref variations
+template <typename F, typename... Tested, typename T, typename... Rest>
+struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>> {
    private:
-    using U = std::remove_reference_t<T>;
-    using C = std::add_const_t<U>;
+    using LRef = invocable_combinator<F, TypeList<Tested..., std::add_lvalue_reference_t<T>>,
+                                      TypeList<Rest...>>;
+
+    template <bool, typename Dummy = void>
+    struct Select {
+        using RRef = invocable_combinator<
+            F, TypeList<Tested..., std::add_rvalue_reference_t<std::remove_reference_t<T>>>,
+            TypeList<Rest...>>;
+
+        static constexpr bool kValid = RRef::kValid;
+        using Selected = typename RRef::Selected;
+    };
+
+    template <typename Dummy>
+    struct Select<true, Dummy> {
+        static constexpr bool kValid = true;
+        using Selected = typename LRef::Selected;
+    };
+
+    using Result = Select<LRef::kValid>;
 
    public:
-    using type = std::conditional_t<
-        std::is_const_v<U>,
-
-        std::conditional_t<std::is_lvalue_reference_v<T>, std::tuple<U&>, std::tuple<U&&, U&>>,
-
-        std::conditional_t<std::is_lvalue_reference_v<T>, std::tuple<U&, C&>,
-                           std::tuple<U&&, C&&, U&, C&>>>;
+    static constexpr bool kValid = Result::kValid;
+    using Selected = typename Result::Selected;
 };
-
-template <typename T>
-    requires std::is_const_v<std::remove_reference_t<T>>
-struct InvocationOptions<T> {
-   private:
-    using U = std::remove_reference_t<T>;
-
-   public:
-    using type = std::conditional_t<std::is_lvalue_reference_v<T>, std::tuple<const U&>,
-                                    std::tuple<const U&&, const U&>>;
-};
-
-template <typename T>
-using invocation_options_t = typename InvocationOptions<T>::type;
-
-template <typename T>
-struct CallableOptions {
-   private:
-    using U = std::remove_reference_t<T>;
-
-   public:
-    using type = std::conditional_t<std::is_const_v<U>, std::tuple<const U&, const U&&>,
-                                    std::tuple<U&&, U&, const U&&, const U&>>;
-};
-
-template <typename T>
-using callable_options_t = typename CallableOptions<T>::type;
-
-// ------------------------------------------------------------
-// Search machinery
-// ------------------------------------------------------------
-
-template <typename F, typename Remaining, typename Selected>
-struct search;
-
-// Try the next candidate when the current one isn't invocable.
-
-template <typename Candidate, typename F, typename Remaining, typename Selected, typename Options,
-          std::size_t I, bool = Candidate::kValid>
-struct choose_candidate;
-
-// Found a valid combination.
-template <typename Candidate, typename F, typename Remaining, typename Selected, typename Options,
-          std::size_t I>
-struct choose_candidate<Candidate, F, Remaining, Selected, Options, I, true> : Candidate {};
-
-// Forward declaration.
-template <typename F, typename Remaining, typename Selected, typename Options, std::size_t I>
-struct search_next;
-
-// No more alternatives.
-template <typename F, typename Remaining, typename Selected, typename Options, std::size_t I>
-    requires(I == std::tuple_size_v<Options>)
-struct search_next<F, Remaining, Selected, Options, I> {
-    static constexpr bool kValid = false;
-    static constexpr bool kNoThrow = false;
-    using types = Selected;
-};
-
-// Try alternative I.
-template <typename F, typename Remaining, typename Selected, typename Options, std::size_t I>
-    requires(I < std::tuple_size_v<Options>)
-struct search_next<F, Remaining, Selected, Options, I>
-    : choose_candidate<
-          search<F, Remaining, push_back_t<Selected, std::tuple_element_t<I, Options>>>, F,
-          Remaining, Selected, Options, I> {};
-
-// Try the next alternative.
-template <typename Candidate, typename F, typename Remaining, typename Selected, typename Options,
-          std::size_t I>
-struct choose_candidate<Candidate, F, Remaining, Selected, Options, I, false>
-    : search_next<F, Remaining, Selected, Options, I + 1> {};
-
-// All arguments have been selected.
-template <typename F, typename... Selected>
-struct search<F, TypeList<>, TypeList<Selected...>> {
-    static constexpr bool kValid = std::is_invocable_v<F, Selected...>;
-
-    static constexpr bool kNoThrow = std::is_nothrow_invocable_v<F, Selected...>;
-
-    using types = TypeList<Selected...>;
-};
-
-// Select an alternative for the next argument.
-template <typename F, typename Arg, typename... Rest, typename... Selected>
-struct search<F, TypeList<Arg, Rest...>, TypeList<Selected...>>
-    : search_next<F, TypeList<Rest...>, TypeList<Selected...>, invocation_options_t<Arg>, 0> {};
-
-// ------------------------------------------------------------
-// Actual invocation
-// ------------------------------------------------------------
 
 template <typename F, typename Tuple, typename... Selected, std::size_t... I>
 constexpr decltype(auto) invoke_selected(
@@ -161,51 +79,72 @@ constexpr decltype(auto) invoke_selected(
     return std::invoke(F, static_cast<Selected>(std::get<I>(args))...);
 }
 
+template <typename... T>
+struct AlwaysFalse : std::false_type {};
+
+template <typename T>
+struct as_bool_constant : std::bool_constant<T::kValid> {};  // NOLINT
+
 }  // namespace detail
 
-// ============================================================
-// Public interface
-// ============================================================
+// Main trait: checks if there is any valid combination of cv/ref qualifiers
+template <typename F, typename... Args>
+constexpr bool is_compatible_invocable_b =  // NOLINT
+    std::disjunction_v<
+        detail::as_bool_constant<
+            detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>>,
+        detail::as_bool_constant<detail::invocable_combinator<
+            std::add_lvalue_reference_t<F>, detail::TypeList<>, detail::TypeList<Args...>>>,
+        detail::as_bool_constant<
+            detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
+                                         detail::TypeList<>, detail::TypeList<Args...>>>>;
 
 template <typename F, typename... Args>
-constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) noexcept(
-    detail::search<F, detail::TypeList<Args&&...>, detail::TypeList<>>::kNoThrow) {
-    using Selection = detail::search<F, detail::TypeList<Args&&...>, detail::TypeList<>>;
-
-    static_assert(Selection::kValid,
-                  "Callable is not invocable with any compatible cv/ref combination");
-
-    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
-
-    return detail::invoke_selected(std::forward<F>(f), references, typename Selection::types{},
-                                   std::index_sequence_for<Args...>{});
+constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) {
+    using Selection =
+        detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>;
+    if constexpr (Selection::kValid) {
+        auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+        return detail::invoke_selected(std::forward<F>(f), references,
+                                       typename Selection::Selected{},
+                                       std::index_sequence_for<Args...>{});
+    } else {
+        using Selection2 =
+            detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
+                                         detail::TypeList<Args...>>;
+        if constexpr (Selection2::kValid) {
+            auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+            return detail::invoke_selected(f, references, typename Selection2::Selected{},
+                                           std::index_sequence_for<Args...>{});
+        } else {
+            using Selection3 = detail::invocable_combinator<
+                std::add_rvalue_reference_t<std::remove_reference_t<F>>, detail::TypeList<>,
+                detail::TypeList<Args...>>;
+            if constexpr (Selection2::kValid) {
+                auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+                return detail::invoke_selected(std::move(f), references,  // NOLINT
+                                               typename Selection2::Selected{},
+                                               std::index_sequence_for<Args...>{});
+            } else {
+                static_assert(detail::AlwaysFalse<F>::value,
+                              "invocation is not possible under the current arguments");
+            }
+        }
+    }
 }
 
 template <auto F, typename... Args>
-constexpr decltype(auto) invoke_compatible(Args&&... args) noexcept(
-    detail::search<decltype(F), detail::TypeList<Args&&...>, detail::TypeList<>>::kNoThrow) {
-    using Selection = detail::search<decltype(F), detail::TypeList<Args&&...>, detail::TypeList<>>;
-
+constexpr decltype(auto) invoke_compatible(Args&&... args) {
+    using Selection =
+        detail::invocable_combinator<decltype(F), detail::TypeList<>, detail::TypeList<Args...>>;
     static_assert(Selection::kValid,
                   "Callable is not invocable with any compatible cv/ref combination");
 
     auto references = std::forward_as_tuple(std::forward<Args>(args)...);
 
-    return detail::invoke_selected<F>(references, typename Selection::types{},
+    return detail::invoke_selected<F>(references, typename Selection::Selected{},
                                       std::index_sequence_for<Args...>{});
 }
-
-template <typename F, typename... Args>
-inline constexpr bool is_compatible_invocable_v =  // NOLINT
-    detail::search<F,
-                   detail::TypeList<std::add_rvalue_reference_t<std::remove_reference_t<Args>>...>,
-                   detail::TypeList<>>::kValid ||
-    detail::search<std::add_lvalue_reference_t<F>,
-                   detail::TypeList<std::add_rvalue_reference_t<std::remove_reference_t<Args>>...>,
-                   detail::TypeList<>>::kValid ||
-    detail::search<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
-                   detail::TypeList<std::add_rvalue_reference_t<std::remove_reference_t<Args>>...>,
-                   detail::TypeList<>>::kValid;
 
 template <typename... Ts>
 struct PayloadTuple;
@@ -265,7 +204,8 @@ constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept {
     return std::forward<decltype(arg)>(arg);
 }
 template <typename T>
-constexpr decltype(auto) unwrap_arg_on_invocation(std::reference_wrapper<T>&& arg) noexcept {
+constexpr decltype(auto) unwrap_arg_on_invocation(
+    std::reference_wrapper<T>&& arg) noexcept {  // NOLINT
     return std::move(arg.get());
 }
 

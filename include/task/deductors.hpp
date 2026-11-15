@@ -106,151 +106,6 @@ struct IsNamedTask<NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>> : std::
     static constexpr bool kIsAuto{true};
 };
 
-/*template <typename Ft, typename... BoundArgs>
-    requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
-struct TaskTypeDeductor {
-    using F = std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>;
-    struct StripBoundArgs {
-        using Traits = FunctionTraits<F>;
-        using AllArgs = Traits::args_tuple;
-
-        static constexpr std::size_t kRemainingCount =
-            std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
-
-        using SlicedTuple = slice_first<kRemainingCount, AllArgs>::type;
-        using SlicedTupleReverse = slice_last<kRemainingCount, AllArgs>::type;
-
-        template <typename Ret, typename Tuple, typename TupleReverse>
-        struct rebuild;
-        template <typename Ret, typename... Ts, typename... TsR>
-        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
-            static constexpr bool kIsValid =
-                is_compatible_invocable_v<F, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...> ||
-                is_compatible_invocable_v<F, std::unwrap_ref_decay_t<BoundArgs>&&..., TsR...>;
-            static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F&&, Ts..., std::unwrap_ref_decay_t<BoundArgs>&&...>;
-            static constexpr bool kIsReverse = !kIsNormalOrder;
-            using R = Ret;
-            using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
-            static constexpr bool kIsConst =
-                Traits::kIsConst &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<const F, Ts...,
-                                      const std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<const F,
-                                      const std::unwrap_reference_t<
-                                          typename RefToConstRef<std::decay_t<BoundArgs>>::Type>...,
-                                      TsR...>));
-            static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<F&&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<F&&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&&...,
-                                      TsR...>));
-            static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<F&, Ts...,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<F&,
-                                      std::unwrap_reference_t<typename RefToConstRef<
-                                          std::decay_t<BoundArgs>>::Type>&...,
-                                      TsR...>));
-            using Signature = std::conditional_t<
-                Traits::kIsNoExcept,
-                // --- NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
-                                               Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                                              Ret(TsR...) noexcept>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
-                                               Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                                              Ret(Ts...) noexcept>>>>,
-                // --- NON-NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const&,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) &,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const&,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) &,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
-        };
-
-        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
-    };
-
-    // To complete one needs case where F is static (no decay), but in that case it would be trivial
-    // anyway, hence not urgent to change for now
-    using PayloadType = PayloadT<F, BoundArgs...>;
-    using PayloadRefType = PayloadImpl<F, BoundArgs...>;
-
-    static constexpr auto kCopyable = std::is_copy_constructible_v<PayloadType>
-                                          ? Copyability::kCopyable
-                                          : Copyability::kNonCopyable;
-    static constexpr auto kRefCopyable = std::is_copy_constructible_v<PayloadRefType>
-                                             ? Copyability::kCopyable
-                                             : Copyability::kNonCopyable;
-    static constexpr auto kTriviality =
-        TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
-    static constexpr auto kRefTriviality = TrivialUse<PayloadRefType, kCopyable>::value
-                                               ? Triviality::kTrivial
-                                               : Triviality::kNonTrivial;
-    static constexpr Alignment kAlignment =
-        std::max(alignof(PayloadType), alignof(std::max_align_t));
-    static constexpr Alignment kRefAlignment =
-        std::max(alignof(PayloadRefType), alignof(std::max_align_t));
-    static constexpr auto kPayloadSize = sizeof(PayloadType);
-    static constexpr auto kRefPayloadSize = sizeof(PayloadRefType);
-    using TypeTraits = StripBoundArgs::type;
-    using Signature = TypeTraits::Signature;
-    static constexpr bool kIsValid = TypeTraits::kIsValid;
-
-    template <Copyability cb = kCopyable, InlineSize size = kPayloadSize,
-              Triviality t = kTriviality, Alignment align = kAlignment>
-    using Type = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
-
-    template <InlineSize size>
-    using FlexType =
-        Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
-
-    template <Copyability cb = kRefCopyable, InlineSize size = kRefPayloadSize,
-              Triviality t = kRefTriviality, Alignment align = kRefAlignment>
-    using RefType = Task<Signature, cb, size, t, false, HeapPolicy::kDisallow, align>;
-};*/
-
 template <typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
 struct TaskTypeDeductor {
@@ -270,11 +125,11 @@ struct TaskTypeDeductor {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
-            static constexpr bool kIsValid =
-                is_compatible_invocable_v<F, Ts..., FiltBoundArgs...> ||
-                is_compatible_invocable_v<F, FiltBoundArgs..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F, Ts..., FiltBoundArgs...>;
+                is_compatible_invocable_b<F, Ts..., FiltBoundArgs...>;
+            static constexpr bool kIsValid = std::disjunction_v<
+                std::bool_constant<kIsNormalOrder>,
+                std::bool_constant<is_compatible_invocable_b<F, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
@@ -393,11 +248,12 @@ struct TaskTypeDeductorAuto {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
-            static constexpr bool kIsValid =
-                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...> ||
-                is_compatible_invocable_v<F_Unwrapped, FiltBoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...>;
+                is_compatible_invocable_b<F_Unwrapped, Ts..., FiltBoundArgs...>;
+            static constexpr bool kIsValid =
+                std::disjunction_v<std::bool_constant<kIsNormalOrder>,
+                                   std::bool_constant<is_compatible_invocable_b<
+                                       F_Unwrapped, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
@@ -517,11 +373,12 @@ struct NamedTaskTypeDeductor {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
-            static constexpr bool kIsValid =
-                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...> ||
-                is_compatible_invocable_v<F_Unwrapped, FiltBoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...>;
+                is_compatible_invocable_b<F_Unwrapped, Ts..., FiltBoundArgs...>;
+            static constexpr bool kIsValid =
+                std::disjunction_v<std::bool_constant<kIsNormalOrder>,
+                                   std::bool_constant<is_compatible_invocable_b<
+                                       F_Unwrapped, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
@@ -625,11 +482,12 @@ struct NamedTaskTypeDeductorAuto {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
-            static constexpr bool kIsValid =
-                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...> ||
-                is_compatible_invocable_v<F_Unwrapped, FiltBoundArgs&&..., TsR...>;
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_v<F_Unwrapped, Ts..., FiltBoundArgs&&...>;
+                is_compatible_invocable_b<F_Unwrapped, Ts..., FiltBoundArgs...>;
+            static constexpr bool kIsValid =
+                std::disjunction_v<std::bool_constant<kIsNormalOrder>,
+                                   std::bool_constant<is_compatible_invocable_b<
+                                       F_Unwrapped, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;

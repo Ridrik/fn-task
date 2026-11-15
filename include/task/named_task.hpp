@@ -28,10 +28,10 @@ template <typename Task, typename F, typename... BoundArgs, typename Ret, typena
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
     using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...> ||
-        is_compatible_invocable_v<UnwrapF, Args..., std::unwrap_reference_t<BoundArgs>...>);
+        is_compatible_invocable_b<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...> ||
+        is_compatible_invocable_b<UnwrapF, Args..., std::unwrap_reference_t<BoundArgs>...>);
     static constexpr bool kIsFront =
-        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
+        is_compatible_invocable_b<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
@@ -47,10 +47,10 @@ template <typename Task, typename F, typename... BoundArgs, typename Ret, typena
 struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcept> {
     using UnwrapF = std::unwrap_reference_t<F>;
     static_assert(
-        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...> ||
-        is_compatible_invocable_v<UnwrapF, Args..., std::unwrap_reference_t<BoundArgs>...>);
+        is_compatible_invocable_b<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...> ||
+        is_compatible_invocable_b<UnwrapF, Args..., std::unwrap_reference_t<BoundArgs>...>);
     static constexpr bool kIsFront =
-        is_compatible_invocable_v<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
+        is_compatible_invocable_b<UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>;
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (kIsFront) {
             return std::move((static_cast<Task>(self)).payload_)
