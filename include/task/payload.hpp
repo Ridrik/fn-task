@@ -31,6 +31,7 @@ struct invocable_combinator;
 template <typename F, typename... Tested>
 struct invocable_combinator<F, TypeList<Tested...>, TypeList<>> {
     static constexpr bool kValid = std::is_invocable_v<F, Tested...>;
+    static constexpr bool kNoThrow = std::is_nothrow_invocable_v<F, Tested...>;
     using Selected = TypeList<Tested...>;
 };
 
@@ -41,26 +42,29 @@ struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>> {
     using LRef = invocable_combinator<F, TypeList<Tested..., std::add_lvalue_reference_t<T>>,
                                       TypeList<Rest...>>;
 
-    template <bool, typename Dummy = void>
+    template <bool, bool, typename Dummy = void>
     struct Select {
         using RRef = invocable_combinator<
             F, TypeList<Tested..., std::add_rvalue_reference_t<std::remove_reference_t<T>>>,
             TypeList<Rest...>>;
 
         static constexpr bool kValid = RRef::kValid;
+        static constexpr bool kNoThrow = RRef::kNoThrow;
         using Selected = typename RRef::Selected;
     };
 
-    template <typename Dummy>
-    struct Select<true, Dummy> {
+    template <bool NoThrow, typename Dummy>
+    struct Select<true, NoThrow, Dummy> {
         static constexpr bool kValid = true;
+        static constexpr bool kNoThrow = NoThrow;
         using Selected = typename LRef::Selected;
     };
 
-    using Result = Select<LRef::kValid>;
+    using Result = Select<LRef::kValid, LRef::kNoThrow>;
 
    public:
     static constexpr bool kValid = Result::kValid;
+    static constexpr bool kNoThrow = Result::kNoThrow;
     using Selected = typename Result::Selected;
 };
 
@@ -83,7 +87,10 @@ template <typename... T>
 struct AlwaysFalse : std::false_type {};
 
 template <typename T>
-struct as_bool_constant : std::bool_constant<T::kValid> {};  // NOLINT
+struct is_valid : std::bool_constant<T::kValid> {};  // NOLINT
+
+template <typename T>
+struct is_no_throw : std::bool_constant<is_valid<T>::value && T::kNoThrow> {};  // NOLINT
 
 }  // namespace detail
 
@@ -91,46 +98,70 @@ struct as_bool_constant : std::bool_constant<T::kValid> {};  // NOLINT
 template <typename F, typename... Args>
 constexpr bool is_compatible_invocable_b =  // NOLINT
     std::disjunction_v<
-        detail::as_bool_constant<
+        detail::is_valid<
             detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>>,
-        detail::as_bool_constant<detail::invocable_combinator<
+        detail::is_valid<detail::invocable_combinator<
             std::add_lvalue_reference_t<F>, detail::TypeList<>, detail::TypeList<Args...>>>,
-        detail::as_bool_constant<
+        detail::is_valid<
             detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
                                          detail::TypeList<>, detail::TypeList<Args...>>>>;
 
 template <typename F, typename... Args>
-constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) {
+constexpr bool is_compatible_nothrow_invocable_b =  // NOLINT
+    std::disjunction_v<
+        detail::is_no_throw<
+            detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>>,
+        detail::is_no_throw<detail::invocable_combinator<
+            std::add_lvalue_reference_t<F>, detail::TypeList<>, detail::TypeList<Args...>>>,
+        detail::is_no_throw<
+            detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
+                                         detail::TypeList<>, detail::TypeList<Args...>>>>;
+
+template <typename F, typename... Args>
+    requires detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>::kValid
+constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) noexcept(
+    detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>::kNoThrow) {
     using Selection =
         detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>;
-    if constexpr (Selection::kValid) {
-        auto references = std::forward_as_tuple(std::forward<Args>(args)...);
-        return detail::invoke_selected(std::forward<F>(f), references,
-                                       typename Selection::Selected{},
-                                       std::index_sequence_for<Args...>{});
-    } else {
-        using Selection2 =
+    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+    return detail::invoke_selected(std::forward<F>(f), references, typename Selection::Selected{},
+                                   std::index_sequence_for<Args...>{});
+}
+
+template <typename F, typename... Args>
+    requires(!detail::invocable_combinator<F, detail::TypeList<>,
+                                           detail::TypeList<Args...>>::kValid) &&
             detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
-                                         detail::TypeList<Args...>>;
-        if constexpr (Selection2::kValid) {
-            auto references = std::forward_as_tuple(std::forward<Args>(args)...);
-            return detail::invoke_selected(f, references, typename Selection2::Selected{},
-                                           std::index_sequence_for<Args...>{});
-        } else {
-            using Selection3 = detail::invocable_combinator<
-                std::add_rvalue_reference_t<std::remove_reference_t<F>>, detail::TypeList<>,
-                detail::TypeList<Args...>>;
-            if constexpr (Selection3::kValid) {
-                auto references = std::forward_as_tuple(std::forward<Args>(args)...);
-                return detail::invoke_selected(std::move(f), references,  // NOLINT
-                                               typename Selection3::Selected{},
-                                               std::index_sequence_for<Args...>{});
-            } else {
-                static_assert(detail::AlwaysFalse<F>::value,
-                              "invocation is not possible under the current arguments");
-            }
-        }
-    }
+                                         detail::TypeList<Args...>>::kValid
+constexpr decltype(auto) invoke_compatible(
+    F&& f, Args&&... args) noexcept(  // NOLINT(cppcoreguidelines-missing-std-forward)
+    detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
+                                 detail::TypeList<Args...>>::kNoThrow) {
+    using Selection = detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
+                                                   detail::TypeList<Args...>>;
+    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+    return detail::invoke_selected(f, references, typename Selection::Selected{},
+                                   std::index_sequence_for<Args...>{});
+}
+
+template <typename F, typename... Args>
+    requires(!detail::invocable_combinator<F, detail::TypeList<>,
+                                           detail::TypeList<Args...>>::kValid) &&
+            (!detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
+                                           detail::TypeList<Args...>>::kValid) &&
+            detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
+                                         detail::TypeList<>, detail::TypeList<Args...>>::kValid
+constexpr decltype(auto) invoke_compatible(
+    F&& f, Args&&... args) noexcept(  // NOLINT(cppcoreguidelines-missing-std-forward)
+    detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
+                                 detail::TypeList<>, detail::TypeList<Args...>>::kNoThrow) {
+    using Selection =
+        detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
+                                     detail::TypeList<>, detail::TypeList<Args...>>;
+    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
+    return detail::invoke_selected(std::move(f), references,  // NOLINT
+                                   typename Selection::Selected{},
+                                   std::index_sequence_for<Args...>{});
 }
 
 template <auto F, typename... Args>

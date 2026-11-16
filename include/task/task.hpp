@@ -162,20 +162,20 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, size> {
     template <typename PayloadType, typename F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
-        return [](void* s, Args... args) noexcept {
+        return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<F&, Args...>,
+                static_assert(std::is_nothrow_invocable_v<F&, Args...>,
                               "F is not callable with the provided arguments!");
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<F&, Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&...>) {
+            } else if constexpr (std::is_nothrow_invocable_v<
+                                     F&, Args..., std::unwrap_ref_decay_t<BoundArgs>&...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<F&, std::unwrap_ref_decay_t<BoundArgs>&...,
-                                                     Args...>) {
+            } else if constexpr (std::is_nothrow_invocable_v<
+                                     F&, std::unwrap_ref_decay_t<BoundArgs>&..., Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -188,7 +188,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, size> {
                                      F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
-                              "preserve signature qualifier");
+                              "preserve signature qualifier or noexcept");
             } else {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments!");
@@ -199,21 +199,22 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, size> {
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
-        return [](void* s, Args... args) noexcept {
+        return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<decltype(F), Args...>,
+                static_assert(std::is_nothrow_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<decltype(F), Args...,
-                                                     std::unwrap_ref_decay_t<BoundArgs>&...>) {
+            } else if constexpr (std::is_nothrow_invocable_v<
+                                     decltype(F), Args...,
+                                     std::unwrap_ref_decay_t<BoundArgs>&...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
                 } else {
                     return (**static_cast<PayloadType**>(s)).invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<decltype(F),
-                                                     std::unwrap_ref_decay_t<BoundArgs>&...,
-                                                     Args...>) {
+            } else if constexpr (std::is_nothrow_invocable_v<decltype(F),
+                                                             std::unwrap_ref_decay_t<BoundArgs>&...,
+                                                             Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return (*static_cast<PayloadType*>(s)).invokeFront(std::forward<Args>(args)...);
                 } else {
@@ -228,7 +229,7 @@ struct InvokerBuilder<Ret(Args...) & noexcept, Task, size> {
                                      std::unwrap_ref_decay_t<BoundArgs>&&...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
-                              "preserve signature qualifier");
+                              "preserve signature qualifier or noexcept");
             } else {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments!");
@@ -318,7 +319,7 @@ struct InvokerBuilder<Ret(Args...) const&, Task, size> {
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
-        return [](void* s, Args... args) {
+        return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
                 static_assert(std::is_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
@@ -408,12 +409,12 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, size> {
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<const F&, Args...>,
+                static_assert(std::is_nothrow_invocable_v<const F&, Args...>,
                               "F is not callable with the provided arguments!");
                 return static_cast<const PayloadType*>(s)->invoke(std::forward<Args>(args)...);
             } else {
                 static_assert(PayloadNoRvalueRef<PayloadType>::value);
-                if constexpr (std::is_invocable_v<const F&, Args..., const BoundArgs&...>) {
+                if constexpr (std::is_nothrow_invocable_v<const F&, Args..., const BoundArgs&...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
@@ -421,7 +422,8 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, size> {
                         return (*static_cast<const PayloadType**>(s))
                             ->invoke(std::forward<Args>(args)...);
                     }
-                } else if constexpr (std::is_invocable_v<const F&, const BoundArgs&..., Args...>) {
+                } else if constexpr (std::is_nothrow_invocable_v<const F&, const BoundArgs&...,
+                                                                 Args...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
@@ -437,7 +439,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, size> {
                                          std::unwrap_reference_t<BoundArgs>&&...>) {
                     static_assert(AlwaysFalse<F>::value,
                                   "F is not callable with the provided arguments since it wouldn't "
-                                  "preserve signature qualifier");
+                                  "preserve signature qualifier or noexcept");
                 } else {
                     static_assert(AlwaysFalse<F>::value,
                                   "F is not callable with the provided arguments!");
@@ -449,14 +451,15 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, size> {
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
-        return [](void* s, Args... args) noexcept {
+        return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<decltype(F), Args...>,
+                static_assert(std::is_nothrow_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
             } else {
                 static_assert(PayloadNoRvalueRef<PayloadType>::value);
-                if constexpr (std::is_invocable_v<decltype(F), Args..., const BoundArgs&...>) {
+                if constexpr (std::is_nothrow_invocable_v<decltype(F), Args...,
+                                                          const BoundArgs&...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invoke(
                             std::forward<Args>(args)...);
@@ -464,8 +467,8 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, size> {
                         return (*static_cast<const PayloadType**>(s))
                             ->invoke(std::forward<Args>(args)...);
                     }
-                } else if constexpr (std::is_invocable_v<decltype(F), const BoundArgs&...,
-                                                         Args...>) {
+                } else if constexpr (std::is_nothrow_invocable_v<decltype(F), const BoundArgs&...,
+                                                                 Args...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return static_cast<const PayloadType*>(s)->invokeFront(
                             std::forward<Args>(args)...);
@@ -481,7 +484,7 @@ struct InvokerBuilder<Ret(Args...) const & noexcept, Task, size> {
                                          std::unwrap_reference_t<BoundArgs>...>) {
                     static_assert(AlwaysFalse<decltype(F)>::value,
                                   "F is not callable with the provided arguments since it wouldn't "
-                                  "preserve signature qualifier");
+                                  "preserve signature qualifier or noexcept");
                 } else {
                     static_assert(AlwaysFalse<decltype(F)>::value,
                                   "F is not callable with the provided arguments!");
@@ -657,12 +660,12 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, size> {
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<const F, Args...>,
+                static_assert(std::is_nothrow_invocable_v<const F, Args...>,
                               "F is not callable with the provided arguments!");
                 return static_cast<const PayloadType*>(s)->invoke(std::forward<Args>(args)...);
             } else {
                 static_assert(PayloadNoRvalueRef<PayloadType>::value);
-                if constexpr (std::is_invocable_v<const F, Args..., const BoundArgs...>) {
+                if constexpr (std::is_nothrow_invocable_v<const F, Args..., const BoundArgs...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return std::move(*static_cast<const PayloadType*>(s))
                             .invokeCompatible(std::forward<Args>(args)...);
@@ -670,7 +673,8 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, size> {
                         return std::move(*(*static_cast<const PayloadType**>(s)))
                             .invokeCompatible(std::forward<Args>(args)...);
                     }
-                } else if constexpr (std::is_invocable_v<const F, const BoundArgs..., Args...>) {
+                } else if constexpr (std::is_nothrow_invocable_v<const F, const BoundArgs...,
+                                                                 Args...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return std::move(*static_cast<const PayloadType*>(s))
                             .invokeFrontCompatible(std::forward<Args>(args)...);
@@ -686,7 +690,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, size> {
                                          std::unwrap_reference_t<BoundArgs>...>) {
                     static_assert(AlwaysFalse<F>::value,
                                   "F is not callable with the provided arguments since it wouldn't "
-                                  "preserve signature qualifier");
+                                  "preserve signature qualifier or noexcept");
                 } else {
                     static_assert(AlwaysFalse<F>::value,
                                   "F is not callable with the provided arguments!");
@@ -700,12 +704,13 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, size> {
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<decltype(F), Args...>,
+                static_assert(std::is_nothrow_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
             } else {
                 static_assert(PayloadNoRvalueRef<PayloadType>::value);
-                if constexpr (std::is_invocable_v<decltype(F), Args..., const BoundArgs...>) {
+                if constexpr (std::is_nothrow_invocable_v<decltype(F), Args...,
+                                                          const BoundArgs...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return std::move(*static_cast<const PayloadType*>(s))
                             .invokeCompatible(std::forward<Args>(args)...);
@@ -713,8 +718,8 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, size> {
                         return std::move(*(*static_cast<const PayloadType**>(s)))
                             .invoke(std::forward<Args>(args)...);
                     }
-                } else if constexpr (std::is_invocable_v<decltype(F), const BoundArgs...,
-                                                         Args...>) {
+                } else if constexpr (std::is_nothrow_invocable_v<decltype(F), const BoundArgs...,
+                                                                 Args...>) {
                     if constexpr (sizeof(PayloadType) <= size) {
                         return std::move(*static_cast<const PayloadType*>(s))
                             .invokeFrontCompatible(std::forward<Args>(args)...);
@@ -730,7 +735,7 @@ struct InvokerBuilder<Ret(Args...) const noexcept, Task, size> {
                                          std::unwrap_reference_t<BoundArgs>...>) {
                     static_assert(AlwaysFalse<decltype(F)>::value,
                                   "F is not callable with the provided arguments since it wouldn't "
-                                  "preserve signature qualifier");
+                                  "preserve signature qualifier or noexcept");
                 } else {
                     static_assert(AlwaysFalse<decltype(F)>::value,
                                   "F is not callable with the provided arguments!");
@@ -915,10 +920,10 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
             std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<F>>>;
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<F_Movable, Args...>,
+                static_assert(std::is_nothrow_invocable_v<F_Movable, Args...>,
                               "F is not callable with the provided arguments!");
                 return std::move(*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<
+            } else if constexpr (std::is_nothrow_invocable_v<
                                      F_Movable, Args...,
                                      std::add_rvalue_reference_t<std::remove_reference_t<
                                          std::unwrap_reference_t<BoundArgs>>>...>) {
@@ -929,7 +934,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<
+            } else if constexpr (std::is_nothrow_invocable_v<
                                      F_Movable,
                                      std::add_rvalue_reference_t<std::remove_reference_t<
                                          std::unwrap_reference_t<BoundArgs>>>...,
@@ -948,7 +953,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
                                                            std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
-                              "preserve signature qualifier");
+                              "preserve signature qualifier or noexcept");
             } else {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments!");
@@ -959,12 +964,12 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
-        return [](void* s, Args... args) noexcept {
+        return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<decltype(F), Args...>,
+                static_assert(std::is_nothrow_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<
+            } else if constexpr (std::is_nothrow_invocable_v<
                                      decltype(F), Args...,
                                      std::add_rvalue_reference_t<std::remove_reference_t<
                                          std::unwrap_reference_t<BoundArgs>>>...>) {
@@ -975,7 +980,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<
+            } else if constexpr (std::is_nothrow_invocable_v<
                                      decltype(F),
                                      std::add_rvalue_reference_t<std::remove_reference_t<
                                          std::unwrap_reference_t<BoundArgs>>>...,
@@ -993,7 +998,7 @@ struct InvokerBuilder<Ret(Args...) && noexcept, Task, size> {
                                                            std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
-                              "preserve signature qualifier");
+                              "preserve signature qualifier or noexcept");
             } else {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments!");
@@ -1032,6 +1037,13 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, size> {
     using Type = Ret (*)(void*, Args...);
     using TypeNoBuffer = Ret (*)(Args...);
 
+    template <typename T>
+    using ConstRvalueRef =
+        std::add_rvalue_reference_t<std::remove_reference_t<std::add_const_t<T>>>;
+
+    template <typename T>
+    using ConstRvalueRefUnwrapped = ConstRvalueRef<std::unwrap_reference_t<T>>;
+
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
@@ -1044,13 +1056,12 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, size> {
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<const F&&, Args...>,
+                static_assert(std::is_invocable_v<ConstRvalueRefUnwrapped<F>, Args...>,
                               "F is not callable with the provided arguments!");
                 return std::move(*static_cast<const PayloadType*>(s))
                     .invoke(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<
-                                     const F&&, Args...,
-                                     const std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (std::is_invocable_v<ConstRvalueRefUnwrapped<F>, Args...,
+                                                     ConstRvalueRefUnwrapped<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
@@ -1058,8 +1069,8 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, size> {
                     return std::move(**static_cast<const PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<const F&&,
-                                                     const std::unwrap_ref_decay_t<BoundArgs>&&...,
+            } else if constexpr (std::is_invocable_v<ConstRvalueRefUnwrapped<F>,
+                                                     ConstRvalueRefUnwrapped<BoundArgs>...,
                                                      Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
@@ -1068,10 +1079,11 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, size> {
                     return std::move(**static_cast<const PayloadType**>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 }
-            } else if constexpr (is_compatible_invocable_b<
-                                     F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...> ||
-                                 is_compatible_invocable_b<
-                                     F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_b<std::unwrap_reference_t<F>,
+                                                           std::unwrap_reference_t<BoundArgs>...,
+                                                           Args...> ||
+                                 is_compatible_invocable_b<std::unwrap_reference_t<F>, Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier");
@@ -1090,19 +1102,17 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, size> {
                 static_assert(std::is_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
+            } else if constexpr (std::is_invocable_v<decltype(F), Args...,
+                                                     ConstRvalueRefUnwrapped<BoundArgs>...>) {
+                if constexpr (sizeof(PayloadType) <= size) {
+                    return std::move(*static_cast<const PayloadType*>(s))
+                        .invoke(std::forward<Args>(args)...);
+                } else {
+                    return std::move(**static_cast<const PayloadType**>(s))
+                        .invoke(std::forward<Args>(args)...);
+                }
             } else if constexpr (std::is_invocable_v<
-                                     decltype(F), Args...,
-                                     const std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                if constexpr (sizeof(PayloadType) <= size) {
-                    return std::move(*static_cast<const PayloadType*>(s))
-                        .invoke(std::forward<Args>(args)...);
-                } else {
-                    return std::move(**static_cast<const PayloadType**>(s))
-                        .invoke(std::forward<Args>(args)...);
-                }
-            } else if constexpr (std::is_invocable_v<decltype(F),
-                                                     const std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
+                                     decltype(F), ConstRvalueRefUnwrapped<BoundArgs>..., Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
@@ -1110,12 +1120,10 @@ struct InvokerBuilder<Ret(Args...) const&&, Task, size> {
                     return std::move(**static_cast<const PayloadType**>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 }
-            } else if constexpr (is_compatible_invocable_b<decltype(F),
-                                                           std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                           Args...> ||
-                                 is_compatible_invocable_b<
-                                     decltype(F), Args...,
-                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_b<
+                                     decltype(F), std::unwrap_reference_t<BoundArgs>..., Args...> ||
+                                 is_compatible_invocable_b<decltype(F), Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier");
@@ -1157,6 +1165,13 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
     using Type = Ret (*)(void*, Args...) noexcept;
     using TypeNoBuffer = Ret (*)(Args...) noexcept;
 
+    template <typename T>
+    using ConstRvalueRef =
+        std::add_rvalue_reference_t<std::remove_reference_t<std::add_const_t<T>>>;
+
+    template <typename T>
+    using ConstRvalueRefUnwrapped = ConstRvalueRef<std::unwrap_reference_t<T>>;
+
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() {
@@ -1169,16 +1184,13 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<const F&&, Args...>,
+                static_assert(std::is_nothrow_invocable_v<ConstRvalueRefUnwrapped<F>, Args...>,
                               "F is not callable with the provided arguments!");
-                return std::move(*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<
-                                     const F&&, Args...,
-                                     const std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                static_assert(
-                    std::is_nothrow_invocable_v<const F&&, Args...,
-                                                const std::unwrap_ref_decay_t<BoundArgs>&&...>,
-                    "Callable must be noexcept given its signature");
+                return std::move(*static_cast<const PayloadType*>(s))
+                    .invoke(std::forward<Args>(args)...);
+            } else if constexpr (std::is_nothrow_invocable_v<
+                                     ConstRvalueRefUnwrapped<F>, Args...,
+                                     ConstRvalueRefUnwrapped<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
@@ -1186,13 +1198,9 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
                     return std::move(**static_cast<const PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<const F&&,
-                                                     const std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
-                static_assert(
-                    std::is_nothrow_invocable_v<
-                        const F&&, const std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>,
-                    "Callable must be noexcept given its signature");
+            } else if constexpr (std::is_nothrow_invocable_v<ConstRvalueRefUnwrapped<F>,
+                                                             ConstRvalueRefUnwrapped<BoundArgs>...,
+                                                             Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
@@ -1200,13 +1208,14 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
                     return std::move(**static_cast<const PayloadType**>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 }
-            } else if constexpr (is_compatible_invocable_b<
-                                     F, std::unwrap_ref_decay_t<BoundArgs>&&..., Args...> ||
-                                 is_compatible_invocable_b<
-                                     F, Args..., std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_b<std::unwrap_reference_t<F>,
+                                                           std::unwrap_reference_t<BoundArgs>...,
+                                                           Args...> ||
+                                 is_compatible_invocable_b<std::unwrap_reference_t<F>, Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
-                              "preserve signature qualifier");
+                              "preserve signature qualifier or noexcept");
             } else {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments!");
@@ -1217,18 +1226,13 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type getInvoker() {
-        return [](void* s, Args... args) noexcept {
+        return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<decltype(F), Args...>,
+                static_assert(std::is_nothrow_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (std::is_invocable_v<
-                                     decltype(F), Args...,
-                                     const std::unwrap_ref_decay_t<BoundArgs>&&...>) {
-                static_assert(
-                    std::is_nothrow_invocable_v<decltype(F), Args...,
-                                                const std::unwrap_ref_decay_t<BoundArgs>&&...>,
-                    "Callable must be noexcept given its signature");
+            } else if constexpr (std::is_nothrow_invocable_v<
+                                     decltype(F), Args..., ConstRvalueRefUnwrapped<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invoke(std::forward<Args>(args)...);
@@ -1236,13 +1240,8 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
                     return std::move(**static_cast<const PayloadType**>(s))
                         .invoke(std::forward<Args>(args)...);
                 }
-            } else if constexpr (std::is_invocable_v<decltype(F),
-                                                     const std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                     Args...>) {
-                static_assert(
-                    std::is_nothrow_invocable_v<
-                        decltype(F), const std::unwrap_ref_decay_t<BoundArgs>&&..., Args...>,
-                    "Callable must be noexcept given its signature");
+            } else if constexpr (std::is_nothrow_invocable_v<
+                                     decltype(F), ConstRvalueRefUnwrapped<BoundArgs>..., Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<const PayloadType*>(s))
                         .invokeFront(std::forward<Args>(args)...);
@@ -1250,15 +1249,13 @@ struct InvokerBuilder<Ret(Args...) const && noexcept, Task, size> {
                     return std::move(**static_cast<const PayloadType**>(s))
                         .invokeFront(std::forward<Args>(args)...);
                 }
-            } else if constexpr (is_compatible_invocable_b<decltype(F),
-                                                           std::unwrap_ref_decay_t<BoundArgs>&&...,
-                                                           Args...> ||
-                                 is_compatible_invocable_b<
-                                     decltype(F), Args...,
-                                     std::unwrap_ref_decay_t<BoundArgs>&&...>) {
+            } else if constexpr (is_compatible_invocable_b<
+                                     decltype(F), std::unwrap_reference_t<BoundArgs>..., Args...> ||
+                                 is_compatible_invocable_b<decltype(F), Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
-                              "preserve signature qualifier");
+                              "preserve signature qualifier or noexcept");
             } else {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments!");
@@ -1418,11 +1415,11 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, size> {
         using F_Unwrap = std::unwrap_reference_t<F>;
         return [](void* s, Args... args) noexcept -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<F, Args...>,
+                static_assert(std::is_nothrow_invocable_v<F, Args...>,
                               "F is not callable with the provided arguments!");
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (is_compatible_invocable_b<F_Unwrap, Args...,
-                                                           std::unwrap_reference_t<BoundArgs>...>) {
+            } else if constexpr (is_compatible_nothrow_invocable_b<
+                                     F_Unwrap, Args..., std::unwrap_reference_t<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
                         .invokeCompatible(std::forward<Args>(args)...);
@@ -1430,7 +1427,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, size> {
                     return std::move(**static_cast<PayloadType**>(s))
                         .invokeCompatible(std::forward<Args>(args)...);
                 }
-            } else if constexpr (is_compatible_invocable_b<
+            } else if constexpr (is_compatible_nothrow_invocable_b<
                                      F_Unwrap, std::unwrap_reference_t<BoundArgs>..., Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     return std::move(*static_cast<PayloadType*>(s))
@@ -1451,7 +1448,7 @@ struct InvokerBuilder<Ret(Args...) noexcept, Task, size> {
     FORCE_INLINE static constexpr Type getInvoker() {
         return [](void* s, Args... args) noexcept {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(std::is_invocable_v<decltype(F), Args...>,
+                static_assert(std::is_nothrow_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
             } else if constexpr (is_compatible_invocable_b<
