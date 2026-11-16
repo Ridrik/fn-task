@@ -42,11 +42,14 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsCons
     template <typename T>
     using Convert = ApplyQualifiers<std::unwrap_reference_t<T>>;
 
+    static constexpr bool kCVLess = !IsConst && !LVRef && !RVRef;
+
     template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
-        std::conditional_t<IsNoExcept, std::is_nothrow_invocable<Ft, Argst...>,
-                           std::is_invocable<Ft, Argst...>>::value;
-    static constexpr bool kCVLess = !IsConst && !LVRef && !RVRef;
+        kCVLess ? (IsNoExcept ? is_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
+                              : is_compatible_invocable_b<Ft, Argst...>)
+                : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
+                              : std::is_invocable_v<Ft, Argst...>);
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept(IsNoExcept) {
         if constexpr (kInvocableVerifierV<Convert<F>, Args..., Convert<BoundArgs>...>) {

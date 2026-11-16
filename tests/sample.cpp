@@ -166,4 +166,15 @@ int main() {
         funcTask();
         auto funcTask2 = fn::makeTask(Functor{}, s);
     }
+
+    {
+        // Test without deductors
+        auto hi = std::string{"hi"};
+        auto task = fn::Task<void(), fn::Copyability::kCopyable, fn::InlineSize{48},
+                             fn::Triviality::kNonTrivial>{
+            [](const std::string&, const double&&) noexcept {}, std::cref(hi), 3.0};
+        task();
+        std::as_const(task)();
+        std::move(task)();
+    }
 }
