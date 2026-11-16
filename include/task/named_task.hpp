@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 #include "deductors.hpp"
 #include "function_traits.hpp"
@@ -22,157 +23,48 @@ struct TypePayloadSelector {
     using type = PayloadT<F, Args...>;
 };
 
-template <typename Task, typename Payload, typename Signature>
+template <typename Task, typename Payload, typename Signature, bool IsConst = false,
+          bool LVRef = false, bool RVRef = false, bool IsNoExcept = false>
 struct NamedTaskInvoker;
 
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (is_compatible_invocable_b<UnwrapF, Args...,
-                                                std::unwrap_reference_t<BoundArgs>...>) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeCompatible(std::forward<Args>(args)...);
-        } else if constexpr (is_compatible_invocable_b<
-                                 UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) noexcept> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (is_compatible_nothrow_invocable_b<UnwrapF, Args...,
-                                                        std::unwrap_reference_t<BoundArgs>...>) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeCompatible(std::forward<Args>(args)...);
-        } else if constexpr (is_compatible_nothrow_invocable_b<
-                                 UnwrapF, std::unwrap_reference_t<BoundArgs>..., Args...>) {
-            return std::move((static_cast<Task>(self)).payload_)
-                .invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (std::is_invocable_v<const UnwrapF, Args..., const BoundArgs...>) {
-            return std::move(static_cast<const Task>(self))
-                .payload_.invokeCompatible(std::forward<Args>(args)...);
-        } else if constexpr (std::is_invocable_v<const UnwrapF, const BoundArgs..., Args...>) {
-            return std::move(static_cast<const Task>(self))
-                .payload_.invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const noexcept> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (std::is_nothrow_invocable_v<const UnwrapF, Args..., const BoundArgs...>) {
-            return std::move(static_cast<const Task>(self))
-                .payload_.invokeCompatible(std::forward<Args>(args)...);
-        } else if constexpr (std::is_nothrow_invocable_v<const UnwrapF, const BoundArgs...,
-                                                         Args...>) {
-            return std::move(static_cast<const Task>(self))
-                .payload_.invokeFrontCompatible(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (std::is_invocable_v<const F&, Args..., const BoundArgs&...>) {
-            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_invocable_v<const F&, const BoundArgs&..., Args...>) {
-            return (static_cast<const Task&>(self))
-                .payload_.invokeFront(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const & noexcept> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (std::is_nothrow_invocable_v<const UnwrapF&, Args..., const BoundArgs&...>) {
-            return (static_cast<const Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_nothrow_invocable_v<const UnwrapF&, const BoundArgs&...,
-                                                         Args...>) {
-            return (static_cast<const Task&>(self))
-                .payload_.invokeFront(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (std::is_invocable_v<UnwrapF&, Args..., BoundArgs&...>) {
-            return (const_cast<Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_invocable_v<UnwrapF&, BoundArgs&..., Args...>) {
-            return (const_cast<Task&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) & noexcept> {
-    using UnwrapF = std::unwrap_reference_t<F>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (std::is_nothrow_invocable_v<UnwrapF&, Args..., BoundArgs&...>) {
-            return (const_cast<Task&>(self)).payload_.invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_nothrow_invocable_v<UnwrapF&, BoundArgs&..., Args...>) {
-            return (const_cast<Task&>(self)).payload_.invokeFront(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
+template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args,
+          bool IsConst, bool LVRef, bool RVRef, bool IsNoExcept>
+struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsConst, LVRef, RVRef,
+                        IsNoExcept> {
     template <typename T>
-    using Movable =
-        std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<T>>>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (std::is_invocable_v<Movable<F>, Args..., Movable<BoundArgs>...>) {
-            return std::move((const_cast<Task&>(self)).payload_)
-                .invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_invocable_v<Movable<F>, Movable<BoundArgs>..., Args...>) {
-            return std::move((const_cast<Task&>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
+    using ApplyQualifiers = std::conditional_t<
+        LVRef, std::add_lvalue_reference_t<std::conditional_t<IsConst, std::add_const_t<T>, T>>,
+        std::conditional_t<RVRef,
+                           std::add_rvalue_reference_t<std::remove_reference_t<
+                               std::conditional_t<IsConst, std::add_const_t<T>, T>>>,
+                           std::conditional_t<IsConst, std::add_const_t<T>, T>>>;
+
+    template <typename T>
+    using Convert = ApplyQualifiers<std::unwrap_reference_t<T>>;
+
+    template <typename Ft, typename... Argst>
+    static constexpr bool kInvocableVerifierV =
+        std::conditional_t<IsNoExcept, std::is_nothrow_invocable<Ft, Argst...>,
+                           std::is_invocable<Ft, Argst...>>::value;
+    static constexpr bool kCVLess = !IsConst && !LVRef && !RVRef;
+
+    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept(IsNoExcept) {
+        if constexpr (kInvocableVerifierV<Convert<F>, Args..., Convert<BoundArgs>...>) {
+            if constexpr (kCVLess) {
+                return std::move((const_cast<Task&>(self)).payload_)
+                    .invokeCompatible(std::forward<Args>(args)...);
+            } else {
+                return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
+                    .invoke(std::forward<Args>(args)...);
+            }
+        } else if constexpr (kInvocableVerifierV<Convert<F>, Convert<BoundArgs>..., Args...>) {
+            if constexpr (kCVLess) {
+                return std::move((const_cast<Task&>(self)).payload_)
+                    .invokeFrontCompatible(std::forward<Args>(args)...);
+            } else {
+                return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
+                    .invokeFront(std::forward<Args>(args)...);
+            }
         } else {
             static_assert(AlwaysFalse<F>::value,
                           "Given callable is not invocable with the provided arguments");
@@ -180,67 +72,13 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) &&> {
     }
 };
 
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) && noexcept> {
-    template <typename T>
-    using Movable =
-        std::add_rvalue_reference_t<std::remove_reference_t<std::unwrap_reference_t<T>>>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (std::is_nothrow_invocable_v<Movable<F>, Args..., Movable<BoundArgs>...>) {
-            return std::move((const_cast<Task&>(self)).payload_)
-                .invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_nothrow_invocable_v<Movable<F>, Movable<BoundArgs>...,
-                                                         Args...>) {
-            return std::move((const_cast<Task&>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const&&> {
-    template <typename T>
-    using ConstRvalueRef = std::add_rvalue_reference_t<
-        std::remove_reference_t<std::add_const_t<std::unwrap_reference_t<T>>>>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
-        if constexpr (std::is_invocable_v<ConstRvalueRef<F>, Args...,
-                                          ConstRvalueRef<BoundArgs>...>) {
-            return std::move((static_cast<const Task>(self)).payload_)
-                .invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_invocable_v<ConstRvalueRef<F>, ConstRvalueRef<BoundArgs>...,
-                                                 Args...>) {
-            return std::move((static_cast<const Task>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
-
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...) const && noexcept> {
-    template <typename T>
-    using ConstRvalueRef = std::add_rvalue_reference_t<
-        std::remove_reference_t<std::add_const_t<std::unwrap_reference_t<T>>>>;
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept {
-        if constexpr (std::is_nothrow_invocable_v<ConstRvalueRef<F>, Args...,
-                                                  ConstRvalueRef<BoundArgs>...>) {
-            return std::move((static_cast<const Task>(self)).payload_)
-                .invoke(std::forward<Args>(args)...);
-        } else if constexpr (std::is_nothrow_invocable_v<ConstRvalueRef<F>,
-                                                         ConstRvalueRef<BoundArgs>..., Args...>) {
-            return std::move((static_cast<const Task>(self)).payload_)
-                .invokeFront(std::forward<Args>(args)...);
-        } else {
-            static_assert(AlwaysFalse<F>::value,
-                          "Given callable is not invocable with the provided arguments");
-        }
-    }
-};
+template <typename Task, typename Payload, typename Signature>
+    requires(!IsBaseSignature<Signature>)
+struct NamedTaskInvoker<Task, Payload, Signature>
+    : NamedTaskInvoker<Task, Payload, typename FunctionTraits<Signature>::base_signature,
+                       FunctionTraits<Signature>::kIsConst, FunctionTraits<Signature>::kIsLValueRef,
+                       FunctionTraits<Signature>::kIsRValueRef,
+                       FunctionTraits<Signature>::kIsNoExcept> {};
 
 template <typename S, typename F, typename... BoundArgs>
 struct NamedTask;
@@ -251,7 +89,7 @@ template <typename S, typename F, typename... BoundArgs>
 struct NamedTask<S, F, BoundArgs...>
     : NamedTaskInvoker<NamedTask<S, F, BoundArgs...>, PayloadImpl<F, BoundArgs...>, S> {
    private:
-    template <typename, typename, typename>
+    template <typename, typename, typename, bool, bool, bool, bool>
     friend struct NamedTaskInvoker;
 
     template <typename, typename, typename...>
@@ -365,7 +203,7 @@ struct NamedTask<S, StaticFn<F>, BoundArgs...>
     : NamedTaskInvoker<NamedTask<S, StaticFn<F>, BoundArgs...>,
                        PayloadImpl<decltype(F), BoundArgs...>, S> {
    private:
-    template <typename, typename, typename>
+    template <typename, typename, typename, bool, bool, bool, bool>
     friend struct NamedTaskInvoker;
 
     template <typename, typename, typename...>
