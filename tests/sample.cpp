@@ -169,12 +169,19 @@ int main() {
 
     {
         // Test without deductors
+        struct Functor {
+            std::string data;
+
+            void operator()(std::string&& other) const {
+                // data += other;
+            }
+        };
         auto hi = std::string{"hi"};
-        auto task = fn::Task<void(), fn::Copyability::kCopyable, fn::InlineSize{48},
+        auto task = fn::Task<void(double), fn::Copyability::kCopyable, fn::InlineSize{48},
                              fn::Triviality::kNonTrivial>{
-            [](const std::string&, const double&&) noexcept {}, std::cref(hi), 3.0};
-        task();
-        std::as_const(task)();
-        std::move(task)();
+            [](const std::string&, double) noexcept {}, std::cref(hi)};
+        task(3.0);
+        std::as_const(task)(3.0);
+        std::move(task)(3.0);
     }
 }

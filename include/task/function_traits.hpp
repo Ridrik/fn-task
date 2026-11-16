@@ -11,6 +11,9 @@
 
 namespace fn {
 
+template <typename... T>
+struct AlwaysFalse : std::false_type {};
+
 template <typename T>
 struct RefToConstRef {
     using Type = T;

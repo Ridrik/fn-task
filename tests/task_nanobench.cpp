@@ -1,4 +1,3 @@
-
 #include "task/task.hpp"
 
 #include <chrono>
@@ -603,15 +602,16 @@ void compareNamedTaskToTask() {
     ankerl::nanobench::Bench b;
     b.title("Comparing Named task to task vs task speed")
         .unit("uint64_t")
-        .minEpochIterations(1000000000)
+        .minEpochIterations(1085435252)
         .relative(true);
     b.performanceCounters(true);
 
-    auto task = fn::Task([](int a, int v) { return a + v; }, 2);
-    auto namedTask = fn::NamedTask([](int a, int v) { return a + v; }, 2);
+    auto task = fn::Task([](int a, int& v) { return a + v++; }, 2);
+    auto namedTask = fn::NamedTask([](int a, int& v) { return a + v++; }, 2);
+    task(3);
     namedTask(3);
     auto taskFromNamedTask = fn::Task(namedTask);
-    auto stdFunc = std::function<int(int)>{[a = 2](int v) { return a + v; }};
+    auto stdFunc = std::function<int(int)>{[v = 2](int a) mutable { return a + v++; }};
     b.run("Named Task", [&] { ankerl::nanobench::doNotOptimizeAway(namedTask(1)); });
     b.run("Task From Named Task",
           [&] { ankerl::nanobench::doNotOptimizeAway(taskFromNamedTask(1)); });
