@@ -2,6 +2,7 @@
 #define TASK_DEDUCTORS_HPP
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -150,9 +151,39 @@ struct DeductorSettings {
     Optional<HeapPolicy> hp;
     Optional<std::size_t> alg;
 
-    [[nodiscard]] consteval auto withInlineSize(std::size_t newSize) const {
+    [[nodiscard]] consteval auto withInlineSize(std::size_t newSize) const noexcept {
         auto copy = *this;
         copy.size = newSize;
+        return copy;
+    }
+
+    [[nodiscard]] consteval auto withAlignment(std::size_t newAlignment) const noexcept {
+        auto copy = *this;
+        copy.alg = newAlignment;
+        return copy;
+    }
+
+    [[nodiscard]] consteval auto allowHeap() const noexcept {
+        auto copy = *this;
+        copy.hp = HeapPolicy::kAllow;
+        return copy;
+    }
+
+    [[nodiscard]] consteval auto setCopyable(bool copyable) const noexcept {
+        auto copy = *this;
+        copy.cb = copyable ? Copyability::kCopyable : Copyability::kNonCopyable;
+        return copy;
+    }
+
+    [[nodiscard]] consteval auto bindFront() const noexcept {
+        auto copy = *this;
+        copy.binding = Binding::kFront;
+        return copy;
+    }
+
+    [[nodiscard]] consteval auto bindBack() const noexcept {
+        auto copy = *this;
+        copy.binding = Binding::kBack;
         return copy;
     }
 };
@@ -337,6 +368,77 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         static_assert(decltype(kNewDeductor)::kIsValid,
                       "Requested Signature is not compatible with initial/deducted signature");
         return kNewDeductor;
+    }
+
+    template <std::size_t N>
+        requires(N != 0 && std::has_single_bit(N))
+    consteval auto withAlignment() const noexcept {
+        constexpr auto kNewDeductor = UpdateDeductorT<settings.withAlignment(N), decltype(*this)>{};
+        static_assert(decltype(kNewDeductor)::kIsValid,
+                      "Requested Signature is not compatible with initial/deducted alignment");
+        return kNewDeductor;
+    }
+
+    consteval auto allowHeap() const noexcept {
+        return UpdateDeductorT<settings.allowHeap(), decltype(*this)>{};
+    }
+
+    consteval auto toggleCopyability(bool copyable) const noexcept {
+        if constexpr (settings.cb.has_value() &&
+                      ((*settings.cb == Copyability::kCopyable && copyable) ||
+                       (*settings.cb == Copyability::kNonCopyable && !copyable))) {
+            return *this;
+        }
+        constexpr auto kNewDeductor =
+            UpdateDeductorT<settings.setCopyable(copyable), decltype(*this)>{};
+        static_assert(decltype(kNewDeductor)::kIsValid,
+                      "Task is invalid under new copyability setting");
+        return kNewDeductor;
+    }
+};
+
+template <typename Deductor>
+struct TaskBuilder;
+
+template <DeductorSettings settings, typename Ft, typename... BoundArgs>
+    requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
+struct TaskBuilder<TaskTypeDeductor<settings, Ft, BoundArgs...>> {
+    TaskBuilder(Ft&& f, BoundArgs&&... args)
+        : transitPayload{.f = std::forward<Ft>(f), .args = {std::forward<BoundArgs>(args)...}} {}
+
+    PayloadImpl<Ft&&, BoundArgs&&...> transitPayload;
+    using Deductor = TaskTypeDeductor<settings, std::decay_t<Ft>, std::decay_t<BoundArgs>...>;
+
+    template <std::size_t N>
+    consteval auto withInlineSize() const noexcept {
+        using NewDeductor = UpdateDeductorT<settings.withInlineSize(N), Deductor>;
+        static_assert(NewDeductor::kIsValid,
+                      "Requested Signature is not compatible with initial/deducted signature");
+        return TaskBuilder<NewDeductor>{std::move(transitPayload)};
+    }
+
+    template <std::size_t N>
+        requires(N != 0 && std::has_single_bit(N))
+    consteval auto withAlignment() const noexcept {
+        using NewDeductor = UpdateDeductorT<settings.withAlignment(N), Deductor>;
+        static_assert(NewDeductor::kIsValid,
+                      "Requested Signature is not compatible with initial/deducted alignment");
+        return TaskBuilder<NewDeductor>{std::move(transitPayload)};
+    }
+
+    consteval auto allowHeap() const noexcept {
+        return TaskBuilder<UpdateDeductorT<settings.allowHeap(), Deductor>>{
+            std::move(transitPayload)};
+    }
+
+    consteval auto toggleCopyability(bool copyable) const noexcept
+        requires((!settings.cb.has_value() ||
+                  ((*settings.cb != Copyability::kCopyable || !copyable) &&
+                   (*settings.cb != Copyability::kNonCopyable || copyable))))
+    {
+        using NewDeductor = UpdateDeductorT<settings.setCopyable(copyable), decltype(*this)>;
+        static_assert(NewDeductor::kIsValid, "Task is invalid under new copyability setting");
+        return TaskBuilder<NewDeductor>{std::move(transitPayload)};
     }
 };
 
