@@ -106,6 +106,8 @@ struct IsNamedTask<NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>> : std::
     static constexpr bool kIsAuto{true};
 };
 
+enum class Binding : std::uint8_t { kAuto, kFront, kBack };
+
 template <typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
 struct TaskTypeDeductor {
@@ -126,12 +128,10 @@ struct TaskTypeDeductor {
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_b<F, std::tuple<Ts..., FiltBoundArgs...>,
-                                          {sizeof...(Ts), sizeof...(FiltBoundArgs)}>;
+                is_compatible_invocable_b<F, Ts..., FiltBoundArgs...>;
             static constexpr bool kIsValid = std::disjunction_v<
                 std::bool_constant<kIsNormalOrder>,
-                std::bool_constant<is_compatible_invocable_b<
-                    F, std::tuple<FiltBoundArgs..., TsR...>, {0, sizeof...(FiltBoundArgs)}>>>;
+                std::bool_constant<is_compatible_invocable_b<F, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
@@ -254,13 +254,11 @@ struct TaskTypeDeductorAuto {
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_b<F_Unwrapped, std::tuple<Ts..., FiltBoundArgs...>,
-                                          {sizeof...(Ts), sizeof...(FiltBoundArgs)}>;
+                is_compatible_invocable_b<F_Unwrapped, Ts..., FiltBoundArgs...>;
             static constexpr bool kIsValid =
                 std::disjunction_v<std::bool_constant<kIsNormalOrder>,
                                    std::bool_constant<is_compatible_invocable_b<
-                                       F_Unwrapped, std::tuple<FiltBoundArgs..., TsR...>,
-                                       {0, sizeof...(FiltBoundArgs)}>>>;
+                                       F_Unwrapped, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
@@ -384,12 +382,10 @@ struct NamedTaskTypeDeductor {
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_b<F, std::tuple<Ts..., FiltBoundArgs...>,
-                                          {sizeof...(Ts), sizeof...(FiltBoundArgs)}>;
+                is_compatible_invocable_b<F, Ts..., FiltBoundArgs...>;
             static constexpr bool kIsValid = std::disjunction_v<
                 std::bool_constant<kIsNormalOrder>,
-                std::bool_constant<is_compatible_invocable_b<
-                    F, std::tuple<FiltBoundArgs..., TsR...>, {0, sizeof...(FiltBoundArgs)}>>>;
+                std::bool_constant<is_compatible_invocable_b<F, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
@@ -497,13 +493,11 @@ struct NamedTaskTypeDeductorAuto {
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_b<F_Unwrapped, std::tuple<Ts..., FiltBoundArgs...>,
-                                          {sizeof...(Ts), sizeof...(FiltBoundArgs)}>;
+                is_compatible_invocable_b<F_Unwrapped, Ts..., FiltBoundArgs...>;
             static constexpr bool kIsValid =
                 std::disjunction_v<std::bool_constant<kIsNormalOrder>,
                                    std::bool_constant<is_compatible_invocable_b<
-                                       F_Unwrapped, std::tuple<FiltBoundArgs..., TsR...>,
-                                       {0, sizeof...(FiltBoundArgs)}>>>;
+                                       F_Unwrapped, FiltBoundArgs..., TsR...>>>;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;

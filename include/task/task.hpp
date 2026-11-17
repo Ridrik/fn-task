@@ -10,7 +10,6 @@
 #include <functional>
 #include <new>
 #include <span>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -51,14 +50,12 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
 
     static constexpr bool kCVLess = !IsConst && !LVRef && !RVRef;
 
-    template <std::pair<std::size_t, std::size_t> indices, typename Ft, typename... Argst>
+    template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
-        kCVLess
-            ? (IsNoExcept
-                   ? is_compatible_nothrow_invocable_b<Ft, std::tuple<Argst...>, indices>  // NOLINT
-                   : is_compatible_invocable_b<Ft, std::tuple<Argst...>, indices>)
-            : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
-                          : std::is_invocable_v<Ft, Argst...>);
+        kCVLess ? (IsNoExcept ? is_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
+                              : is_compatible_invocable_b<Ft, Argst...>)
+                : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
+                              : std::is_invocable_v<Ft, Argst...>);
 
     template <typename PayloadType, auto F, typename... BoundArgs>
         requires(size == 0)
@@ -75,17 +72,18 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
         return [](void* s,   // NOLINT(readability-function-cognitive-complexity)
                   Args... args) noexcept(IsNoExcept) -> Ret {
             if constexpr (sizeof...(BoundArgs) == 0) {
-                static_assert(kInvocableVerifierV<{sizeof...(Args), sizeof...(BoundArgs)},
-                                                  Convert<F>, Args...>,
-                              "F is not callable with the provided arguments!");
+                static_assert(
+                    kInvocableVerifierV<Convert<F>,
+                                        CallArgTag<decltype(std::forward<Args>(args))>...>,
+                    "F is not callable with the provided arguments!");
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (kInvocableVerifierV<{sizeof...(Args), sizeof...(BoundArgs)},
-                                                     Convert<F>, Args..., Convert<BoundArgs>...>) {
+            } else if constexpr (kInvocableVerifierV<
+                                     Convert<F>, CallArgTag<decltype(std::forward<Args>(args))>...,
+                                     Convert<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     if constexpr (kCVLess) {
                         return std::move(*static_cast<PayloadType*>(s))
-                            .template invokeCompatible<sizeof...(Args), sizeof...(BoundArgs)>(
-                                std::forward<Args>(args)...);
+                            .invokeCompatible(std::forward<Args>(args)...);
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
@@ -94,21 +92,20 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 } else {
                     if constexpr (kCVLess) {
                         return std::move(**static_cast<PayloadType**>(s))
-                            .template invokeCompatible<sizeof...(Args), sizeof...(BoundArgs)>(
-                                std::forward<Args>(args)...);
+                            .invokeCompatible(std::forward<Args>(args)...);
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
                             .invoke(std::forward<Args>(args)...);
                     }
                 }
-            } else if constexpr (kInvocableVerifierV<{0, sizeof...(BoundArgs)}, Convert<F>,
-                                                     Convert<BoundArgs>..., Args...>) {
+            } else if constexpr (kInvocableVerifierV<
+                                     Convert<F>, Convert<BoundArgs>...,
+                                     CallArgTag<decltype(std::forward<Args>(args))>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     if constexpr (kCVLess) {
                         return std::move(*static_cast<PayloadType*>(s))
-                            .template invokeFrontCompatible<0, sizeof...(BoundArgs)>(
-                                std::forward<Args>(args)...);
+                            .invokeFrontCompatible(std::forward<Args>(args)...);
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
@@ -117,8 +114,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 } else {
                     if constexpr (kCVLess) {
                         return std::move(**static_cast<PayloadType**>(s))
-                            .template invokeFrontCompatible<0, sizeof...(BoundArgs)>(
-                                std::forward<Args>(args)...);
+                            .invokeFrontCompatible(std::forward<Args>(args)...);
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
@@ -127,12 +123,12 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 }
             } else if constexpr (is_compatible_invocable_b<
                                      std::unwrap_reference_t<F>,
-                                     std::tuple<std::unwrap_reference_t<BoundArgs>..., Args...>,
-                                     {0, sizeof...(BoundArgs)}> ||
+                                     std::unwrap_reference_t<BoundArgs>...,
+                                     CallArgTag<decltype(std::forward<Args>(args))>...> ||
                                  is_compatible_invocable_b<
                                      std::unwrap_reference_t<F>,
-                                     std::tuple<Args..., std::unwrap_reference_t<BoundArgs>...>,
-                                     {sizeof...(Args), sizeof...(BoundArgs)}>) {
+                                     CallArgTag<decltype(std::forward<Args>(args))>...,
+                                     std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier or noexcept");
@@ -153,8 +149,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 static_assert(std::is_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (kInvocableVerifierV<{sizeof...(Args), sizeof...(BoundArgs)},
-                                                     Convert<decltype(F)>, Args...,
+            } else if constexpr (kInvocableVerifierV<Convert<decltype(F)>, Args...,
                                                      Convert<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     if constexpr (kCVLess) {
@@ -177,8 +172,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                             .invoke(std::forward<Args>(args)...);
                     }
                 }
-            } else if constexpr (kInvocableVerifierV<{sizeof...(Args), sizeof...(BoundArgs)},
-                                                     Convert<decltype(F)>, Convert<BoundArgs>...,
+            } else if constexpr (kInvocableVerifierV<Convert<decltype(F)>, Convert<BoundArgs>...,
                                                      Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     if constexpr (kCVLess) {
@@ -201,14 +195,12 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                             .invokeFront(std::forward<Args>(args)...);
                     }
                 }
-            } else if constexpr (is_compatible_invocable_b<
-                                     std::unwrap_reference_t<decltype(F)>,
-                                     std::tuple<std::unwrap_reference_t<BoundArgs>..., Args...>,
-                                     {sizeof...(Args), sizeof...(BoundArgs)}> ||
-                                 is_compatible_invocable_b<
-                                     std::unwrap_reference_t<decltype(F)>,
-                                     std::tuple<Args..., std::unwrap_reference_t<BoundArgs>...>,
-                                     {sizeof...(Args), sizeof...(BoundArgs)}>) {
+            } else if constexpr (is_compatible_invocable_b<std::unwrap_reference_t<decltype(F)>,
+                                                           std::unwrap_reference_t<BoundArgs>...,
+                                                           Args...> ||
+                                 is_compatible_invocable_b<std::unwrap_reference_t<decltype(F)>,
+                                                           Args...,
+                                                           std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier or noexcept");

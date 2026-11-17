@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -44,32 +43,31 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsCons
 
     static constexpr bool kCVLess = !IsConst && !LVRef && !RVRef;
 
-    template <std::pair<std::size_t, std::size_t> indices, typename Ft, typename... Argst>
+    template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
-        kCVLess
-            ? (IsNoExcept                                                                  // NOLINT
-                   ? is_compatible_nothrow_invocable_b<Ft, std::tuple<Argst...>, indices>  // NOLINT
-                   : is_compatible_invocable_b<Ft, std::tuple<Argst...>, indices>)
-            : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
-                          : std::is_invocable_v<Ft, Argst...>);
+        kCVLess ? (IsNoExcept                                             // NOLINT
+                       ? is_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
+                       : is_compatible_invocable_b<Ft, Argst...>)
+                : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
+                              : std::is_invocable_v<Ft, Argst...>);
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept(IsNoExcept) {
-        if constexpr (kInvocableVerifierV<{sizeof...(Args), sizeof...(BoundArgs)}, Convert<F>,
-                                          Args..., Convert<BoundArgs>...>) {
+        if constexpr (kInvocableVerifierV<Convert<F>,
+                                          CallArgTag<decltype(std::forward<Args>(args))>...,
+                                          Convert<BoundArgs>...>) {
             if constexpr (kCVLess) {
                 return std::move((const_cast<Task&>(self)).payload_)
-                    .template invokeCompatible<0, sizeof...(BoundArgs)>(
-                        std::forward<Args>(args)...);
+                    .invokeCompatible(std::forward<Args>(args)...);
             } else {
                 return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
                     .invoke(std::forward<Args>(args)...);
             }
-        } else if constexpr (kInvocableVerifierV<{0, sizeof...(BoundArgs)}, Convert<F>,
-                                                 Convert<BoundArgs>..., Args...>) {
+        } else if constexpr (kInvocableVerifierV<
+                                 Convert<F>, Convert<BoundArgs>...,
+                                 CallArgTag<decltype(std::forward<Args>(args))>...>) {
             if constexpr (kCVLess) {
                 return std::move((const_cast<Task&>(self)).payload_)
-                    .template invokeFrontCompatible<0, sizeof...(BoundArgs)>(
-                        std::forward<Args>(args)...);
+                    .invokeFrontCompatible(std::forward<Args>(args)...);
             } else {
                 return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
                     .invokeFront(std::forward<Args>(args)...);
