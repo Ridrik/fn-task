@@ -57,7 +57,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
                               : std::is_invocable_v<Ft, Argst...>);
 
-    template <typename PayloadType, auto F, typename... BoundArgs>
+    template <Binding /*binding*/, typename PayloadType, auto F, typename... BoundArgs>
         requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() noexcept {
         static_assert(sizeof...(BoundArgs) == 0);
@@ -65,7 +65,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
             [](Args... args) noexcept(IsNoExcept) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
-    template <typename PayloadType, typename F, typename... BoundArgs>
+    template <Binding binding, typename PayloadType, typename F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type
     getInvoker() noexcept {  // NOLINT(readability-function-cognitive-complexity)
@@ -139,7 +139,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
         };
     }
 
-    template <typename PayloadType, auto F, typename... BoundArgs>
+    template <Binding binding, typename PayloadType, auto F, typename... BoundArgs>
         requires(size > 0)
     FORCE_INLINE static constexpr Type
     getInvoker() noexcept {  // NOLINT(readability-function-cognitive-complexity)
@@ -1010,11 +1010,63 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     enum class ArgsOrder : std::uint8_t { kBack, kFront };
 
     template <auto F, typename... BoundArgs>
-    constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
-        : storage_{.invoker =
-                       InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>,
-                                      size>::template getInvoker<PayloadArgsT<F, BoundArgs...>, F,
-                                                                 std::decay_t<BoundArgs>...>()} {
+    constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/,
+                   BoundArgs&&... args)  // NOLINT
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
+                       template getInvoker<Binding::kAuto, PayloadArgsT<F, BoundArgs...>, F,
+                                           std::decay_t<BoundArgs>...>()} {
+        using PayloadType = PayloadArgsT<F, BoundArgs...>;
+        if constexpr (!std::is_empty_v<PayloadType>) {
+            static_assert(PayloadNoRvalueRef<PayloadType>::value);
+            static_assert(
+                !kCopyable || std::is_copy_constructible_v<PayloadType>,
+                "Given payload is not copy constructible. Check types or create a unique task");
+            static_assert(
+                std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
+                "Given payload is not constructible, move constructible or destructible");
+            static_assert(
+                sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
+                "Size exceeds buffer. Increase Stack size or activate option to allow heap "
+                "storage (template option, or via FlexTask aliases)");
+            static_assert(alignof(PayloadType) <= align,
+                          "Alignment requirement too high for buffer. Increase template alignment");
+            if constexpr (kIsTrivial) {
+                static_assert(TrivialUse<PayloadType, cb>::value,
+                              "Payload needs to be trivially move & copy constructible, and "
+                              "trivially destructible to be allowed within a Trivial Task");
+            }
+            storage_.template doConstruct<PayloadType, hp, cb>();
+            if constexpr (sizeof(PayloadType) <= size) {
+                new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
+            } else {
+                static_assert(alignof(void*) <= align,
+                              "Alignment requirement too high to store heap pointer. Increase "
+                              "template alignment");
+                static_assert(kAllowHeap);
+                if constexpr (align <= alignof(std::max_align_t)) {
+                    void* heapPtr = ::operator new(sizeof(PayloadType));
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                } else {
+                    void* heapPtr =
+                        ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                }
+            }
+        }
+    }
+
+    template <auto F, Binding binding, typename... BoundArgs>
+    constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BindingTag<binding> /*unused*/,
+                   BoundArgs&&... args)  // NOLINT
+        : storage_{
+              .invoker =
+                  InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>,
+                                 size>::template getInvoker<binding, PayloadArgsT<F, BoundArgs...>,
+                                                            F, std::decay_t<BoundArgs>...>()} {
         using PayloadType = PayloadArgsT<F, BoundArgs...>;
         if constexpr (!std::is_empty_v<PayloadType>) {
             static_assert(PayloadNoRvalueRef<PayloadType>::value);
@@ -1066,7 +1118,61 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                  template getInvoker<PayloadT<decltype(f), BoundArgs...>,
+                  template getInvoker<Binding::kAuto, PayloadT<decltype(f), BoundArgs...>,
+                                      std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
+        using F = decltype(f);
+        using PayloadType = PayloadT<F, BoundArgs...>;
+        static_assert(PayloadNoRvalueRef<PayloadType>::value);
+        static_assert(sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
+                      "Size exceeds buffer. Increase Stack size or activate option to allow heap "
+                      "storage (template option, or via FlexTask aliases)");
+        static_assert(alignof(PayloadType) <= align,
+                      "Alignment requirement too high for buffer. Increase template alignment");
+        static_assert(
+            !kCopyable || std::is_copy_constructible_v<PayloadType>,
+            "Given payload is not copy constructible. Check types or create a unique task");
+        static_assert(
+            std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
+            "Given payload is not move constructible or destructible");
+        if constexpr (kIsTrivial) {
+            static_assert(TrivialUse<PayloadType, cb>::value,
+                          "Payload needs to be trivially move & copy constructible, and "
+                          "trivially destructible to be allowed within a Trivial Task");
+        }
+        storage_.template doConstruct<PayloadType, hp, cb>();
+        if constexpr (sizeof(PayloadType) <= size) {
+            new (storage_.data.data())
+                PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
+        } else {
+            static_assert(kAllowHeap);
+            static_assert(alignof(void*) <= align,
+                          "Alignment requirement too high to store heap pointer. Increase "
+                          "template alignment");
+            if constexpr (align <= alignof(std::max_align_t)) {
+                void* heapPtr = ::operator new(sizeof(PayloadType));
+                auto* payload =  // NOLINT
+                    new (heapPtr)
+                        PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
+                new (storage_.data.data()) PayloadType*(payload);
+            } else {
+                void* heapPtr =
+                    ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
+                auto* payload =  // NOLINT
+                    new (heapPtr)
+                        PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
+                new (storage_.data.data()) PayloadType*(payload);
+            }
+        }
+    }
+
+    template <Binding binding, typename... BoundArgs>
+    constexpr Task(BindingTag<binding> /*unused*/, auto&& f, BoundArgs&&... args)  // NOLINT
+        requires(!std::is_same_v<std::remove_cvref_t<decltype(f)>, RefTag> &&
+                 !IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
+                 (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
+        : storage_{
+              .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
+                  template getInvoker<binding, PayloadT<decltype(f), BoundArgs...>,
                                       std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
@@ -1114,10 +1220,69 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     }
 
     template <typename F, typename... BoundArgs>
-    constexpr Task([[maybe_unused]] RefTag /*unused*/, F&& f, BoundArgs&&... args)  // NOLINT
+    constexpr Task([[maybe_unused]] RefTag /*unused*/, F&& f,
+                   BoundArgs&&... args)  // NOLINT
         requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value)
         : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                       template getInvoker<PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
+                       template getInvoker<Binding::kAuto, PayloadImpl<F, BoundArgs...>, F,
+                                           BoundArgs...>()} {
+        static_assert(
+            (((std::is_lvalue_reference_v<decltype(args)> &&
+               std::is_lvalue_reference_v<BoundArgs>) ||
+              (!std::is_rvalue_reference_v<BoundArgs> && !std::is_lvalue_reference_v<BoundArgs> &&
+               std::is_rvalue_reference_v<decltype(args)>)) &&
+             ...));
+        using PayloadType = PayloadImpl<F, BoundArgs...>;
+        static_assert(PayloadNoRvalueRef<PayloadType>::value);
+        static_assert(sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
+                      "Size exceeds buffer. Increase Stack size or activate option to allow heap "
+                      "storage (template option, or via FlexTask aliases)");
+        static_assert(alignof(PayloadType) <= align,
+                      "Alignment requirement too high for buffer. Increase template alignment");
+        static_assert(
+            !kCopyable || std::is_copy_constructible_v<PayloadType>,
+            "Given payload is not copy constructible. Check types or create a unique task");
+        static_assert(
+            std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
+            "Given payload is not constructible, move constructible or destructible");
+        if constexpr (kIsTrivial) {
+            static_assert(TrivialUse<PayloadType, cb>::value,
+                          "Payload needs to be trivially move & copy constructible, and "
+                          "trivially destructible to be allowed within a Trivial Task");
+        }
+        storage_.template doConstruct<PayloadType, hp, cb>();
+        if constexpr (sizeof(PayloadType) <= size) {
+            new (storage_.data.data())
+                PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
+        } else {
+            static_assert(kAllowHeap);
+            static_assert(alignof(void*) <= align,
+                          "Alignment requirement too high to store heap pointer. Increase "
+                          "template alignment");
+            if constexpr (align <= alignof(std::max_align_t)) {
+                void* heapPtr = ::operator new(sizeof(PayloadType));
+                auto* payload =  // NOLINT
+                    new (heapPtr)
+                        PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
+                new (storage_.data.data()) PayloadType*(payload);
+            } else {
+                void* heapPtr =
+                    ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
+                auto* payload =  // NOLINT
+                    new (heapPtr)
+                        PayloadType{std::forward<F>(f), {std::forward<BoundArgs>(args)...}};
+                new (storage_.data.data()) PayloadType*(payload);
+            }
+        }
+    }
+
+    template <Binding binding, typename F, typename... BoundArgs>
+    constexpr Task([[maybe_unused]] RefTag /*unused*/, BindingTag<binding> /*unused*/, F&& f,
+                   BoundArgs&&... args)  // NOLINT
+        requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value)
+        : storage_{
+              .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
+                  template getInvoker<binding, PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
                std::is_lvalue_reference_v<BoundArgs>) ||
@@ -1169,10 +1334,69 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     }
 
     template <auto F, typename... BoundArgs>
-    constexpr Task([[maybe_unused]] RefTag /*unused*/,                               // NOLINT
-                   [[maybe_unused]] FunctionTag<F> /*unused*/, BoundArgs&&... args)  // NOLINT
+    constexpr Task([[maybe_unused]] RefTag /*unused*/,  // NOLINT
+                   [[maybe_unused]] FunctionTag<F> /*unused*/,
+                   BoundArgs&&... args)  // NOLINT
         : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                       template getInvoker<PayloadImplArgs<F, BoundArgs...>, F, BoundArgs...>()} {
+                       template getInvoker<Binding::kAuto, PayloadImplArgs<F, BoundArgs...>, F,
+                                           BoundArgs...>()} {
+        static_assert(
+            (((std::is_lvalue_reference_v<decltype(args)> &&
+               std::is_lvalue_reference_v<BoundArgs>) ||
+              (!std::is_rvalue_reference_v<BoundArgs> && !std::is_lvalue_reference_v<BoundArgs> &&
+               std::is_rvalue_reference_v<decltype(args)>)) &&
+             ...));
+        using PayloadType = PayloadImplArgs<F, BoundArgs...>;
+        if constexpr (!std::is_empty_v<PayloadType>) {
+            static_assert(PayloadNoRvalueRef<PayloadType>::value);
+            static_assert(
+                sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
+                "Size exceeds buffer. Increase Stack size or activate option to allow heap "
+                "storage (template option, or via FlexTask aliases)");
+            static_assert(alignof(PayloadType) <= align,
+                          "Alignment requirement too high for buffer. Increase template alignment");
+            static_assert(
+                !kCopyable || std::is_copy_constructible_v<PayloadType>,
+                "Given payload is not copy constructible. Check types or create a unique task");
+            static_assert(
+                std::is_move_constructible_v<PayloadType> && std::is_destructible_v<PayloadType>,
+                "Given payload is not constructible, move constructible or destructible");
+            if constexpr (kIsTrivial) {
+                static_assert(TrivialUse<PayloadType, cb>::value,
+                              "Payload needs to be trivially move & copy constructible, and "
+                              "trivially destructible to be allowed within a Trivial Task");
+            }
+            storage_.template doConstruct<PayloadType, hp, cb>();
+            if constexpr (sizeof(PayloadType) <= size) {
+                new (storage_.data.data()) PayloadType{{std::forward<BoundArgs>(args)...}};
+            } else {
+                static_assert(kAllowHeap);
+                static_assert(alignof(void*) <= align,
+                              "Alignment requirement too high to store heap pointer. Increase "
+                              "template alignment");
+                if constexpr (align <= alignof(std::max_align_t)) {
+                    void* heapPtr = ::operator new(sizeof(PayloadType));
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                } else {
+                    void* heapPtr =
+                        ::operator new(sizeof(PayloadType), std::align_val_t{std::size_t{align}});
+                    auto* payload =  // NOLINT
+                        new (heapPtr) PayloadType{{std::forward<BoundArgs>(args)...}};
+                    new (storage_.data.data()) PayloadType*(payload);
+                }
+            }
+        }
+    }
+
+    template <auto F, Binding binding, typename... BoundArgs>
+    constexpr Task([[maybe_unused]] RefTag /*unused*/,  // NOLINT
+                   [[maybe_unused]] FunctionTag<F> /*unused*/, BindingTag<binding> /*unused*/,
+                   BoundArgs&&... args)  // NOLINT
+        : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
+                       template getInvoker<binding, PayloadImplArgs<F, BoundArgs...>, F,
+                                           BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
                std::is_lvalue_reference_v<BoundArgs>) ||
@@ -1322,54 +1546,59 @@ Task(Task<Sig, cp, size, t, Ext, hp, align>) -> Task<Sig, cp, size, t, Ext, hp, 
 
 template <auto F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
-             FunctionTraits<decltype(F)>::kValid && TaskTypeDeductorAuto<F, BoundArgs...>::kIsValid)
+             FunctionTraits<decltype(F)>::kValid &&
+             TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>::kIsValid)
 Task(FunctionTag<F>, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::Signature,
-            TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kCopyable,
-            TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kPayloadSize,
-            TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kTriviality, false,
-            HeapPolicy::kDisallow, TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>::kAlignment>;
+    -> Task<typename TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>::Signature,
+            TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>::kCopyable,
+            TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>::kPayloadSize,
+            TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>::kTriviality, false,
+            HeapPolicy::kDisallow,
+            TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(
         !std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
         FunctionTraits<std::remove_reference_t<std::unwrap_reference_t<std::decay_t<F>>>>::kValid &&
         (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
-        TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kIsValid)
-Task(F&&, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::Signature,
-            TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kCopyable,
-            TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kPayloadSize,
-            TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kTriviality, false,
-            HeapPolicy::kDisallow,
-            TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>::kAlignment>;
+        TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>::kIsValid)
+Task(F&&, BoundArgs&&...) -> Task<
+    typename TaskTypeDeductor<Binding::kAuto, std::decay_t<F>,
+                              std::decay_t<BoundArgs>...>::Signature,
+    TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>::kCopyable,
+    TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>::kPayloadSize,
+    TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>::kTriviality,
+    false, HeapPolicy::kDisallow,
+    TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(!IsFunctionTag<F>::value &&
              FunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>::kValid &&
-             TaskTypeDeductor<F, BoundArgs...>::kIsValid)
+             TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>::kIsValid)
 Task(RefTag, F&&, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductor<F, BoundArgs...>::Signature,
-            TaskTypeDeductor<F, BoundArgs...>::kCopyable,
-            TaskTypeDeductor<F, BoundArgs...>::kPayloadSize,
-            TaskTypeDeductor<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
-            TaskTypeDeductor<F, BoundArgs...>::kAlignment>;
+    -> Task<typename TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>::Signature,
+            TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>::kCopyable,
+            TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>::kPayloadSize,
+            TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>::kTriviality, false,
+            HeapPolicy::kDisallow, TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>::kAlignment>;
 
 template <auto F, typename... BoundArgs>
-    requires(FunctionTraits<decltype(F)>::kValid && TaskTypeDeductorAuto<F, BoundArgs...>::kIsValid)
+    requires(FunctionTraits<decltype(F)>::kValid &&
+             TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>::kIsValid)
 Task(RefTag, FunctionTag<F>, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductorAuto<F, BoundArgs...>::Signature,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kCopyable,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kPayloadSize,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kTriviality, false, HeapPolicy::kDisallow,
-            TaskTypeDeductorAuto<F, BoundArgs...>::kAlignment>;
+    -> Task<typename TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>::Signature,
+            TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>::kCopyable,
+            TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>::kPayloadSize,
+            TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>::kTriviality, false,
+            HeapPolicy::kDisallow,
+            TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0)
 FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{std::forward<F>(f), std::forward<BoundArgs>(args)...};
 }
@@ -1383,7 +1612,7 @@ FORCE_INLINE constexpr auto makeTask(auto&& f)
 template <auto F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{FunctionTag<F>{}, std::forward<BoundArgs>(args)...};
 }
@@ -1393,7 +1622,7 @@ template <typename Sig, typename F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>;
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
@@ -1415,7 +1644,7 @@ FORCE_INLINE constexpr auto makeTask(auto&& f)
 template <typename Sig, auto F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>;
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
@@ -1427,7 +1656,7 @@ template <InlineSize size = 16, typename F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template HeapType<size>{std::forward<F>(f),
                                                       std::forward<BoundArgs>(args)...};
@@ -1437,7 +1666,7 @@ template <typename Sig, InlineSize size = 16, typename F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
@@ -1448,7 +1677,7 @@ FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args) {
 template <InlineSize size = 16, auto F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template HeapType<size>{FunctionTag<F>{},
                                                       std::forward<BoundArgs>(args)...};
@@ -1457,7 +1686,7 @@ FORCE_INLINE constexpr auto makeFlexTask(BoundArgs&&... args) {
 template <typename Sig, InlineSize size = 16, auto F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductorAuto<F, Binding::kAuto, std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
@@ -1469,7 +1698,7 @@ template <typename F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<F, BoundArgs...>;
+    using Deductor = TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{RefTag{}, std::forward<F>(f),
                                               std::forward<BoundArgs>(args)...};
@@ -1479,7 +1708,7 @@ template <typename Sig, typename F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<F, BoundArgs...>;
+    using Deductor = TaskTypeDeductor<Binding::kAuto, F, BoundArgs...>;
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
@@ -1490,7 +1719,7 @@ FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
 template <auto F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, BoundArgs...>;
+    using Deductor = TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{RefTag{}, FunctionTag<F>{},
                                               std::forward<BoundArgs>(args)...};
@@ -1499,7 +1728,7 @@ FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
 template <typename Sig, auto F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, BoundArgs...>;
+    using Deductor = TaskTypeDeductorAuto<F, Binding::kAuto, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");

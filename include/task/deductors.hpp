@@ -108,7 +108,10 @@ struct IsNamedTask<NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>> : std::
 
 enum class Binding : std::uint8_t { kAuto, kFront, kBack };
 
-template <typename Ft, typename... BoundArgs>
+template <Binding bind>
+struct BindingTag {};
+
+template <Binding bind, typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
 struct TaskTypeDeductor {
     using F = std::unwrap_reference_t<Ft>;
@@ -127,40 +130,66 @@ struct TaskTypeDeductor {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
+            template <Binding bindProcess, template <typename...> typename Tester,
+                      template <typename> typename Modifier>
+            struct ArgumentProcessor {
+                template <typename ArgFilter>
+                struct ModifierFilter;
+
+                template <typename ArgFilter>
+                    requires IsCallArgB<ArgFilter>
+                struct ModifierFilter<ArgFilter> {
+                    using type = ArgFilter;
+                };
+
+                template <typename ArgFilter>
+                    requires(!IsCallArgB<ArgFilter>)
+                struct ModifierFilter<ArgFilter> {
+                    using type = Modifier<ArgFilter>;
+                };
+
+                static constexpr bool kTestFront =
+                    Tester<F, typename ModifierFilter<FiltBoundArgs>::type..., TsR...>::value;
+                static constexpr bool kTestBack =
+                    Tester<F, Ts..., typename ModifierFilter<FiltBoundArgs>::type...>::value;
+                static constexpr Binding kBindDeduct =
+                    (kTestBack && kTestBack)
+                        ? (bindProcess == Binding::kAuto ? Binding::kBack : bindProcess)
+                        : (kTestBack ? Binding::kBack : Binding::kFront);
+
+                static constexpr bool kIsValid =
+                    bindProcess == Binding::kFront
+                        ? kTestFront
+                        : (bindProcess == Binding::kBack ? kTestBack : (kTestFront || kTestBack));
+            };
+
+            template <typename T>
+            using NoMod = T;
+
+            template <typename T>
+            using MakeMovable = std::add_rvalue_reference_t<std::remove_reference_t<T>>;
+
+            template <Binding bindProcess, template <typename...> typename Tester,
+                      template <typename> typename Modifier>
+            using ArgumentProcessorV = ArgumentProcessor<bindProcess, Tester, Modifier>::kValid;
+
             static constexpr bool kIsNormalOrder =
                 is_compatible_invocable_b<F, Ts..., FiltBoundArgs...>;
-            static constexpr bool kIsValid = std::disjunction_v<
-                std::bool_constant<kIsNormalOrder>,
-                std::bool_constant<is_compatible_invocable_b<F, FiltBoundArgs..., TsR...>>>;
+            using Processor = ArgumentProcessor<bind, is_compatible_invocable, NoMod>;
+            static constexpr bool kIsValid = Processor::kIsValid;
+            static constexpr Binding kBinderDeduct = Processor::kBindDeduct;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
-                ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F>, Ts...,
-                                                        std::add_const_t<FiltBoundArgs>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<std::add_const_t<F>, std::add_const_t<FiltBoundArgs>...,
-                                      TsR...>));
+                ArgumentProcessor<kBinderDeduct, std::is_invocable, std::add_const_t>::kIsValid;
             static constexpr bool kIsRValRef =
                 Traits::kIsRValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<
-                      std::add_rvalue_reference_t<std::remove_reference_t<F>>, Ts...,
-                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<
-                      std::add_rvalue_reference_t<std::remove_reference_t<F>>,
-                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
-                      TsR...>));
+                ArgumentProcessor<kBinderDeduct, std::is_invocable, MakeMovable>::kIsValid;
             static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<std::add_lvalue_reference_t<F>, Ts...,
-                                      std::add_lvalue_reference_t<BoundArgs>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<std::add_lvalue_reference_t<F>,
-                                      std::add_lvalue_reference_t<BoundArgs>..., TsR...>));
+                Traits::kIsLValueRef && ArgumentProcessor<kBinderDeduct, std::is_invocable,
+                                                          std::add_lvalue_reference_t>::kIsValid;
             using Signature = std::conditional_t<
                 Traits::kIsNoExcept,
                 // --- NOEXCEPT BRANCH ---
@@ -229,12 +258,15 @@ struct TaskTypeDeductor {
     using Type =
         Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
 
+    template <typename Sig = Signature>
+    using NamedType = NamedTask<Sig, Ft, BoundArgs...>;
+
     template <InlineSize size>
     using HeapType =
         Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 };
 
-template <auto F_auto, typename... BoundArgs>
+template <auto F_auto, Binding bind, typename... BoundArgs>
     requires(HasFunctionTraits<decltype(F_auto)>)
 struct TaskTypeDeductorAuto {
     struct StripBoundArgs {
@@ -253,41 +285,66 @@ struct TaskTypeDeductorAuto {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
+            template <Binding bindProcess, template <typename...> typename Tester,
+                      template <typename> typename Modifier>
+            struct ArgumentProcessor {
+                template <typename ArgFilter>
+                struct ModifierFilter;
+
+                template <typename ArgFilter>
+                    requires IsCallArgB<ArgFilter>
+                struct ModifierFilter<ArgFilter> {
+                    using type = ArgFilter;
+                };
+
+                template <typename ArgFilter>
+                    requires(!IsCallArgB<ArgFilter>)
+                struct ModifierFilter<ArgFilter> {
+                    using type = Modifier<ArgFilter>;
+                };
+
+                static constexpr bool kTestFront =
+                    Tester<F, typename ModifierFilter<FiltBoundArgs>::type..., TsR...>::value;
+                static constexpr bool kTestBack =
+                    Tester<F, Ts..., typename ModifierFilter<FiltBoundArgs>::type...>::value;
+                static constexpr Binding kBindDeduct =
+                    (kTestBack && kTestBack)
+                        ? (bindProcess == Binding::kAuto ? Binding::kBack : bindProcess)
+                        : (kTestBack ? Binding::kBack : Binding::kFront);
+
+                static constexpr bool kIsValid =
+                    bindProcess == Binding::kFront
+                        ? kTestFront
+                        : (bindProcess == Binding::kBack ? kTestBack : (kTestFront || kTestBack));
+            };
+
+            template <typename T>
+            using NoMod = T;
+
+            template <typename T>
+            using MakeMovable = std::add_rvalue_reference_t<std::remove_reference_t<T>>;
+
+            template <Binding bindProcess, template <typename...> typename Tester,
+                      template <typename> typename Modifier>
+            using ArgumentProcessorV = ArgumentProcessor<bindProcess, Tester, Modifier>::kValid;
+
             static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_b<F_Unwrapped, Ts..., FiltBoundArgs...>;
-            static constexpr bool kIsValid =
-                std::disjunction_v<std::bool_constant<kIsNormalOrder>,
-                                   std::bool_constant<is_compatible_invocable_b<
-                                       F_Unwrapped, FiltBoundArgs..., TsR...>>>;
+                is_compatible_invocable_b<F, Ts..., FiltBoundArgs...>;
+            using Processor = ArgumentProcessor<bind, is_compatible_invocable, NoMod>;
+            static constexpr bool kIsValid = Processor::kIsValid;
+            static constexpr Binding kBinderDeduct = Processor::kBindDeduct;
             static constexpr bool kIsReverse = !kIsNormalOrder;
             using R = Ret;
             using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
-                ((kIsNormalOrder && std::is_invocable_v<std::add_const_t<F_Unwrapped>, Ts...,
-                                                        std::add_const_t<FiltBoundArgs>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<std::add_const_t<F_Unwrapped>,
-                                      std::add_const_t<FiltBoundArgs>..., TsR...>));
+                ArgumentProcessor<kBinderDeduct, std::is_invocable, std::add_const_t>::kIsValid;
             static constexpr bool kIsRValRef =
                 Traits::kIsRValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<
-                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>, Ts...,
-                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<
-                      std::add_rvalue_reference_t<std::remove_reference_t<F_Unwrapped>>,
-                      std::add_rvalue_reference_t<std::remove_reference_t<FiltBoundArgs>>...,
-                      TsR...>));
+                ArgumentProcessor<kBinderDeduct, std::is_invocable, MakeMovable>::kIsValid;
             static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef &&
-                ((kIsNormalOrder &&
-                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>, Ts...,
-                                      std::add_lvalue_reference_t<BoundArgs>...>) ||
-                 (!kIsNormalOrder &&
-                  std::is_invocable_v<std::add_lvalue_reference_t<F_Unwrapped>,
-                                      std::add_lvalue_reference_t<BoundArgs>..., TsR...>));
+                Traits::kIsLValueRef && ArgumentProcessor<kBinderDeduct, std::is_invocable,
+                                                          std::add_lvalue_reference_t>::kIsValid;
             using Signature = std::conditional_t<
                 Traits::kIsNoExcept,
                 // --- NOEXCEPT BRANCH ---
@@ -356,12 +413,15 @@ struct TaskTypeDeductorAuto {
     using Type =
         Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
 
+    template <typename Sig = Signature>
+    using NamedType = NamedTask<Sig, StaticFn<F_auto>, BoundArgs...>;
+
     template <InlineSize size>
     using SizedType =
         Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 };
 
-template <typename Ft, typename... BoundArgs>
+/*template <Binding bind, typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<Ft>>>)
 struct NamedTaskTypeDeductor {
     using F = std::decay_t<Ft>;
@@ -473,7 +533,7 @@ struct NamedTaskTypeDeductor {
     using Type = NamedTask<Sig, Ft, BoundArgs...>;
 };
 
-template <auto F_auto, typename... BoundArgs>
+template <auto F_auto, Binding bind, typename... BoundArgs>
     requires(HasFunctionTraits<decltype(F_auto)>)
 struct NamedTaskTypeDeductorAuto {
     struct StripBoundArgs {
@@ -583,24 +643,25 @@ struct NamedTaskTypeDeductorAuto {
 
     template <typename Sig = Signature>
     using Type = NamedTask<Sig, StaticFn<F_auto>, BoundArgs...>;
-};
+};*/
 
 // Support for std::bind, std::bind_front, std::bind_back... (Note, it's implementation defined,
 // though this works at least for gcc across Windows and Linux currently)
 
 template <template <typename, typename...> typename T, typename Fd, typename... BoundArgs>
     requires(!IsTask<T<Fd, BoundArgs...>>::value && !IsNamedTask<T<Fd, BoundArgs...>>::value &&
-             HasFunctionTraits<std::decay_t<Fd>> && TaskTypeDeductor<Fd, BoundArgs...>::kIsValid)
+             HasFunctionTraits<std::decay_t<Fd>> &&
+             TaskTypeDeductor<Binding::kAuto, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<Fd, BoundArgs...>::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<Binding::kAuto, Fd, BoundArgs...>::Signature> {};
 
 template <template <bool, typename, typename...> typename T, bool B, typename Fd,
           typename... BoundArgs>
     requires(!IsTask<T<B, Fd, BoundArgs...>>::value &&
              !IsNamedTask<T<B, Fd, BoundArgs...>>::value && HasFunctionTraits<std::decay_t<Fd>> &&
-             TaskTypeDeductor<Fd, BoundArgs...>::kIsValid)
+             TaskTypeDeductor<Binding::kAuto, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<B, Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<Fd, BoundArgs...>::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<Binding::kAuto, Fd, BoundArgs...>::Signature> {};
 
 }  // namespace fn
 
