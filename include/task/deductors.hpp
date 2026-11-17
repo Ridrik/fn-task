@@ -67,6 +67,15 @@ enum class Binding : std::uint8_t { kAuto, kFront, kBack };
 template <Binding bind>
 struct BindingTag {};
 
+template <typename>
+struct IsBindingTag : std::false_type {};
+
+template <Binding bind>
+struct IsBindingTag<BindingTag<bind>> : std::true_type {};
+
+template <typename T>
+static constexpr bool IsBindingTagB = IsBindingTag<T>::value;
+
 template <typename S, Binding binding, typename F, typename... BoundArgs>
 struct NamedTask;
 
@@ -161,14 +170,10 @@ struct TaskTypeDeductor {
                       template <typename> typename Modifier>
             using ArgumentProcessorV = ArgumentProcessor<bindProcess, Tester, Modifier>::kValid;
 
-            static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_b<F, Ts..., FiltBoundArgs...>;
             using Processor = ArgumentProcessor<bind, is_compatible_invocable, NoMod>;
             static constexpr bool kIsValid = Processor::kIsValid;
             static constexpr Binding kBinderDeduct = Processor::kBindDeduct;
-            static constexpr bool kIsReverse = !kIsNormalOrder;
-            using R = Ret;
-            using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
+            static constexpr bool kIsReverse = kBinderDeduct == Binding::kFront;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
                 ArgumentProcessor<kBinderDeduct, std::is_invocable, std::add_const_t>::kIsValid;
@@ -249,9 +254,8 @@ struct TaskTypeDeductor {
     template <typename Sig = Signature>
     using NamedType = NamedTask<Sig, TypeTraits::kBinderDeduct, Ft, BoundArgs...>;
 
-    template <InlineSize size>
-    using HeapType =
-        Task<Signature, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
+    template <typename Sig = Signature, InlineSize size = 16>
+    using HeapType = Task<Sig, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 };
 
 template <auto F_auto, Binding bind, typename... BoundArgs>

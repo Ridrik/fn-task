@@ -33,8 +33,7 @@ int main() {
     // To solve this and make a fn::NamedTask shareable for the same signature and captured
     // arguments, user can cast captureless lambdas explicitly to raw function pointers. See below:
     auto task3 = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
-    // Or, activate boolean template in factory function, to transform it to raw function pointer
-    auto task4 = fn::makeNamedTask<true>([](int, double) {}, 2.0);
+    auto task4 = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
     // Now works
     task3 = task4;
 
@@ -54,7 +53,7 @@ int main() {
     auto module = MyModule{};
     MyModule* mPtr{&module};
     using Payload = double;  // Whatever payload you wish
-    auto subscriberTask = fn::makeNamedTask<true>(
+    auto subscriberTask = fn::makeNamedTask(
         [](Payload payload, void* ptr) {  // You may switch order, it automatically detects front or
                                           // back positioning of captured arguments
             auto& self = *static_cast<MyModule*>(ptr);
@@ -128,13 +127,12 @@ int main() {
         struct Functor {
             std::string data;
 
-            void operator()(std::string& other) const& {
+            void operator()(std::string& other, int b) const& {
                 // data += other;
             }
         };
         auto functor = Functor{};
-        auto a = fn::makeNamedTask(functor, std::ref(s));
-        a();
-        auto aa = fn::makeTask(Functor{}, s);
+        auto a = fn::bindFrontNamedTask(functor, std::ref(s));
+        a(3);
     }
 }
