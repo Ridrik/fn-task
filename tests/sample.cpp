@@ -179,9 +179,15 @@ int main() {
         auto hi = std::string{"hi"};
         auto task = fn::Task<void(double), fn::Copyability::kCopyable, fn::InlineSize{48},
                              fn::Triviality::kNonTrivial>{
-            [](const std::string&, double) noexcept {}, std::cref(hi)};
+            [](const std::string&, double&&) noexcept {}, std::cref(hi)};
         task(3.0);
         std::as_const(task)(3.0);
         std::move(task)(3.0);
+    }
+
+    {
+        // Factory test
+
+        auto task = fn::buildTask([] {}).makeNonTrivial().allowHeap().finished();
     }
 }

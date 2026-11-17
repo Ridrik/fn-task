@@ -1953,6 +1953,13 @@ FORCE_INLINE constexpr auto makeImmutRefTask(BoundArgs&&... args) {
     return makeRefTask<Sig, F>(std::forward<BoundArgs>(args)...);
 }
 
+template <typename F, typename... BoundArgs>
+    requires(!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0)
+FORCE_INLINE constexpr auto buildTask(F&& f, BoundArgs&&... args) {
+    return TaskBuilder<false, DeductorSettings{}, F, BoundArgs...>{
+        std::forward<F>(f), std::forward<BoundArgs>(args)...};
+}
+
 }  // namespace fn
 
 #endif  // FN_TASK_HPP

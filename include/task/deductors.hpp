@@ -148,6 +148,7 @@ struct DeductorSettings {
     Binding binding{Binding::kAuto};
     Optional<Copyability> cb;
     Optional<std::size_t> size;
+    Optional<Triviality> t;
     Optional<HeapPolicy> hp;
     Optional<std::size_t> alg;
 
@@ -166,6 +167,12 @@ struct DeductorSettings {
     [[nodiscard]] consteval auto allowHeap() const noexcept {
         auto copy = *this;
         copy.hp = HeapPolicy::kAllow;
+        return copy;
+    }
+
+    [[nodiscard]] consteval auto makeNonTrivial() const noexcept {
+        auto copy = *this;
+        copy.t = Triviality::kNonTrivial;
         return copy;
     }
 
@@ -337,8 +344,9 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         !settings.cb.has_value() ||
         (*settings.cb != Copyability::kCopyable && kPayloadCopyable == Copyability::kNonCopyable);
     static constexpr auto kCopyable = settings.cb.has_value() ? *settings.cb : kPayloadCopyable;
-    static constexpr auto kTriviality =
+    static constexpr auto kPayloadTriviality =
         TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
+    static constexpr auto kTriviality = settings.t.has_value() ? *settings.t : kPayloadTriviality;
     static constexpr Alignment kAlignment =
         std::max(alignof(PayloadType), alignof(std::max_align_t));
     static constexpr auto kPayloadSize = sizeof(PayloadType);
@@ -397,48 +405,69 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
     }
 };
 
-template <typename Deductor>
+template <bool Ref, DeductorSettings settings, typename Ft, typename... BoundArgs>
 struct TaskBuilder;
 
 template <DeductorSettings settings, typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
-struct TaskBuilder<TaskTypeDeductor<settings, Ft, BoundArgs...>> {
+struct TaskBuilder<false, settings, Ft, BoundArgs...>
+    : TaskTypeDeductor<settings, std::decay_t<Ft>, std::decay_t<BoundArgs>...> {
     TaskBuilder(Ft&& f, BoundArgs&&... args)
         : transitPayload{.f = std::forward<Ft>(f), .args = {std::forward<BoundArgs>(args)...}} {}
 
     PayloadImpl<Ft&&, BoundArgs&&...> transitPayload;
+
+    TaskBuilder(PayloadImpl<Ft&&, BoundArgs&&...>&& payloadOther)
+        : transitPayload{std::move(payloadOther)} {}
+
     using Deductor = TaskTypeDeductor<settings, std::decay_t<Ft>, std::decay_t<BoundArgs>...>;
 
     template <std::size_t N>
-    consteval auto withInlineSize() const noexcept {
+    constexpr auto withInlineSize() noexcept {
         using NewDeductor = UpdateDeductorT<settings.withInlineSize(N), Deductor>;
         static_assert(NewDeductor::kIsValid,
                       "Requested Signature is not compatible with initial/deducted signature");
-        return TaskBuilder<NewDeductor>{std::move(transitPayload)};
+        return TaskBuilder<false, settings.withInlineSize(N), Ft, BoundArgs...>{
+            std::move(transitPayload)};
     }
 
     template <std::size_t N>
         requires(N != 0 && std::has_single_bit(N))
-    consteval auto withAlignment() const noexcept {
+    constexpr auto withAlignment() noexcept {
         using NewDeductor = UpdateDeductorT<settings.withAlignment(N), Deductor>;
         static_assert(NewDeductor::kIsValid,
                       "Requested Signature is not compatible with initial/deducted alignment");
-        return TaskBuilder<NewDeductor>{std::move(transitPayload)};
-    }
-
-    consteval auto allowHeap() const noexcept {
-        return TaskBuilder<UpdateDeductorT<settings.allowHeap(), Deductor>>{
+        return TaskBuilder<false, settings.withAlignment(N), Ft, BoundArgs...>{
             std::move(transitPayload)};
     }
 
-    consteval auto toggleCopyability(bool copyable) const noexcept
-        requires((!settings.cb.has_value() ||
-                  ((*settings.cb != Copyability::kCopyable || !copyable) &&
-                   (*settings.cb != Copyability::kNonCopyable || copyable))))
+    constexpr auto makeNonTrivial() noexcept {
+        return TaskBuilder<false, settings.makeNonTrivial(), Ft, BoundArgs...>{
+            std::move(transitPayload)};
+    }
+
+    constexpr auto allowHeap() noexcept {
+        return TaskBuilder<false, settings.allowHeap(), Ft, BoundArgs...>{
+            std::move(makeNonTrivial().transitPayload)};
+    }
+
+    constexpr auto toggleCopyability(bool copyable) noexcept
+        requires(!settings.cb.has_value() ||
+                 ((* settings.cb != Copyability::kCopyable || !copyable) &&
+                  (* settings.cb != Copyability::kNonCopyable || copyable)))
     {
         using NewDeductor = UpdateDeductorT<settings.setCopyable(copyable), decltype(*this)>;
         static_assert(NewDeductor::kIsValid, "Task is invalid under new copyability setting");
-        return TaskBuilder<NewDeductor>{std::move(transitPayload)};
+        return TaskBuilder<false, settings.setCopyable(copyable), Ft, BoundArgs...>{
+            std::move(transitPayload)};
+    }
+
+    constexpr auto finished() noexcept {
+        auto&& args = std::move(transitPayload.args);
+        return std::move(args).applyAsArgs([this]<typename... Args>(Args&&... args) {
+            return typename Deductor::Type{std::forward<Ft>(transitPayload.f),
+                                           std::forward<Args>(args)...};
+        });
     }
 };
 
