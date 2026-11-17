@@ -62,7 +62,12 @@ template <typename Signature, Copyability cb, InlineSize size, Triviality t, boo
           HeapPolicy hp, Alignment align>
 struct IsTask<Task<Signature, cb, size, t, Extended, hp, align>> : std::true_type {};
 
-template <typename S, typename F, typename... BoundArgs>
+enum class Binding : std::uint8_t { kAuto, kFront, kBack };
+
+template <Binding bind>
+struct BindingTag {};
+
+template <typename S, Binding binding, typename F, typename... BoundArgs>
 struct NamedTask;
 
 template <typename>
@@ -71,8 +76,8 @@ struct IsNamedTask : std::false_type {
     static constexpr bool kIsAuto{false};
 };
 
-template <typename S, typename F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, F, BoundArgs...>> : std::true_type {
+template <typename S, Binding binding, typename F, typename... BoundArgs>
+struct IsNamedTask<NamedTask<S, binding, F, BoundArgs...>> : std::true_type {
     static constexpr bool kIsRef{false};
     static constexpr bool kIsAuto{false};
 };
@@ -88,28 +93,11 @@ struct NamedTaskStaticRefTag {};
 template <auto F>
 struct StaticFn {};
 
-template <typename S, typename F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, NamedTaskRefTag<F>, BoundArgs...>> : std::true_type {
-    static constexpr bool kIsRef{true};
-    static constexpr bool kIsAuto{false};
-};
-
-template <typename S, auto F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, StaticFn<F>, BoundArgs...>> : std::true_type {
+template <typename S, Binding binding, auto F, typename... BoundArgs>
+struct IsNamedTask<NamedTask<S, binding, StaticFn<F>, BoundArgs...>> : std::true_type {
     static constexpr bool kIsRef{false};
     static constexpr bool kIsAuto{true};
 };
-
-template <typename S, auto F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, NamedTaskStaticRefTag<F>, BoundArgs...>> : std::true_type {
-    static constexpr bool kIsRef{true};
-    static constexpr bool kIsAuto{true};
-};
-
-enum class Binding : std::uint8_t { kAuto, kFront, kBack };
-
-template <Binding bind>
-struct BindingTag {};
 
 template <Binding bind, typename Ft, typename... BoundArgs>
     requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
@@ -259,7 +247,7 @@ struct TaskTypeDeductor {
         Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
 
     template <typename Sig = Signature>
-    using NamedType = NamedTask<Sig, Ft, BoundArgs...>;
+    using NamedType = NamedTask<Sig, TypeTraits::kBinderDeduct, Ft, BoundArgs...>;
 
     template <InlineSize size>
     using HeapType =
@@ -414,7 +402,7 @@ struct TaskTypeDeductorAuto {
         Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
 
     template <typename Sig = Signature>
-    using NamedType = NamedTask<Sig, StaticFn<F_auto>, BoundArgs...>;
+    using NamedType = NamedTask<Sig, TypeTraits::kBinderDeduct, StaticFn<F_auto>, BoundArgs...>;
 
     template <InlineSize size>
     using SizedType =

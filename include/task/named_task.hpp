@@ -22,14 +22,14 @@ struct TypePayloadSelector {
     using type = PayloadT<F, Args...>;
 };
 
-template <typename Task, typename Payload, typename Signature, bool IsConst = false,
-          bool LVRef = false, bool RVRef = false, bool IsNoExcept = false>
+template <Binding binding, typename Task, typename Payload, typename Signature,
+          bool IsConst = false, bool LVRef = false, bool RVRef = false, bool IsNoExcept = false>
 struct NamedTaskInvoker;
 
-template <typename Task, typename F, typename... BoundArgs, typename Ret, typename... Args,
-          bool IsConst, bool LVRef, bool RVRef, bool IsNoExcept>
-struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsConst, LVRef, RVRef,
-                        IsNoExcept> {
+template <Binding binding, typename Task, typename F, typename... BoundArgs, typename Ret,
+          typename... Args, bool IsConst, bool LVRef, bool RVRef, bool IsNoExcept>
+struct NamedTaskInvoker<binding, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsConst, LVRef,
+                        RVRef, IsNoExcept> {
     template <typename T>
     using ApplyQualifiers = std::conditional_t<
         LVRef, std::add_lvalue_reference_t<std::conditional_t<IsConst, std::add_const_t<T>, T>>,
@@ -52,7 +52,8 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsCons
                               : std::is_invocable_v<Ft, Argst...>);
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept(IsNoExcept) {
-        if constexpr (kInvocableVerifierV<Convert<F>,
+        if constexpr (binding != Binding::kFront &&
+                      kInvocableVerifierV<Convert<F>,
                                           CallArgTag<decltype(std::forward<Args>(args))>...,
                                           Convert<BoundArgs>...>) {
             if constexpr (kCVLess) {
@@ -62,7 +63,8 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsCons
                 return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
                     .invoke(std::forward<Args>(args)...);
             }
-        } else if constexpr (kInvocableVerifierV<
+        } else if constexpr (binding != Binding::kBack &&
+                             kInvocableVerifierV<
                                  Convert<F>, Convert<BoundArgs>...,
                                  CallArgTag<decltype(std::forward<Args>(args))>...>) {
             if constexpr (kCVLess) {
@@ -79,27 +81,28 @@ struct NamedTaskInvoker<Task, PayloadImpl<F, BoundArgs...>, Ret(Args...), IsCons
     }
 };
 
-template <typename Task, typename Payload, typename Signature>
+template <Binding binding, typename Task, typename Payload, typename Signature>
     requires(!IsBaseSignature<Signature>)
-struct NamedTaskInvoker<Task, Payload, Signature>
-    : NamedTaskInvoker<Task, Payload, typename FunctionTraits<Signature>::base_signature,
+struct NamedTaskInvoker<binding, Task, Payload, Signature>
+    : NamedTaskInvoker<binding, Task, Payload, typename FunctionTraits<Signature>::base_signature,
                        FunctionTraits<Signature>::kIsConst, FunctionTraits<Signature>::kIsLValueRef,
                        FunctionTraits<Signature>::kIsRValueRef,
                        FunctionTraits<Signature>::kIsNoExcept> {};
 
-template <typename S, typename F, typename... BoundArgs>
+template <typename S, Binding binding, typename F, typename... BoundArgs>
 struct NamedTask;
 
-template <typename S, typename F, typename... BoundArgs>
+template <typename S, Binding binding, typename F, typename... BoundArgs>
     requires(FunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>::kValid &&
              FunctionTraits<S>::kValid)
-struct NamedTask<S, F, BoundArgs...>
-    : NamedTaskInvoker<NamedTask<S, F, BoundArgs...>, PayloadImpl<F, BoundArgs...>, S> {
+struct NamedTask<S, binding, F, BoundArgs...>
+    : NamedTaskInvoker<binding, NamedTask<S, binding, F, BoundArgs...>,
+                       PayloadImpl<F, BoundArgs...>, S> {
    private:
-    template <typename, typename, typename, bool, bool, bool, bool>
+    template <Binding, typename, typename, typename, bool, bool, bool, bool>
     friend struct NamedTaskInvoker;
 
-    template <typename, typename, typename...>
+    template <typename, Binding, typename, typename...>
     friend struct NamedTask;
 
     using CallableImpl = F;
@@ -140,19 +143,20 @@ struct NamedTask<S, F, BoundArgs...>
     template <typename SigOther, typename OtherF>
         requires(std::is_convertible_v<OtherF, F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask(const NamedTask<SigOther, OtherF, BoundArgs...>& other) : payload_{other.payload_} {}
+    NamedTask(const NamedTask<SigOther, binding, OtherF, BoundArgs...>& other)
+        : payload_{other.payload_} {}
 
     template <typename SigOther, auto OtherF>
         requires(std::is_convertible_v<decltype(OtherF), F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask(const NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>& other)
+    NamedTask(const NamedTask<SigOther, binding, StaticFn<OtherF>, BoundArgs...>& other)
         : payload_{.f = static_cast<FunctionTraits<decltype(OtherF)>::func_ptr>(OtherF),
                    .args = other.payload_.args} {}
 
     template <typename SigOther, typename OtherF>
         requires(std::is_convertible_v<OtherF, F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask& operator=(const NamedTask<SigOther, OtherF, BoundArgs...>& other) {
+    NamedTask& operator=(const NamedTask<SigOther, binding, OtherF, BoundArgs...>& other) {
         this->payload_ = other.payload_;
         return *this;
     }
@@ -160,7 +164,8 @@ struct NamedTask<S, F, BoundArgs...>
     template <typename SigOther, auto OtherF>
         requires(std::is_convertible_v<decltype(OtherF), F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask& operator=(const NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>& other) {
+    NamedTask& operator=(
+        const NamedTask<SigOther, binding, StaticFn<OtherF>, BoundArgs...>& other) {
         this->payload_ = {.f = static_cast<FunctionTraits<decltype(OtherF)>::func_ptr>(OtherF),
                           .args = other.payload_.args};
         return *this;
@@ -168,20 +173,20 @@ struct NamedTask<S, F, BoundArgs...>
     template <typename SigOther, typename OtherF>
         requires(std::is_convertible_v<OtherF, F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask(NamedTask<SigOther, OtherF, BoundArgs...>&& other)
+    NamedTask(NamedTask<SigOther, binding, OtherF, BoundArgs...>&& other)
         : payload_{std::move(other).payload_} {}
 
     template <typename SigOther, auto OtherF>
         requires(std::is_convertible_v<decltype(OtherF), F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask(NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>&& other)
+    NamedTask(NamedTask<SigOther, binding, StaticFn<OtherF>, BoundArgs...>&& other)
         : payload_{.f = static_cast<decltype(OtherF)*>(OtherF),
                    .args = std::move(other).payload_.args} {}
 
     template <typename SigOther, typename OtherF>
         requires(std::is_convertible_v<OtherF, F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask& operator=(NamedTask<SigOther, OtherF, BoundArgs...>&& other) {
+    NamedTask& operator=(NamedTask<SigOther, binding, OtherF, BoundArgs...>&& other) {
         this->payload_ = std::move(other).payload_;
         return *this;
     }
@@ -189,7 +194,7 @@ struct NamedTask<S, F, BoundArgs...>
     template <typename SigOther, auto OtherF>
         requires(std::is_convertible_v<decltype(OtherF), F> &&
                  IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask& operator=(NamedTask<SigOther, StaticFn<OtherF>, BoundArgs...>&& other) {
+    NamedTask& operator=(NamedTask<SigOther, binding, StaticFn<OtherF>, BoundArgs...>&& other) {
         this->payload_ = {.f = static_cast<decltype(OtherF)*>(OtherF),
                           .args = std::move(other).payload_.args};
         return *this;
@@ -205,15 +210,15 @@ struct NamedTask<S, F, BoundArgs...>
                    .args = {std::forward<decltype(args)>(args)...}} {}
 };
 
-template <typename S, auto F, typename... BoundArgs>
-struct NamedTask<S, StaticFn<F>, BoundArgs...>
-    : NamedTaskInvoker<NamedTask<S, StaticFn<F>, BoundArgs...>,
+template <typename S, Binding binding, auto F, typename... BoundArgs>
+struct NamedTask<S, binding, StaticFn<F>, BoundArgs...>
+    : NamedTaskInvoker<binding, NamedTask<S, binding, StaticFn<F>, BoundArgs...>,
                        PayloadImpl<decltype(F), BoundArgs...>, S> {
    private:
-    template <typename, typename, typename, bool, bool, bool, bool>
+    template <Binding, typename, typename, typename, bool, bool, bool, bool>
     friend struct NamedTaskInvoker;
 
-    template <typename, typename, typename...>
+    template <typename, Binding, typename, typename...>
     friend struct NamedTask;
 
     using PayloadType = PayloadImplArgs<F, BoundArgs...>;
@@ -253,24 +258,24 @@ struct NamedTask<S, StaticFn<F>, BoundArgs...>
 
     template <typename SigOther>
         requires(IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask(const NamedTask<SigOther, StaticFn<F>, BoundArgs...>& other)
+    NamedTask(const NamedTask<SigOther, binding, StaticFn<F>, BoundArgs...>& other)
         : payload_{.args = other.payload_.args} {}
 
     template <typename SigOther>
         requires(IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask& operator=(const NamedTask<SigOther, StaticFn<F>, BoundArgs...>& other) {
+    NamedTask& operator=(const NamedTask<SigOther, binding, StaticFn<F>, BoundArgs...>& other) {
         this->payload_.args = other.payload_.args;
         return *this;
     }
 
     template <typename SigOther>
         requires(IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask(NamedTask<SigOther, StaticFn<F>, BoundArgs...>&& other)
+    NamedTask(NamedTask<SigOther, binding, StaticFn<F>, BoundArgs...>&& other)
         : payload_{.args = std::move(other).payload_.args} {}
 
     template <typename SigOther>
         requires(IsSignatureCompatible<SigOther, Signature>::value)
-    NamedTask& operator=(NamedTask<SigOther, StaticFn<F>, BoundArgs...>&& other) {
+    NamedTask& operator=(NamedTask<SigOther, binding, StaticFn<F>, BoundArgs...>&& other) {
         this->payload.args = std::move(other).payload.args;
         return *this;
     }
@@ -283,7 +288,7 @@ template <typename F, typename... BoundArgs>
 NamedTask(F&&, BoundArgs&&...)
     -> NamedTask<typename TaskTypeDeductor<Binding::kAuto, std::decay_t<F>,
                                            std::decay_t<BoundArgs>...>::Signature,
-                 std::decay_t<F>, std::decay_t<BoundArgs>...>;
+                 Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>;
 
 template <auto F, typename... BoundArgs>
     requires HasFunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>> &&
@@ -377,8 +382,8 @@ FORCE_INLINE auto makeRefNamedTask(auto&& f)
     requires IsNamedTask<std::decay_t<decltype(f)>>::value
 {
     using NamedTaskSrc = std::decay_t<decltype(f)>;
-    return NamedTask<typename NamedTaskSrc::Signature, AddRefWrapperToRef_t<decltype(f)>>{
-        std::forward<decltype(f)>(f)};
+    return NamedTask<typename NamedTaskSrc::Signature, Binding::kAuto,
+                     AddRefWrapperToRef_t<decltype(f)>>{std::forward<decltype(f)>(f)};
 }
 
 template <typename T>
@@ -391,8 +396,8 @@ FORCE_INLINE auto makeThisTask(F&& f, BoundArg&& arg)
     requires ErasableToPointer<decltype(arg)>
 {
     using ptr = typename FunctionTraits<std::decay_t<F>>::func_ptr;
-    return NamedTask<typename TaskTypeDeductor<Binding::kAuto, ptr, void*>::Signature, ptr, void*>{
-        std::forward<F>(f), std::forward<BoundArg>(arg)};
+    return NamedTask<typename TaskTypeDeductor<Binding::kAuto, ptr, void*>::Signature,
+                     Binding::kAuto, ptr, void*>{std::forward<F>(f), std::forward<BoundArg>(arg)};
 }
 
 template <auto F, typename BoundArg>
@@ -407,8 +412,8 @@ FORCE_INLINE auto makeThisTask(BoundArg&& arg)
     requires ErasableToPointer<decltype(arg)>
 {
     using ptr = typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr;
-    return NamedTask<typename TaskTypeDeductor<Binding::kAuto, ptr, void*>::Signature, ptr, void*>{
-        static_cast<ptr>(F), std::forward<BoundArg>(arg)};
+    return NamedTask<typename TaskTypeDeductor<Binding::kAuto, ptr, void*>::Signature,
+                     Binding::kAuto, ptr, void*>{static_cast<ptr>(F), std::forward<BoundArg>(arg)};
 }
 
 }  // namespace fn

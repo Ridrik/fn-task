@@ -32,7 +32,7 @@ int main() {
 
     // To solve this and make a fn::NamedTask shareable for the same signature and captured
     // arguments, user can cast captureless lambdas explicitly to raw function pointers. See below:
-    auto task3 = fn::NamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
+    auto task3 = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
     // Or, activate boolean template in factory function, to transform it to raw function pointer
     auto task4 = fn::makeNamedTask<true>([](int, double) {}, 2.0);
     // Now works
