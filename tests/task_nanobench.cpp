@@ -355,7 +355,7 @@ void flexTaskTest() {
     std::shared_ptr<int> kekers{std::make_shared<int>(2)};
     fault::expect_at(kekers.use_count() == 1);
     {
-        auto task = fn::makeImmutRefTask(
+        auto task = fn::makeRefTask(
             [](int a, const std::shared_ptr<int>& xd, const std::shared_ptr<int>& xd2) {}, b,
             kekers, std::make_shared<int>(3));
         fault::expect_at(kekers.use_count() == 1);
@@ -592,8 +592,8 @@ void doCompareOrder() {
     static constexpr auto kFunc = [](std::string_view c, int a, bool b) -> bool {
         return static_cast<bool>(a + b);
     };
-    const auto f = fn::makeImmutTask<kFunc>(false);
-    const auto f2 = fn::makeImmutTask<bool(int, bool) const, kFunc>(std::string_view{});
+    const auto f = fn::makeTask<kFunc>(false);
+    const auto f2 = fn::makeTask<kFunc>(std::string_view{});
     b.run("Normal order", [&] { ankerl::nanobench::doNotOptimizeAway(f({}, 2)); });
     b.run("Reserve Order", [&] { ankerl::nanobench::doNotOptimizeAway(f2(0, false)); });
 }

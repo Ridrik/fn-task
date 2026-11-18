@@ -217,11 +217,11 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) {
         if constexpr (size == 0) {
-            return (static_cast<Task>(self)).storage_.invoker(std::forward<Args>(args)...);
+            return (const_cast<Task&>(self)).storage_.invoker(std::forward<Args>(args)...);
         } else {
-            return (static_cast<Task>(self))
+            return (const_cast<Task&>(self))
                 .storage_.invoker(
-                    static_cast<void*>((static_cast<Task>(self)).storage_.data.data()),
+                    static_cast<void*>((const_cast<Task&>(self)).storage_.data.data()),
                     std::forward<Args>(args)...);
         }
     }
@@ -673,22 +673,10 @@ struct Storage<alignment, 0, Triviality::kNonTrivial, true, Signature> {
     }
 };
 
-template <typename Signature, Copyability cb = Copyability::kCopyable,
-          InlineSize size = alignof(std::max_align_t), Triviality t = Triviality::kTrivial,
-          bool Extended = false, HeapPolicy hp = HeapPolicy::kDisallow,
-          Alignment align = alignof(std::max_align_t)>
+template <typename Signature, Copyability cb = Copyability::kCopyable, InlineSize size = 16,
+          Triviality t = Triviality::kTrivial, bool Extended = false,
+          HeapPolicy hp = HeapPolicy::kDisallow, Alignment align = alignof(std::max_align_t)>
 struct Task;
-
-template <auto F>
-struct FunctionTag {};
-
-template <typename T>
-struct IsFunctionTag : std::false_type {};
-
-template <auto F>
-struct IsFunctionTag<FunctionTag<F>> : std::true_type {};
-
-struct RefTag {};
 
 template <typename S, Copyability cb, InlineSize size, Triviality t, bool Extended, HeapPolicy hp,
           Alignment align>
@@ -701,6 +689,9 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
 
     // NOLINTBEGIN
     static constexpr std::size_t kSize = size;
+    static constexpr auto kTriviality = t;
+    static constexpr auto kHeapPolicy = hp;
+    static constexpr auto kCopyability = cb;
     static constexpr bool kIsTrivial = t == Triviality::kTrivial;
     static constexpr bool kAllowHeap = hp == HeapPolicy::kAllow;
     static constexpr bool kCopyable = cb == Copyability::kCopyable;
@@ -730,7 +721,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         (op == Op::kMove || op == Op::kMoveAssign) &&
         (tSrc == Triviality::kNonTrivial || kIsTrivial || !kAllowHeap || sizeSrc <= size))
         requires std::same_as<std::remove_cvref_t<decltype(other)>,
-                              Task<SigOther, cbSrc, sizeSrc, tSrc, ExtSrc, hpSrc>>
+                              Task<SigOther, cbSrc, sizeSrc, tSrc, ExtSrc, hpSrc, align>>
     {
         using SrcType = std::remove_cvref_t<decltype(other)>;
         static_assert(std::is_const_v<std::remove_reference_t<decltype(other)>> ||
@@ -1553,171 +1544,74 @@ Task(Task<Sig, cp, size, t, Ext, hp, align>) -> Task<Sig, cp, size, t, Ext, hp, 
 template <auto F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
              FunctionTraits<decltype(F)>::kValid &&
-             TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, BoundArgs...>::kIsValid)
-Task(FunctionTag<F>, BoundArgs&&...) -> Task<
-    typename TaskTypeDeductorAuto<F, {.binding = Binding::kAuto},
-                                  std::decay_t<BoundArgs>...>::Signature,
-    TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, std::decay_t<BoundArgs>...>::kCopyable,
-    TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, std::decay_t<BoundArgs>...>::kPayloadSize,
-    TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, std::decay_t<BoundArgs>...>::kTriviality,
-    false, HeapPolicy::kDisallow,
-    TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, std::decay_t<BoundArgs>...>::kAlignment>;
+             TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                  BoundArgs...>::kIsValid)
+Task(FunctionTag<F>, BoundArgs&&...)
+    -> Task<typename TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                          std::decay_t<BoundArgs>...>::Signature,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 std::decay_t<BoundArgs>...>::kCopyable,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 std::decay_t<BoundArgs>...>::kPayloadSize,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 std::decay_t<BoundArgs>...>::kTriviality,
+            false, HeapPolicy::kDisallow,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 std::decay_t<BoundArgs>...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(
         !std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
         FunctionTraits<std::remove_reference_t<std::unwrap_reference_t<std::decay_t<F>>>>::kValid &&
         (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
-        TaskTypeDeductor<{.binding = Binding::kAuto}, std::decay_t<F>,
+        TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, std::decay_t<F>,
                          std::decay_t<BoundArgs>...>::kIsValid)
 Task(F&&, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductor<{.binding = Binding::kAuto}, std::decay_t<F>,
-                                      std::decay_t<BoundArgs>...>::Signature,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, std::decay_t<F>,
+    -> Task<typename TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto},
+                                      std::decay_t<F>, std::decay_t<BoundArgs>...>::Signature,
+            TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, std::decay_t<F>,
                              std::decay_t<BoundArgs>...>::kCopyable,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, std::decay_t<F>,
+            TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, std::decay_t<F>,
                              std::decay_t<BoundArgs>...>::kPayloadSize,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, std::decay_t<F>,
+            TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, std::decay_t<F>,
                              std::decay_t<BoundArgs>...>::kTriviality,
             false, HeapPolicy::kDisallow,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, std::decay_t<F>,
+            TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, std::decay_t<F>,
                              std::decay_t<BoundArgs>...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(!IsFunctionTag<F>::value &&
              FunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>::kValid &&
-             TaskTypeDeductor<{.binding = Binding::kAuto}, F, BoundArgs...>::kIsValid)
-Task(RefTag, F&&, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductor<{.binding = Binding::kAuto}, F, BoundArgs...>::Signature,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, F, BoundArgs...>::kCopyable,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, F, BoundArgs...>::kPayloadSize,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, F, BoundArgs...>::kTriviality, false,
-            HeapPolicy::kDisallow,
-            TaskTypeDeductor<{.binding = Binding::kAuto}, F, BoundArgs...>::kAlignment>;
+             TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, F,
+                              BoundArgs...>::kIsValid)
+Task(RefTag, F&&, BoundArgs&&...) -> Task<
+    typename TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, F,
+                              BoundArgs...>::Signature,
+    TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, F, BoundArgs...>::kCopyable,
+    TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, F,
+                     BoundArgs...>::kPayloadSize,
+    TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, F,
+                     BoundArgs...>::kTriviality,
+    false, HeapPolicy::kDisallow,
+    TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, F,
+                     BoundArgs...>::kAlignment>;
 
 template <auto F, typename... BoundArgs>
     requires(FunctionTraits<decltype(F)>::kValid &&
-             TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, BoundArgs...>::kIsValid)
+             TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                  BoundArgs...>::kIsValid)
 Task(RefTag, FunctionTag<F>, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, BoundArgs...>::Signature,
-            TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, BoundArgs...>::kCopyable,
-            TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, BoundArgs...>::kPayloadSize,
-            TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, BoundArgs...>::kTriviality, false,
-            HeapPolicy::kDisallow,
-            TaskTypeDeductorAuto<F, {.binding = Binding::kAuto}, BoundArgs...>::kAlignment>;
-
-template <Binding binding = Binding::kAuto, typename F, typename... BoundArgs>
-    requires(!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0)
-FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    using Deductor =
-        TaskTypeDeductor<{.binding = binding}, std::decay_t<F>, std::decay_t<BoundArgs>...>;
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<>{BindingTag<binding>{}, std::forward<F>(f),
-                                              std::forward<BoundArgs>(args)...};
-}
-
-FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
-{
-    return makeTask<Binding::kFront>(std::forward<decltype(f)>(f),
-                                     std::forward<decltype(args)>(args)...);
-}
-
-FORCE_INLINE auto bindBackTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
-{
-    return makeTask<Binding::kBack>(std::forward<decltype(f)>(f),
-                                    std::forward<decltype(args)>(args)...);
-}
-
-FORCE_INLINE constexpr auto makeTask(auto&& f)
-    requires IsTask<std::decay_t<decltype(f)>>::value
-{
-    return std::decay_t<decltype(f)>{std::forward<decltype(f)>(f)};
-}
-
-template <auto F, Binding binding = Binding::kAuto, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, {.binding = binding}, std::decay_t<BoundArgs>...>;
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<>{FunctionTag<F>{}, BindingTag<binding>{},
-                                              std::forward<BoundArgs>(args)...};
-}
-
-template <auto F>
-FORCE_INLINE auto bindFrontTask(auto&&... args) {
-    return makeTask<F, Binding::kFront>(std::forward<decltype(args)>(args)...);
-}
-
-template <auto F>
-FORCE_INLINE auto bindBackTask(auto&&... args) {
-    return makeTask<F, Binding::kBack>(std::forward<decltype(args)>(args)...);
-}
-
-template <typename Sig, Binding binding = Binding::kAuto, typename F, typename... BoundArgs>
-    requires(!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0)
-FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
-    static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
-                  "Given callable is invalid");
-    using Deductor =
-        TaskTypeDeductor<{.binding = binding}, std::decay_t<F>, std::decay_t<BoundArgs>...>;
-    static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
-                  "Forwarded callable and arguments do not match requested signature");
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<Sig>{BindingTag<binding>{}, std::forward<F>(f),
-                                                 std::forward<BoundArgs>(args)...};
-}
-
-template <typename Sig>
-FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
-{
-    return makeTask<Sig, Binding::kFront>(std::forward<decltype(f)>(f),
-                                          std::forward<decltype(args)>(args)...);
-}
-
-template <typename Sig>
-FORCE_INLINE auto bindBackTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
-{
-    return makeTask<Sig, Binding::kBack>(std::forward<decltype(f)>(f),
-                                         std::forward<decltype(args)>(args)...);
-}
-
-template <typename Sig>
-FORCE_INLINE constexpr auto makeTask(auto&& f)
-    requires IsTask<std::decay_t<decltype(f)>>::value
-{
-    using TaskSrc = std::decay_t<decltype(f)>;
-    static_assert(kIsSignatureCompatibleB<typename TaskSrc::Signature, Sig>,
-                  "Argument signature is not compatible with requested signature");
-    return Task<Sig, TaskSrc::Copyable, TaskSrc::Size, TaskSrc::IsTrivial, TaskSrc::kIsExtended,
-                TaskSrc::AllowHeap, TaskSrc::kAlignment>{std::forward<decltype(f)>(f)};
-}
-
-template <typename Sig, auto F, Binding binding = Binding::kAuto, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
-    static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, {.binding = binding}, std::decay_t<BoundArgs>...>;
-    static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
-                  "Forwarded callable and arguments are not compatible with requested signature");
-    static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
-    return typename Deductor::template Type<Sig>{FunctionTag<F>{}, BindingTag<binding>{},
-                                                 std::forward<BoundArgs>(args)...};
-}
-
-template <typename Sig, auto F>
-FORCE_INLINE auto bindFrontTask(auto&&... args) {
-    return makeTask<Sig, F, Binding::kFront>(std::forward<decltype(args)>(args)...);
-}
-
-template <typename Sig, auto F>
-FORCE_INLINE auto bindBackTask(auto&&... args) {
-    return makeTask<Sig, F, Binding::kBack>(std::forward<decltype(args)>(args)...);
-}
+    -> Task<typename TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                          BoundArgs...>::Signature,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 BoundArgs...>::kCopyable,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 BoundArgs...>::kPayloadSize,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 BoundArgs...>::kTriviality,
+            false, HeapPolicy::kDisallow,
+            TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = Binding::kAuto},
+                                 BoundArgs...>::kAlignment>;
 
 template <InlineSize size = 16, Binding binding = Binding::kAuto, typename F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args)
@@ -1725,8 +1619,8 @@ FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args)
 {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor =
-        TaskTypeDeductor<{.binding = binding}, std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, std::decay_t<F>,
+                                      std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template HeapType<typename Deductor::Signature, size>{
         BindingTag<binding>{}, std::forward<F>(f), std::forward<BoundArgs>(args)...};
@@ -1736,7 +1630,8 @@ template <InlineSize size = 16, Binding binding = Binding::kAuto>
 FORCE_INLINE constexpr auto makeFlexTask(auto&& f)
     requires IsTask<std::decay_t<decltype(f)>>::value
 {
-    using Deductor = TaskTypeDeductor<{.binding = binding}, std::decay_t<decltype(f)>>;
+    using Deductor =
+        TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, std::decay_t<decltype(f)>>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template HeapType<typename Deductor::Signature, size>{
         std::forward<decltype(f)>(f)};
@@ -1749,8 +1644,8 @@ FORCE_INLINE constexpr auto makeFlexTask(F&& f, BoundArgs&&... args)
 {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_ref_decay_t<F>>>,
                   "Given callable is invalid");
-    using Deductor =
-        TaskTypeDeductor<{.binding = binding}, std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, std::decay_t<F>,
+                                      std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
@@ -1763,8 +1658,8 @@ template <typename Sig, Binding binding = Binding::kAuto, InlineSize size = 16, 
 FORCE_INLINE constexpr auto makeFlexTask(auto&& f)
     requires IsTask<std::decay_t<decltype(f)>>::value
 {
-    using Deductor =
-        TaskTypeDeductor<{.binding = binding}, std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, std::decay_t<F>,
+                                      std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
@@ -1774,7 +1669,8 @@ FORCE_INLINE constexpr auto makeFlexTask(auto&& f)
 template <InlineSize size = 16, auto F, Binding binding = Binding::kAuto, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, {.binding = binding}, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = binding},
+                                          std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template HeapType<typename Deductor::Signature, size>{
         FunctionTag<F>{}, BindingTag<binding>{}, std::forward<BoundArgs>(args)...};
@@ -1784,7 +1680,8 @@ template <typename Sig, InlineSize size = 16, auto F, Binding binding = Binding:
           typename... BoundArgs>
 FORCE_INLINE constexpr auto makeFlexTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<decltype(F)>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, {.binding = binding}, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = binding},
+                                          std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(std::is_same_v<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments do not match requested signature");
@@ -1796,7 +1693,7 @@ template <Binding binding = Binding::kAuto, typename F, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<{.binding = binding}, F, BoundArgs...>;
+    using Deductor = TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, F, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{RefTag{}, BindingTag<binding>{}, std::forward<F>(f),
                                               std::forward<BoundArgs>(args)...};
@@ -1806,7 +1703,7 @@ template <typename Sig, Binding binding = Binding::kAuto, typename F, typename..
 FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>,
                   "Given callable is invalid");
-    using Deductor = TaskTypeDeductor<{.binding = binding}, F, BoundArgs...>;
+    using Deductor = TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, F, BoundArgs...>;
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
@@ -1817,7 +1714,8 @@ FORCE_INLINE constexpr auto makeRefTask(F&& f, BoundArgs&&... args) {
 template <auto F, Binding binding = Binding::kAuto, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, {.binding = binding}, BoundArgs...>;
+    using Deductor =
+        TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = binding}, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     return typename Deductor::template Type<>{RefTag{}, FunctionTag<F>{}, BindingTag<binding>{},
                                               std::forward<BoundArgs>(args)...};
@@ -1826,7 +1724,8 @@ FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
 template <typename Sig, auto F, Binding binding = Binding::kAuto, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
     static_assert(HasFunctionTraits<std::decay_t<decltype(F)>>, "Given callable is invalid");
-    using Deductor = TaskTypeDeductorAuto<F, {.binding = binding}, BoundArgs...>;
+    using Deductor =
+        TaskTypeDeductorAuto<F, DeductorSettings<void>{.binding = binding}, BoundArgs...>;
     static_assert(Deductor::kIsValid, "Forwarded callable is not callable with given arguments");
     static_assert(kIsSignatureCompatibleB<typename Deductor::Signature, Sig>,
                   "Forwarded callable and arguments are not compatible with requested signature");
@@ -1834,130 +1733,119 @@ FORCE_INLINE constexpr auto makeRefTask(BoundArgs&&... args) {
                                               std::forward<BoundArgs>(args)...};
 }
 
-template <Binding binding = Binding::kAuto, typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutTask(F&& f, BoundArgs&&... args) {
-    static_assert(
-        decltype(makeTask<binding>(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
-        "Signature is immutable");
-    return makeTask<binding>(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <Binding binding = Binding::kAuto, auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutTask(BoundArgs&&... args) {
-    static_assert(decltype(makeTask<F, binding>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeTask<F, binding>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutTask(F&& f, BoundArgs&&... args) {
-    using TaskType = decltype(makeTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...));
-    static_assert(TaskType::kMutable, "Signature is immutable");
-    return makeTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutTask(BoundArgs&&... args) {
-    static_assert(decltype(makeTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeTask<Sig, F>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutRefTask(F&& f, BoundArgs&&... args) {
-    static_assert(
-        decltype(makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
-        "Signature is immutable");
-    return makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutRefTask(F&& f, BoundArgs&&... args) {
-    using TaskType =
-        decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...));
-    static_assert(TaskType::kMutable, "Signature is immutable");
-    return makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutRefTask(BoundArgs&&... args) {
-    static_assert(decltype(makeRefTask<F>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeRefTask<F>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeMutRefTask(BoundArgs&&... args) {
-    static_assert(decltype(makeRefTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is immutable");
-    return makeRefTask<F, Sig>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutTask(F&& f, BoundArgs&&... args) {
-    static_assert(
-        !decltype(makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
-        "Signature is mutable");
-    return makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutTask(BoundArgs&&... args) {
-    static_assert(!decltype(makeTask<F>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is mutable");
-    return makeTask<F>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutTask(F&& f, BoundArgs&&... args) {
-    static_assert(
-        !decltype(makeTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
-        "Signature is mutable");
-    return makeTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutTask(BoundArgs&&... args) {
-    static_assert(!decltype(makeTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is mutable");
-    return makeTask<F>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutRefTask(F&& f, BoundArgs&&... args) {
-    static_assert(
-        !decltype(makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
-        "Signature is mutable");
-    return makeRefTask(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, typename F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutRefTask(F&& f, BoundArgs&&... args) {
-    static_assert(
-        !decltype(makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...))::kMutable,
-        "Signature is mutable");
-    return makeRefTask<Sig>(std::forward<F>(f), std::forward<BoundArgs>(args)...);
-}
-
-template <auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutRefTask(BoundArgs&&... args) {
-    static_assert(!decltype(makeRefTask<F>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is mutable");
-    return makeRefTask<F>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename Sig, auto F, typename... BoundArgs>
-FORCE_INLINE constexpr auto makeImmutRefTask(BoundArgs&&... args) {
-    static_assert(!decltype(makeRefTask<Sig, F>(std::forward<BoundArgs>(args)...))::kMutable,
-                  "Signature is mutable");
-    return makeRefTask<Sig, F>(std::forward<BoundArgs>(args)...);
-}
-
-template <typename F, typename... BoundArgs>
-    requires(!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0)
+template <auto settings = DeductorSettings<void>{}, typename F, typename... BoundArgs>
+    requires(IsDeductorSettings<settings>::value &&
+             (!IsTask<std::decay_t<F>>::value || sizeof...(BoundArgs) > 0))
 FORCE_INLINE constexpr auto buildTask(F&& f, BoundArgs&&... args) {
-    return TaskBuilder<false, DeductorSettings{}, F, BoundArgs...>{
-        std::forward<F>(f), std::forward<BoundArgs>(args)...};
+    return TaskBuilder<settings, F, BoundArgs...>{std::forward<F>(f),
+                                                  std::forward<BoundArgs>(args)...};
+}
+
+template <auto settings = DeductorSettings<void>{}, typename F, typename... BoundArgs>
+    requires(IsTask<std::decay_t<F>>::value)
+FORCE_INLINE constexpr auto buildTask(F&& f) {
+    using TaskSrc = std::decay_t<F>;
+    static constexpr auto kSettings = DeductorSettings<typename TaskSrc::Signature>{
+        .binding = settings.binding,
+        .cb = settings.cb.value_or(TaskSrc::kCopyability),
+        .size = settings.size.value_or(TaskSrc::kSize),
+        .t = settings.t.value_or(TaskSrc::kTriviality),
+        .hp = settings.hp.value_or(TaskSrc::kHeapPolicy),
+        .alg = settings.alg.value_or(TaskSrc::kAlignment),
+        .ref = settings.ref};
+    return TaskBuilder<kSettings, F, BoundArgs...>{std::forward<F>(f)};
+}
+
+template <auto F, auto settings = DeductorSettings<void>{}, typename... BoundArgs>
+FORCE_INLINE constexpr auto buildTask(BoundArgs&&... args) {
+    return TaskBuilder<settings, FunctionTag<F>, BoundArgs...>{std::forward<BoundArgs>(args)...};
+}
+
+template <auto settings = DeductorSettings<void>{}, typename F, typename... BoundArgs>
+    requires IsDeductorSettings<settings>::value
+FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
+    return buildTask<settings>(std::forward<F>(f), std::forward<BoundArgs>(args)...).build();
+}
+
+template <auto F, auto settings = DeductorSettings<void>{}, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
+    return buildTask<F, settings>(std::forward<BoundArgs>(args)...).build();
+}
+
+template <typename Signature, typename F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeTask(F&& f, BoundArgs&&... args) {
+    return buildTask(std::forward<F>(f), std::forward<BoundArgs>(args)...)
+        .template withSignature<Signature>()
+        .build();
+}
+
+template <typename Signature, auto F, typename... BoundArgs>
+FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
+    return buildTask<F>(std::forward<BoundArgs>(args)...)
+        .template withSignature<Signature>()
+        .build();
+}
+
+FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
+    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+{
+    return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
+        .bindFront()
+        .build();
+}
+
+FORCE_INLINE auto bindBackTask(auto&& f, auto&&... args)
+    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+{
+    return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
+        .bindBack()
+        .build();
+}
+
+template <typename Sig>
+FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
+    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+{
+    return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
+        .bindFront()
+        .template withSignature<Sig>()
+        .build();
+}
+
+template <typename Sig>
+FORCE_INLINE auto bindBackTask(auto&& f, auto&&... args)
+    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+{
+    return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
+        .bindBack()
+        .template withSignature<Sig>()
+        .build();
+}
+
+template <auto F>
+FORCE_INLINE auto bindFrontTask(auto&&... args) {
+    return buildTask<F>(std::forward<decltype(args)>(args)...).bindFront().build();
+}
+
+template <auto F>
+FORCE_INLINE auto bindBackTask(auto&&... args) {
+    return buildTask<F>(std::forward<decltype(args)>(args)...).bindBack().build();
+}
+
+template <typename Sig, auto F>
+FORCE_INLINE auto bindFrontTask(auto&&... args) {
+    return buildTask<F>(std::forward<decltype(args)>(args)...)
+        .bindFront()
+        .template withSignature<Sig>()
+        .build();
+}
+
+template <typename Sig, auto F>
+FORCE_INLINE auto bindBackTask(auto&&... args) {
+    return buildTask<F>(std::forward<decltype(args)>(args)...)
+        .bindBack()
+        .template withSignature<Sig>()
+        .build();
 }
 
 }  // namespace fn

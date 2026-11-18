@@ -288,8 +288,8 @@ struct NamedTask<S, binding, StaticFn<F>, BoundArgs...>
 template <typename F, typename... BoundArgs>
     requires(sizeof...(BoundArgs) > 0 || !IsNamedTask<std::decay_t<F>>::value)
 NamedTask(F&&, BoundArgs&&...)
-    -> NamedTask<typename TaskTypeDeductor<{.binding = Binding::kAuto}, std::decay_t<F>,
-                                           std::decay_t<BoundArgs>...>::Signature,
+    -> NamedTask<typename TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto},
+                                           std::decay_t<F>, std::decay_t<BoundArgs>...>::Signature,
                  Binding::kAuto, std::decay_t<F>, std::decay_t<BoundArgs>...>;
 
 template <typename F>
@@ -317,10 +317,10 @@ FORCE_INLINE auto toFuncPtr() {
 template <Binding binding = Binding::kAuto, typename F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsNamedTask<std::decay_t<F>>::value))
 FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
-    using Deductor =
-        TaskTypeDeductor<{.binding = binding}, std::decay_t<F>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, std::decay_t<F>,
+                                      std::decay_t<BoundArgs>...>;
     static_assert(Deductor::kIsValid, "Given function, arguments and binding are not invocable");
-    return typename TaskTypeDeductor<{.binding = binding}, std::decay_t<F>,
+    return typename TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, std::decay_t<F>,
                                      std::decay_t<BoundArgs>...>::template NamedType<>{
         std::forward<F>(f), std::forward<BoundArgs>(args)...};
 }
@@ -366,7 +366,8 @@ FORCE_INLINE auto makeNamedTask(auto&& f)
 template <Binding binding = Binding::kAuto, typename F, typename... BoundArgs>
     requires(sizeof...(BoundArgs) > 0 || !IsNamedTask<std::decay_t<F>>::value)
 FORCE_INLINE auto makeRefNamedTask(F&& f, BoundArgs&&... args) {
-    return typename TaskTypeDeductor<{.binding = binding}, AddRefWrapperToRef_t<F>,
+    return typename TaskTypeDeductor<DeductorSettings<void>{.binding = binding},
+                                     AddRefWrapperToRef_t<F>,
                                      AddRefWrapperToRef_t<BoundArgs>...>::template NamedType<>{
         std::forward<F>(f), std::forward<BoundArgs>(args)...};
 }
@@ -420,7 +421,8 @@ FORCE_INLINE auto makeThisTask(F&& f, BoundArg&& arg)
     requires ErasableToPointer<decltype(arg)>
 {
     using ptr = typename FunctionTraits<std::decay_t<F>>::func_ptr;
-    return NamedTask<typename TaskTypeDeductor<{.binding = binding}, ptr, void*>::Signature,
+    return NamedTask<typename TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, ptr,
+                                               void*>::Signature,
                      binding, ptr, void*>{std::forward<F>(f), std::forward<BoundArg>(arg)};
 }
 
@@ -436,7 +438,8 @@ FORCE_INLINE auto makeThisTask(BoundArg&& arg)
     requires ErasableToPointer<decltype(arg)>
 {
     using ptr = typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr;
-    return NamedTask<typename TaskTypeDeductor<{.binding = binding}, ptr, void*>::Signature,
+    return NamedTask<typename TaskTypeDeductor<DeductorSettings<void>{.binding = binding}, ptr,
+                                               void*>::Signature,
                      binding, ptr, void*>{static_cast<ptr>(F), std::forward<BoundArg>(arg)};
 }
 

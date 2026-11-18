@@ -5,7 +5,6 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <tuple>
 #include <type_traits>
 
@@ -93,6 +92,8 @@ struct IsNamedTask<NamedTask<S, binding, F, BoundArgs...>> : std::true_type {
     static constexpr bool kIsAuto{false};
 };
 
+struct RefTag {};
+
 template <typename F>
 struct NamedTaskRefTag {};
 
@@ -104,13 +105,23 @@ struct NamedTaskStaticRefTag {};
 template <auto F>
 struct StaticFn {};
 
+template <auto F>
+struct FunctionTag {};
+
+template <typename T>
+struct IsFunctionTag : std::false_type {};
+
+template <auto F>
+struct IsFunctionTag<FunctionTag<F>> : std::true_type {};
+
+template <typename T>
+static constexpr auto kIsFunctionTag = IsFunctionTag<T>::value;
+
 template <typename S, Binding binding, auto F, typename... BoundArgs>
 struct IsNamedTask<NamedTask<S, binding, StaticFn<F>, BoundArgs...>> : std::true_type {
     static constexpr bool kIsRef{false};
     static constexpr bool kIsAuto{true};
 };
-
-#include <type_traits>
 
 struct NullOpt {
     explicit constexpr NullOpt() = default;
@@ -121,14 +132,14 @@ inline constexpr NullOpt kNullopt{};
 template <typename T>
     requires std::is_trivial_v<T> && std::is_standard_layout_v<T>
 struct Optional {
-    bool mHasValue = false;
+    bool mHasValue{false};
     T mValue{};
 
     constexpr Optional() noexcept = default;
 
     constexpr Optional(NullOpt /*unused*/) noexcept {}
 
-    constexpr Optional(T value) noexcept : mHasValue(true), mValue(value) {}
+    constexpr Optional(T value) noexcept : mHasValue{true}, mValue{value} {}
     constexpr auto& operator=(T value) noexcept {
         mHasValue = true;
         mValue = value;
@@ -142,78 +153,175 @@ struct Optional {
     constexpr T operator*() const noexcept {
         return mValue;
     }
+
+    [[nodiscard]] constexpr T value_or(T val) const noexcept {
+        if (!this->has_value()) {
+            return val;
+        }
+        return this->operator*();
+    }
 };
 
+template <typename S = void>
 struct DeductorSettings {
+    using Signature = S;
     Binding binding{Binding::kAuto};
     Optional<Copyability> cb;
     Optional<std::size_t> size;
     Optional<Triviality> t;
     Optional<HeapPolicy> hp;
     Optional<std::size_t> alg;
+    bool ref{false};
 
-    [[nodiscard]] consteval auto withInlineSize(std::size_t newSize) const noexcept {
+    template <typename NewSignature>
+    [[nodiscard]] constexpr auto withSignature() const noexcept {
+        return DeductorSettings<NewSignature>{
+            .binding = binding, .cb = cb, .size = size, .t = t, .hp = hp, .alg = alg, .ref = ref};
+    }
+
+    template <std::size_t N>
+    [[nodiscard]] constexpr auto withInlineSize() const noexcept {
         auto copy = *this;
-        copy.size = newSize;
+        copy.size = N;
         return copy;
     }
 
-    [[nodiscard]] consteval auto withAlignment(std::size_t newAlignment) const noexcept {
+    template <std::size_t NewAlignment>
+    [[nodiscard]] constexpr auto withAlignment() const noexcept {
         auto copy = *this;
-        copy.alg = newAlignment;
+        copy.alg = NewAlignment;
         return copy;
     }
 
-    [[nodiscard]] consteval auto allowHeap() const noexcept {
+    [[nodiscard]] constexpr auto allowHeap() const noexcept {
         auto copy = *this;
         copy.hp = HeapPolicy::kAllow;
         return copy;
     }
 
-    [[nodiscard]] consteval auto makeNonTrivial() const noexcept {
+    [[nodiscard]] constexpr auto makeNonTrivial() const noexcept {
         auto copy = *this;
         copy.t = Triviality::kNonTrivial;
         return copy;
     }
 
-    [[nodiscard]] consteval auto setCopyable(bool copyable) const noexcept {
+    [[nodiscard]] constexpr auto moveOnly() const noexcept {
         auto copy = *this;
-        copy.cb = copyable ? Copyability::kCopyable : Copyability::kNonCopyable;
+        copy.cb = Copyability::kNonCopyable;
         return copy;
     }
 
-    [[nodiscard]] consteval auto bindFront() const noexcept {
+    [[nodiscard]] constexpr auto bindFront() const noexcept {
         auto copy = *this;
         copy.binding = Binding::kFront;
         return copy;
     }
 
-    [[nodiscard]] consteval auto bindBack() const noexcept {
+    [[nodiscard]] constexpr auto bindBack() const noexcept {
         auto copy = *this;
         copy.binding = Binding::kBack;
         return copy;
     }
+
+    [[nodiscard]] constexpr auto byRef() const noexcept {
+        auto copy = *this;
+        copy.ref = true;
+        return copy;
+    }
 };
 
-template <DeductorSettings settings, typename Ft, typename... BoundArgs>
+FORCE_INLINE constexpr auto getSettings() noexcept {
+    return DeductorSettings<>{};
+}
+
+template <auto>
+struct IsDeductorSettings : std::false_type {};
+
+template <typename Sig, DeductorSettings<Sig> deductor>
+struct IsDeductorSettings<deductor> : std::true_type {};
+
+template <typename S = void>
+struct NamedDeductorSettings {
+    using Signature = S;
+    Binding binding{Binding::kAuto};
+    bool ref{false};
+
+    template <typename NewSignature>
+    [[nodiscard]] constexpr auto withSignature() const noexcept {
+        return DeductorSettings<NewSignature>{.binding = binding, .ref = ref};
+    }
+
+    [[nodiscard]] constexpr auto bindFront() const noexcept {
+        auto copy = *this;
+        copy.binding = Binding::kFront;
+        return copy;
+    }
+
+    [[nodiscard]] constexpr auto bindBack() const noexcept {
+        auto copy = *this;
+        copy.binding = Binding::kBack;
+        return copy;
+    }
+
+    [[nodiscard]] constexpr auto byRef() const noexcept {
+        auto copy = *this;
+        copy.ref = true;
+        return copy;
+    }
+};
+
+template <typename T>
+struct GetCallable {
+    using type = T;
+};
+
+template <auto F>
+struct GetCallable<FunctionTag<F>> {
+    using type = decltype(F);
+};
+
+template <typename T>
+using GetCallableT = GetCallable<T>::type;
+
+template <typename FHolder, typename... BoundArgs>
+struct GetPayload {
+    using type = PayloadImpl<FHolder, BoundArgs...>;
+};
+
+template <auto F, typename... BoundArgs>
+struct GetPayload<FunctionTag<F>, BoundArgs...> {
+    using type = PayloadImplArgs<F, BoundArgs...>;
+};
+
+template <typename FHolder, typename... BoundArgs>
+    requires(kIsFunctionTag<std::decay_t<FHolder>> &&
+             !std::is_same_v<std::decay_t<FHolder>, FHolder>)
+struct GetPayload<FHolder, BoundArgs...> : GetPayload<std::decay_t<FHolder>, BoundArgs...> {};
+
+template <typename FHolder, typename... BoundArgs>
+using GetPayloadT = GetPayload<FHolder, BoundArgs...>::type;
+
+template <auto settings, typename Ft, typename... BoundArgs>
 struct TaskTypeDeductor;
 
-template <DeductorSettings newSettings, typename OldDeductor>
+template <auto newSettings, typename OldDeductor>
 struct UpdateDeductor;
 
-template <DeductorSettings newSettings, DeductorSettings settings, typename Ft,
-          typename... BoundArgs>
+template <auto newSettings, auto settings, typename Ft, typename... BoundArgs>
 struct UpdateDeductor<newSettings, TaskTypeDeductor<settings, Ft, BoundArgs...>> {
     using type = TaskTypeDeductor<newSettings, Ft, BoundArgs...>;
 };
 
-template <DeductorSettings newSettings, typename OldDeductor>
-using UpdateDeductorT = UpdateDeductor<newSettings, OldDeductor>::type;
+template <auto newSettings, typename OldDeductor>
+using UpdateDeductorT = typename UpdateDeductor<newSettings, OldDeductor>::type;
 
-template <DeductorSettings settings, typename Ft, typename... BoundArgs>
-    requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
+template <typename RequestedSig, DeductorSettings<RequestedSig> settings, typename Ft,
+          typename... BoundArgs>
+    requires(kIsFunctionTag<Ft> ||
+             HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
 struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
-    using F = std::unwrap_reference_t<Ft>;
+    using F = std::unwrap_reference_t<GetCallableT<Ft>>;
+    static constexpr auto kSettings = settings;
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::remove_cvref_t<F>>;
         using AllArgs = Traits::args_tuple;
@@ -253,13 +361,19 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
                     Tester<F, Ts..., typename ModifierFilter<FiltBoundArgs>::type...>::value;
                 static constexpr Binding kBindDeduct =
                     (kTestBack && kTestBack)
-                        ? (bindProcess == Binding::kAuto ? Binding::kBack : bindProcess)
+                        ? (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
+                                   Binding::kAuto
+                               ? Binding::kBack
+                               : bindProcess)
                         : (kTestBack ? Binding::kBack : Binding::kFront);
 
                 static constexpr bool kIsValid =
                     bindProcess == Binding::kFront
                         ? kTestFront
-                        : (bindProcess == Binding::kBack ? kTestBack : (kTestFront || kTestBack));
+                        : (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
+                                   Binding::kBack
+                               ? kTestBack
+                               : (kTestFront || kTestBack));
             };
 
             template <typename T>
@@ -335,30 +449,47 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
 
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
     // anyway, hence not urgent to change for now
-    using PayloadType = PayloadImpl<Ft, BoundArgs...>;
+    using PayloadType = GetPayloadT<Ft, BoundArgs...>;
 
     static constexpr auto kPayloadCopyable = std::is_copy_constructible_v<PayloadType>
                                                  ? Copyability::kCopyable
                                                  : Copyability::kNonCopyable;
     static constexpr auto kCopyValid =
         !settings.cb.has_value() ||
-        (*settings.cb != Copyability::kCopyable && kPayloadCopyable == Copyability::kNonCopyable);
+        !(*settings.cb == Copyability::kCopyable && kPayloadCopyable == Copyability::kNonCopyable);
     static constexpr auto kCopyable = settings.cb.has_value() ? *settings.cb : kPayloadCopyable;
     static constexpr auto kPayloadTriviality =
         TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
-    static constexpr auto kTriviality = settings.t.has_value() ? *settings.t : kPayloadTriviality;
-    static constexpr Alignment kAlignment =
+    static constexpr auto kTrivialValid =
+        !settings.t.has_value() ||
+        !(*settings.t == Triviality::kTrivial && kPayloadTriviality != Triviality::kTrivial);
+    static constexpr auto kTriviality =
+        settings.t.has_value()
+            ? *settings.t
+            : ((settings.hp.has_value() && *settings.hp == HeapPolicy::kAllow)  // NOLINT
+                   ? Triviality::kNonTrivial
+                   : kPayloadTriviality);
+    static constexpr Alignment kPayloadAlignment =
         std::max(alignof(PayloadType), alignof(std::max_align_t));
+    static constexpr auto kAlignmentValid =
+        !settings.alg.has_value() || *settings.alg >= alignof(PayloadType);
+    static constexpr auto kAlignment =
+        settings.alg.has_value() ? Alignment{*settings.alg} : kPayloadAlignment;
     static constexpr auto kPayloadSize = sizeof(PayloadType);
-    static constexpr auto kSizeValid = !settings.size.has_value() ||
-                                       *settings.size >= kPayloadSize || !settings.hp.has_value() ||
-                                       *settings.hp == HeapPolicy::kAllow;
+    static constexpr auto kSizeValid =
+        !settings.size.has_value() || *settings.size >= kPayloadSize ||
+        (settings.hp.has_value() && *settings.hp == HeapPolicy::kAllow &&
+         *settings.size >= sizeof(std::byte*));
     static constexpr auto kSize = settings.size.has_value() ? *settings.size : kPayloadSize;
     static constexpr auto kHeapPolicy =
         settings.hp.has_value() ? *settings.hp : HeapPolicy::kDisallow;
     using TypeTraits = StripBoundArgs::type;
-    using Signature = TypeTraits::Signature;
-    static constexpr bool kIsValid = TypeTraits::kIsValid && kCopyValid && kSizeValid;
+    using Signature = std::conditional_t<std::is_void_v<RequestedSig>,
+                                         typename TypeTraits::Signature, RequestedSig>;
+    static constexpr auto kSignatureValid =
+        kIsSignatureCompatibleB<typename TypeTraits::Signature, Signature>;
+    static constexpr bool kIsValid = TypeTraits::kIsValid && kSignatureValid && kCopyValid &&
+                                     kTrivialValid && kAlignmentValid && kSizeValid;
 
     template <typename Sig = Signature>
     using Type = Task<Sig, kCopyable, kSize, kTriviality, false, kHeapPolicy, kAlignment>;
@@ -369,10 +500,14 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
     template <typename Sig = Signature, InlineSize size = 16>
     using HeapType = Task<Sig, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 
+    template <typename NewSignature>
+    static consteval auto withSignature() noexcept {}
+
     template <std::size_t N>
-    consteval auto withInlineSize() const noexcept {
+    static consteval auto withInlineSize() noexcept {
         constexpr auto kNewDeductor =
-            UpdateDeductorT<settings.withInlineSize(N), decltype(*this)>{};
+            UpdateDeductorT<kSettings.template withInlineSize<N>(),
+                            TaskTypeDeductor<settings, Ft, BoundArgs...>>{};
         static_assert(decltype(kNewDeductor)::kIsValid,
                       "Requested Signature is not compatible with initial/deducted signature");
         return kNewDeductor;
@@ -380,94 +515,182 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
 
     template <std::size_t N>
         requires(N != 0 && std::has_single_bit(N))
-    consteval auto withAlignment() const noexcept {
-        constexpr auto kNewDeductor = UpdateDeductorT<settings.withAlignment(N), decltype(*this)>{};
+    static consteval auto withAlignment() noexcept {
+        constexpr auto kNewDeductor =
+            UpdateDeductorT<settings.template withAlignment<N>(),
+                            TaskTypeDeductor<settings, Ft, BoundArgs...>>{};
         static_assert(decltype(kNewDeductor)::kIsValid,
                       "Requested Signature is not compatible with initial/deducted alignment");
         return kNewDeductor;
     }
 
-    consteval auto allowHeap() const noexcept {
-        return UpdateDeductorT<settings.allowHeap(), decltype(*this)>{};
+    static consteval auto allowHeap() noexcept {
+        return UpdateDeductorT<settings.allowHeap(),
+                               TaskTypeDeductor<settings, Ft, BoundArgs...>>{};
     }
 
-    consteval auto toggleCopyability(bool copyable) const noexcept {
-        if constexpr (settings.cb.has_value() &&
-                      ((*settings.cb == Copyability::kCopyable && copyable) ||
-                       (*settings.cb == Copyability::kNonCopyable && !copyable))) {
-            return *this;
-        }
+    static consteval auto moveOnly() noexcept {
         constexpr auto kNewDeductor =
-            UpdateDeductorT<settings.setCopyable(copyable), decltype(*this)>{};
+            UpdateDeductorT<settings.moveOnly(), TaskTypeDeductor<settings, Ft, BoundArgs...>>{};
         static_assert(decltype(kNewDeductor)::kIsValid,
                       "Task is invalid under new copyability setting");
         return kNewDeductor;
     }
 };
 
-template <bool Ref, DeductorSettings settings, typename Ft, typename... BoundArgs>
+template <auto settings, typename Ft, typename... BoundArgs>
 struct TaskBuilder;
 
-template <DeductorSettings settings, typename Ft, typename... BoundArgs>
-    requires(HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
-struct TaskBuilder<false, settings, Ft, BoundArgs...>
-    : TaskTypeDeductor<settings, std::decay_t<Ft>, std::decay_t<BoundArgs>...> {
-    TaskBuilder(Ft&& f, BoundArgs&&... args)
+template <bool, typename T>
+struct TaskBuilderRefFilter {
+    using type = T;
+};
+
+template <typename T>
+struct TaskBuilderRefFilter<false, T> {
+    using type = std::decay_t<T>;
+};
+
+template <bool Ref, typename T>
+using TaskBuilderRefFilterT = TaskBuilderRefFilter<Ref, T>::type;
+
+template <typename Signature, DeductorSettings<Signature> settings, typename Ft,
+          typename... BoundArgs>
+    requires(kIsFunctionTag<Ft> ||
+             HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
+struct TaskBuilder<settings, Ft, BoundArgs...>
+    : TaskTypeDeductor<settings, TaskBuilderRefFilterT<settings.ref, Ft>,
+                       TaskBuilderRefFilterT<settings.ref, BoundArgs>...> {
+    TaskBuilder(Ft&& f,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+                BoundArgs&&... args)
+        requires(!kIsFunctionTag<Ft>)
         : transitPayload{.f = std::forward<Ft>(f), .args = {std::forward<BoundArgs>(args)...}} {}
 
-    PayloadImpl<Ft&&, BoundArgs&&...> transitPayload;
+    TaskBuilder(BoundArgs&&... args)
+        requires(kIsFunctionTag<Ft>)
+        : transitPayload{.args = {std::forward<BoundArgs>(args)...}} {}
 
-    TaskBuilder(PayloadImpl<Ft&&, BoundArgs&&...>&& payloadOther)
+    TaskBuilder() = delete;
+    TaskBuilder(const TaskBuilder&) = delete;
+    TaskBuilder& operator=(const TaskBuilder&) = delete;
+    TaskBuilder(TaskBuilder&&) = delete;
+    TaskBuilder& operator=(TaskBuilder&&) = delete;
+    ~TaskBuilder() = default;
+
+    GetPayloadT<Ft&&, BoundArgs&&...> transitPayload;
+
+    static_assert(kIsRefPayloadTuple<decltype(transitPayload.args)>);
+
+    TaskBuilder(GetPayloadT<Ft&&, BoundArgs&&...>&& payloadOther)
         : transitPayload{std::move(payloadOther)} {}
+
+    static consteval auto getSettings() noexcept {
+        return settings;
+    }
 
     using Deductor = TaskTypeDeductor<settings, std::decay_t<Ft>, std::decay_t<BoundArgs>...>;
 
+    template <typename NewSignature>
+    FORCE_INLINE constexpr auto withSignature() && noexcept {
+        return TaskBuilder<settings.template withSignature<NewSignature>(), Ft, BoundArgs...>{
+            std::move(transitPayload)};
+    }
+
     template <std::size_t N>
-    constexpr auto withInlineSize() noexcept {
-        using NewDeductor = UpdateDeductorT<settings.withInlineSize(N), Deductor>;
-        static_assert(NewDeductor::kIsValid,
-                      "Requested Signature is not compatible with initial/deducted signature");
-        return TaskBuilder<false, settings.withInlineSize(N), Ft, BoundArgs...>{
+    FORCE_INLINE constexpr auto withInlineSize() && noexcept {
+        using NewDeductor = UpdateDeductorT<settings.template withInlineSize<N>(), Deductor>;
+        return TaskBuilder<settings.template withInlineSize<N>(), Ft, BoundArgs...>{
             std::move(transitPayload)};
     }
 
     template <std::size_t N>
         requires(N != 0 && std::has_single_bit(N))
-    constexpr auto withAlignment() noexcept {
-        using NewDeductor = UpdateDeductorT<settings.withAlignment(N), Deductor>;
-        static_assert(NewDeductor::kIsValid,
-                      "Requested Signature is not compatible with initial/deducted alignment");
-        return TaskBuilder<false, settings.withAlignment(N), Ft, BoundArgs...>{
+    FORCE_INLINE constexpr auto withAlignment() && noexcept {
+        using NewDeductor = UpdateDeductorT<settings.template withAlignment<N>(), Deductor>;
+        return TaskBuilder<settings.template withAlignment<N>(), Ft, BoundArgs...>{
             std::move(transitPayload)};
     }
 
-    constexpr auto makeNonTrivial() noexcept {
-        return TaskBuilder<false, settings.makeNonTrivial(), Ft, BoundArgs...>{
-            std::move(transitPayload)};
+    FORCE_INLINE constexpr auto makeNonTrivial() && noexcept {
+        using NewDeductor = UpdateDeductorT<settings.makeNonTrivial(), Deductor>;
+        return TaskBuilder<settings.makeNonTrivial(), Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
-    constexpr auto allowHeap() noexcept {
-        return TaskBuilder<false, settings.allowHeap(), Ft, BoundArgs...>{
-            std::move(makeNonTrivial().transitPayload)};
+    FORCE_INLINE constexpr auto allowHeap() && noexcept {
+        return TaskBuilder<settings.allowHeap(), Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
-    constexpr auto toggleCopyability(bool copyable) noexcept
-        requires(!settings.cb.has_value() ||
-                 ((* settings.cb != Copyability::kCopyable || !copyable) &&
-                  (* settings.cb != Copyability::kNonCopyable || copyable)))
-    {
-        using NewDeductor = UpdateDeductorT<settings.setCopyable(copyable), decltype(*this)>;
-        static_assert(NewDeductor::kIsValid, "Task is invalid under new copyability setting");
-        return TaskBuilder<false, settings.setCopyable(copyable), Ft, BoundArgs...>{
-            std::move(transitPayload)};
+    FORCE_INLINE constexpr auto moveOnly() && noexcept {
+        using NewDeductor = UpdateDeductorT<settings.moveOnly(), Deductor>;
+        return TaskBuilder<settings.moveOnly(), Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
-    constexpr auto finished() noexcept {
+    FORCE_INLINE constexpr auto bindFront() && noexcept {
+        return TaskBuilder<settings.bindFront(), Ft, BoundArgs...>{std::move(transitPayload)};
+    }
+
+    FORCE_INLINE constexpr auto bindBack() && noexcept {
+        return TaskBuilder<settings.bindBack(), Ft, BoundArgs...>{std::move(transitPayload)};
+    }
+
+    FORCE_INLINE constexpr auto byRef() && noexcept {
+        return TaskBuilder<settings.byRef(), Ft, BoundArgs...>{std::move(transitPayload)};
+    }
+
+    template <auto newSettings>
+        requires(IsDeductorSettings<newSettings>::value)
+    FORCE_INLINE constexpr auto withSettings() && noexcept {
+        return TaskBuilder<newSettings, Ft, BoundArgs...>{std::move(transitPayload)};
+    }
+
+    FORCE_INLINE constexpr auto build() && noexcept {
+        static_assert(Deductor::kSignatureValid,
+                      "Requested signature is not convertible from deduced one");
+        static_assert(Deductor::kCopyValid, "Task is invalid under new copyability setting");
+        static_assert(Deductor::kTrivialValid, "New Trivial setting is not valid");
+        static_assert(
+            Deductor::kSizeValid,
+            "Size is invalid for deducted args. Check that it is enough to hold its payload, or "
+            "that it's enough to hold a byte pointer with heap policy enabled");
+        static_assert(Deductor::kAlignmentValid,
+                      "Requested alignment is not valid. It must not be lower than the alignment "
+                      "of the payload itself");
+        static_assert(Deductor::kIsValid,
+                      "Given callable and args are not valid, and a Task cannot be built with "
+                      "these. Check for invocation and given factory settings");
         auto&& args = std::move(transitPayload.args);
-        return std::move(args).applyAsArgs([this]<typename... Args>(Args&&... args) {
-            return typename Deductor::Type{std::forward<Ft>(transitPayload.f),
-                                           std::forward<Args>(args)...};
-        });
+        static constexpr bool kIgnoreRefWrapperRValueConversion{true};
+        return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
+            [this]<typename... Args>(Args&&... args) {
+                if constexpr (settings.ref) {
+                    if constexpr (kIsFunctionTag<Ft>) {
+                        return typename Deductor::template Type<>{RefTag{}, Ft{},
+                                                                  BindingTag<settings.binding>{},
+                                                                  std::forward<Args>(args)...};
+                    } else {
+                        return typename Deductor::template Type<>{
+                            RefTag{}, BindingTag<settings.binding>{},
+                            std::forward<Ft>(transitPayload.f), std::forward<Args>(args)...};
+                    }
+                } else {
+                    if constexpr (kIsFunctionTag<Ft>) {
+                        return typename Deductor::template Type<>{
+                            Ft{}, BindingTag<settings.binding>{}, std::forward<Args>(args)...};
+                    } else {
+                        if constexpr (sizeof...(BoundArgs) ==
+                                      0) {  // Accounts for 'f' being a Task, where one shouldn't
+                                            // put BindingTag in it but let constructor Task to Task
+                                            // trigger
+                            return typename Deductor::template Type<>{
+                                std::forward<Ft>(transitPayload.f)};
+                        } else {
+                            return typename Deductor::template Type<>{
+                                BindingTag<settings.binding>{}, std::forward<Ft>(transitPayload.f),
+                                std::forward<Args>(args)...};
+                        }
+                    }
+                }
+            });
     }
 };
 
@@ -514,13 +737,19 @@ struct TaskTypeDeductorAuto {
                     Tester<F, Ts..., typename ModifierFilter<FiltBoundArgs>::type...>::value;
                 static constexpr Binding kBindDeduct =
                     (kTestBack && kTestBack)
-                        ? (bindProcess == Binding::kAuto ? Binding::kBack : bindProcess)
+                        ? (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
+                                   Binding::kAuto
+                               ? Binding::kBack
+                               : bindProcess)
                         : (kTestBack ? Binding::kBack : Binding::kFront);
 
                 static constexpr bool kIsValid =
                     bindProcess == Binding::kFront
                         ? kTestFront
-                        : (bindProcess == Binding::kBack ? kTestBack : (kTestFront || kTestBack));
+                        : (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
+                                   Binding::kBack
+                               ? kTestBack
+                               : (kTestFront || kTestBack));
             };
 
             template <typename T>
@@ -631,19 +860,21 @@ struct TaskTypeDeductorAuto {
 template <template <typename, typename...> typename T, typename Fd, typename... BoundArgs>
     requires(!IsTask<T<Fd, BoundArgs...>>::value && !IsNamedTask<T<Fd, BoundArgs...>>::value &&
              HasFunctionTraits<std::decay_t<Fd>> &&
-             TaskTypeDeductor<{.binding = Binding::kAuto}, Fd, BoundArgs...>::kIsValid)
+             TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, Fd,
+                              BoundArgs...>::kIsValid)
 struct FunctionTraits<T<Fd, BoundArgs...>>
-    : FunctionTraits<
-          typename TaskTypeDeductor<{.binding = Binding::kAuto}, Fd, BoundArgs...>::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto},
+                                               Fd, BoundArgs...>::Signature> {};
 
 template <template <bool, typename, typename...> typename T, bool B, typename Fd,
           typename... BoundArgs>
     requires(!IsTask<T<B, Fd, BoundArgs...>>::value &&
              !IsNamedTask<T<B, Fd, BoundArgs...>>::value && HasFunctionTraits<std::decay_t<Fd>> &&
-             TaskTypeDeductor<{.binding = Binding::kAuto}, Fd, BoundArgs...>::kIsValid)
+             TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, Fd,
+                              BoundArgs...>::kIsValid)
 struct FunctionTraits<T<B, Fd, BoundArgs...>>
-    : FunctionTraits<
-          typename TaskTypeDeductor<{.binding = Binding::kAuto}, Fd, BoundArgs...>::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto},
+                                               Fd, BoundArgs...>::Signature> {};
 
 }  // namespace fn
 
