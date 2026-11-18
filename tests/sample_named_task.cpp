@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include <task/named_task.hpp>
 #include <task/task.hpp>
@@ -34,6 +35,14 @@ int main() {
     // arguments, user can cast captureless lambdas explicitly to raw function pointers. See below:
     auto task3 = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
     auto task4 = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
+    double number{3.0};
+    auto task5 =
+        fn::buildNamedTask([](double& a, std::string) { a *= 2; }, number).byRef().buildNamed();
+    using t1 = std::string&;
+    using t2 = const std::string&;
+    using t3 = decltype(std::forward_like<t2>(std::declval<t1>()));
+    // task5("hi");
+    std::cout << "number is " << number << '\n';
     // Now works
     task3 = task4;
 
@@ -132,7 +141,7 @@ int main() {
             }
         };
         auto functor = Functor{};
-        auto a = fn::bindFrontNamedTask(functor, std::ref(s));
-        a(3);
+        auto a = fn::buildNamedTask(functor, s).byRef().bindFront().buildNamed();
+        // a(3);
     }
 }

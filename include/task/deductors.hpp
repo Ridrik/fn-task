@@ -118,7 +118,7 @@ template <typename T>
 static constexpr auto kIsFunctionTag = IsFunctionTag<T>::value;
 
 template <typename S, Binding binding, auto F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, binding, StaticFn<F>, BoundArgs...>> : std::true_type {
+struct IsNamedTask<NamedTask<S, binding, FunctionTag<F>, BoundArgs...>> : std::true_type {
     static constexpr bool kIsRef{false};
     static constexpr bool kIsAuto{true};
 };
@@ -488,14 +488,18 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
                                          typename TypeTraits::Signature, RequestedSig>;
     static constexpr auto kSignatureValid =
         kIsSignatureCompatibleB<typename TypeTraits::Signature, Signature>;
-    static constexpr bool kIsValid = TypeTraits::kIsValid && kSignatureValid && kCopyValid &&
+    static constexpr auto kInvocableValid = TypeTraits::kIsValid;
+    static constexpr bool kIsValid = kInvocableValid && kSignatureValid && kCopyValid &&
                                      kTrivialValid && kAlignmentValid && kSizeValid;
 
     template <typename Sig = Signature>
     using Type = Task<Sig, kCopyable, kSize, kTriviality, false, kHeapPolicy, kAlignment>;
 
     template <typename Sig = Signature>
-    using NamedType = NamedTask<Sig, TypeTraits::kBinderDeduct, Ft, BoundArgs...>;
+    using NamedType =
+        NamedTask<Sig,
+                  settings.binding == Binding::kAuto ? TypeTraits::kBinderDeduct : settings.binding,
+                  Ft, BoundArgs...>;
 
     template <typename Sig = Signature, InlineSize size = 16>
     using HeapType = Task<Sig, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
@@ -588,7 +592,8 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         return settings;
     }
 
-    using Deductor = TaskTypeDeductor<settings, std::decay_t<Ft>, std::decay_t<BoundArgs>...>;
+    using Deductor = TaskTypeDeductor<settings, TaskBuilderRefFilterT<settings.ref, Ft>,
+                                      TaskBuilderRefFilterT<settings.ref, BoundArgs>...>;
 
     template <typename NewSignature>
     FORCE_INLINE constexpr auto withSignature() && noexcept {
@@ -641,6 +646,23 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         requires(IsDeductorSettings<newSettings>::value)
     FORCE_INLINE constexpr auto withSettings() && noexcept {
         return TaskBuilder<newSettings, Ft, BoundArgs...>{std::move(transitPayload)};
+    }
+
+    FORCE_INLINE constexpr auto buildNamed() && noexcept {
+        static_assert(Deductor::kInvocableValid,
+                      "Given callable, bound args and binding are not valid for invocation");
+        auto&& args = std::move(transitPayload.args);
+        static constexpr bool kIgnoreRefWrapperRValueConversion{true};
+        return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
+            [this]<typename... Args>(Args&&... args) {
+                if constexpr (kIsFunctionTag<Ft>) {
+                    return
+                        typename Deductor::template NamedType<>{Ft{}, std::forward<Args>(args)...};
+                } else {
+                    return typename Deductor::template NamedType<>{
+                        std::forward<Ft>(transitPayload.f), std::forward<Args>(args)...};
+                }
+            });
     }
 
     FORCE_INLINE constexpr auto build() && noexcept {
@@ -848,7 +870,7 @@ struct TaskTypeDeductorAuto {
         Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
 
     template <typename Sig = Signature>
-    using NamedType = NamedTask<Sig, TypeTraits::kBinderDeduct, StaticFn<F_auto>, BoundArgs...>;
+    using NamedType = NamedTask<Sig, TypeTraits::kBinderDeduct, FunctionTag<F_auto>, BoundArgs...>;
 
     template <typename Sig = Signature, InlineSize size = 16>
     using HeapType = Task<Sig, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
