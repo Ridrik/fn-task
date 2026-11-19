@@ -163,6 +163,39 @@ struct Optional {
 };
 
 template <typename S = void>
+struct DeductorSettings;
+
+template <typename S = void>
+struct NamedDeductorSettings {
+    using Signature = S;
+    Binding binding{Binding::kAuto};
+    bool ref{false};
+
+    template <typename NewSignature>
+    [[nodiscard]] constexpr auto withSignature() const noexcept {
+        return DeductorSettings<NewSignature>{.binding = binding, .ref = ref};
+    }
+
+    [[nodiscard]] constexpr auto bindFront() const noexcept {
+        auto copy = *this;
+        copy.binding = Binding::kFront;
+        return copy;
+    }
+
+    [[nodiscard]] constexpr auto bindBack() const noexcept {
+        auto copy = *this;
+        copy.binding = Binding::kBack;
+        return copy;
+    }
+
+    [[nodiscard]] constexpr auto byRef() const noexcept {
+        auto copy = *this;
+        copy.ref = true;
+        return copy;
+    }
+};
+
+template <typename S>
 struct DeductorSettings {
     using Signature = S;
     Binding binding{Binding::kAuto};
@@ -173,10 +206,20 @@ struct DeductorSettings {
     Optional<std::size_t> alg;
     bool ref{false};
 
+    constexpr DeductorSettings() = default;
+    constexpr DeductorSettings(Binding b, Optional<Copyability> c, Optional<std::size_t> s,
+                               Optional<Triviality> t, Optional<HeapPolicy> h,
+                               Optional<std::size_t> a, bool r)
+        : binding{b}, cb{c}, size{s}, t{t}, hp{h}, alg{a}, ref{r} {}
+
+    constexpr DeductorSettings(Binding b) : binding{b} {}
+
+    constexpr DeductorSettings(const NamedDeductorSettings<S>& namedSettings)
+        : binding{namedSettings.binding}, ref{namedSettings.ref} {}
+
     template <typename NewSignature>
     [[nodiscard]] constexpr auto withSignature() const noexcept {
-        return DeductorSettings<NewSignature>{
-            .binding = binding, .cb = cb, .size = size, .t = t, .hp = hp, .alg = alg, .ref = ref};
+        return DeductorSettings<NewSignature>{binding, cb, size, t, hp, alg, ref};
     }
 
     template <std::size_t N>
@@ -240,35 +283,11 @@ struct IsDeductorSettings : std::false_type {};
 template <typename Sig, DeductorSettings<Sig> deductor>
 struct IsDeductorSettings<deductor> : std::true_type {};
 
-template <typename S = void>
-struct NamedDeductorSettings {
-    using Signature = S;
-    Binding binding{Binding::kAuto};
-    bool ref{false};
+template <auto>
+struct IsNamedDeductorSettings : std::false_type {};
 
-    template <typename NewSignature>
-    [[nodiscard]] constexpr auto withSignature() const noexcept {
-        return DeductorSettings<NewSignature>{.binding = binding, .ref = ref};
-    }
-
-    [[nodiscard]] constexpr auto bindFront() const noexcept {
-        auto copy = *this;
-        copy.binding = Binding::kFront;
-        return copy;
-    }
-
-    [[nodiscard]] constexpr auto bindBack() const noexcept {
-        auto copy = *this;
-        copy.binding = Binding::kBack;
-        return copy;
-    }
-
-    [[nodiscard]] constexpr auto byRef() const noexcept {
-        auto copy = *this;
-        copy.ref = true;
-        return copy;
-    }
-};
+template <typename Sig, NamedDeductorSettings<Sig> deductor>
+struct IsNamedDeductorSettings<deductor> : std::true_type {};
 
 template <typename T>
 struct GetCallable {
@@ -290,6 +309,11 @@ struct GetPayload {
 
 template <auto F, typename... BoundArgs>
 struct GetPayload<FunctionTag<F>, BoundArgs...> {
+    using type = PayloadImplArgs<F, BoundArgs...>;
+};
+
+template <auto F, typename... BoundArgs>
+struct GetPayload<FunctionTag<F>&&, BoundArgs...> {
     using type = PayloadImplArgs<F, BoundArgs...>;
 };
 
@@ -546,8 +570,21 @@ template <auto settings, typename Ft, typename... BoundArgs>
 struct TaskBuilder;
 
 template <bool, typename T>
-struct TaskBuilderRefFilter {
+struct AddRefWrapFilter {
+    using type = AddRefWrapperToRef_t<T>;
+};
+
+template <typename T>
+struct AddRefWrapFilter<false, T> {
     using type = T;
+};
+
+template <bool Ref, typename T>
+using AddRefWrapFilterT = AddRefWrapFilter<Ref, T>::type;
+
+template <bool, typename T>
+struct TaskBuilderRefFilter {
+    using type = AddRefWrapperToRef_t<T>;
 };
 
 template <typename T>
@@ -558,17 +595,19 @@ struct TaskBuilderRefFilter<false, T> {
 template <bool Ref, typename T>
 using TaskBuilderRefFilterT = TaskBuilderRefFilter<Ref, T>::type;
 
-template <typename Signature, DeductorSettings<Signature> settings, typename Ft,
-          typename... BoundArgs>
-    requires(kIsFunctionTag<Ft> ||
-             HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
+template <auto settings, typename Ft, typename... BoundArgs>
+    requires((kIsFunctionTag<Ft> ||
+              HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>) &&
+             (IsNamedDeductorSettings<settings>::value || IsDeductorSettings<settings>::value))
 struct TaskBuilder<settings, Ft, BoundArgs...>
-    : TaskTypeDeductor<settings, TaskBuilderRefFilterT<settings.ref, Ft>,
+    : TaskTypeDeductor<DeductorSettings<typename decltype(settings)::Signature>{settings},
+                       TaskBuilderRefFilterT<settings.ref, Ft>,
                        TaskBuilderRefFilterT<settings.ref, BoundArgs>...> {
-    TaskBuilder(Ft&& f,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
-                BoundArgs&&... args)
+    TaskBuilder(auto&& f,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+                auto&&... args)
         requires(!kIsFunctionTag<Ft>)
-        : transitPayload{.f = std::forward<Ft>(f), .args = {std::forward<BoundArgs>(args)...}} {}
+        : transitPayload{.f = std::forward<decltype(f)>(f),
+                         .args = {std::forward<decltype(args)>(args)...}} {}
 
     TaskBuilder(BoundArgs&&... args)
         requires(kIsFunctionTag<Ft>)
@@ -581,19 +620,24 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     TaskBuilder& operator=(TaskBuilder&&) = delete;
     ~TaskBuilder() = default;
 
-    GetPayloadT<Ft&&, BoundArgs&&...> transitPayload;
+    static constexpr auto kNamedTaskBuilder = IsNamedDeductorSettings<settings>::value;
+
+    using Payload = GetPayloadT<AddRefWrapFilterT<settings.ref, Ft&&>,
+                                AddRefWrapFilterT<settings.ref, BoundArgs&&>...>;
+    Payload transitPayload;
 
     static_assert(kIsRefPayloadTuple<decltype(transitPayload.args)>);
 
-    TaskBuilder(GetPayloadT<Ft&&, BoundArgs&&...>&& payloadOther)
-        : transitPayload{std::move(payloadOther)} {}
+    TaskBuilder(Payload&& payloadOther) : transitPayload{std::move(payloadOther)} {}
 
     static consteval auto getSettings() noexcept {
         return settings;
     }
 
-    using Deductor = TaskTypeDeductor<settings, TaskBuilderRefFilterT<settings.ref, Ft>,
-                                      TaskBuilderRefFilterT<settings.ref, BoundArgs>...>;
+    using Deductor =
+        TaskTypeDeductor<DeductorSettings<typename decltype(settings)::Signature>{settings},
+                         TaskBuilderRefFilterT<settings.ref, Ft>,
+                         TaskBuilderRefFilterT<settings.ref, BoundArgs>...>;
 
     template <typename NewSignature>
     FORCE_INLINE constexpr auto withSignature() && noexcept {
@@ -602,31 +646,34 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     }
 
     template <std::size_t N>
+        requires(!kNamedTaskBuilder)
     FORCE_INLINE constexpr auto withInlineSize() && noexcept {
-        using NewDeductor = UpdateDeductorT<settings.template withInlineSize<N>(), Deductor>;
         return TaskBuilder<settings.template withInlineSize<N>(), Ft, BoundArgs...>{
             std::move(transitPayload)};
     }
 
     template <std::size_t N>
-        requires(N != 0 && std::has_single_bit(N))
+        requires(!kNamedTaskBuilder && N != 0 && std::has_single_bit(N))
     FORCE_INLINE constexpr auto withAlignment() && noexcept {
-        using NewDeductor = UpdateDeductorT<settings.template withAlignment<N>(), Deductor>;
         return TaskBuilder<settings.template withAlignment<N>(), Ft, BoundArgs...>{
             std::move(transitPayload)};
     }
 
-    FORCE_INLINE constexpr auto makeNonTrivial() && noexcept {
-        using NewDeductor = UpdateDeductorT<settings.makeNonTrivial(), Deductor>;
+    FORCE_INLINE constexpr auto makeNonTrivial() && noexcept
+        requires(!kNamedTaskBuilder)
+    {
         return TaskBuilder<settings.makeNonTrivial(), Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
-    FORCE_INLINE constexpr auto allowHeap() && noexcept {
+    FORCE_INLINE constexpr auto allowHeap() && noexcept
+        requires(!kNamedTaskBuilder)
+    {
         return TaskBuilder<settings.allowHeap(), Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
-    FORCE_INLINE constexpr auto moveOnly() && noexcept {
-        using NewDeductor = UpdateDeductorT<settings.moveOnly(), Deductor>;
+    FORCE_INLINE constexpr auto moveOnly() && noexcept
+        requires(!kNamedTaskBuilder)
+    {
         return TaskBuilder<settings.moveOnly(), Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
@@ -639,7 +686,19 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     }
 
     FORCE_INLINE constexpr auto byRef() && noexcept {
-        return TaskBuilder<settings.byRef(), Ft, BoundArgs...>{std::move(transitPayload)};
+        auto&& args = std::move(transitPayload.args);
+        static constexpr bool kIgnoreRefWrapperRValueConversion{true};
+        return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
+            [this]<typename... Args>(Args&&... args) {
+                if constexpr (kIsFunctionTag<Ft>) {
+                    return TaskBuilder<settings.byRef(), Ft, BoundArgs...>{
+                        std::forward<Args>(args)...};
+                } else {
+                    return TaskBuilder<settings.byRef(), Ft, BoundArgs...>{
+                        std::forward<decltype(transitPayload.f)>(transitPayload.f),
+                        std::forward<Args>(args)...};
+                }
+            });
     }
 
     template <auto newSettings>
@@ -648,7 +707,9 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         return TaskBuilder<newSettings, Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
-    FORCE_INLINE constexpr auto buildNamed() && noexcept {
+    FORCE_INLINE constexpr auto build() && noexcept
+        requires(kNamedTaskBuilder)
+    {
         static_assert(Deductor::kInvocableValid,
                       "Given callable, bound args and binding are not valid for invocation");
         auto&& args = std::move(transitPayload.args);
@@ -656,16 +717,24 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
             [this]<typename... Args>(Args&&... args) {
                 if constexpr (kIsFunctionTag<Ft>) {
-                    return
-                        typename Deductor::template NamedType<>{Ft{}, std::forward<Args>(args)...};
+                    return typename Deductor::template NamedType<>{
+                        std::forward<decltype(args)>(args)...};
+                } else if constexpr (sizeof...(args) == 0 &&
+                                     IsNamedTask<std::decay_t<decltype(transitPayload.f)>>::value &&
+                                     !settings.ref) {
+                    return std::decay_t<decltype(transitPayload.f)>{
+                        std::forward<decltype(transitPayload.f)>(transitPayload.f)};
                 } else {
                     return typename Deductor::template NamedType<>{
-                        std::forward<Ft>(transitPayload.f), std::forward<Args>(args)...};
+                        std::forward<decltype(transitPayload.f)>(transitPayload.f),
+                        std::forward<decltype(args)>(args)...};
                 }
             });
     }
 
-    FORCE_INLINE constexpr auto build() && noexcept {
+    FORCE_INLINE constexpr auto build() && noexcept
+        requires(!kNamedTaskBuilder)
+    {
         static_assert(Deductor::kSignatureValid,
                       "Requested signature is not convertible from deduced one");
         static_assert(Deductor::kCopyValid, "Task is invalid under new copyability setting");
@@ -686,29 +755,32 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
             [this]<typename... Args>(Args&&... args) {
                 if constexpr (settings.ref) {
                     if constexpr (kIsFunctionTag<Ft>) {
-                        return typename Deductor::template Type<>{RefTag{}, Ft{},
-                                                                  BindingTag<settings.binding>{},
-                                                                  std::forward<Args>(args)...};
+                        return typename Deductor::template Type<>{
+                            RefTag{}, Ft{}, BindingTag<settings.binding>{},
+                            std::forward<decltype(args)>(args)...};
                     } else {
                         return typename Deductor::template Type<>{
                             RefTag{}, BindingTag<settings.binding>{},
-                            std::forward<Ft>(transitPayload.f), std::forward<Args>(args)...};
+                            std::forward<decltype(transitPayload.f)>(transitPayload.f),
+                            std::forward<decltype(args)>(args)...};
                     }
                 } else {
                     if constexpr (kIsFunctionTag<Ft>) {
                         return typename Deductor::template Type<>{
-                            Ft{}, BindingTag<settings.binding>{}, std::forward<Args>(args)...};
+                            Ft{}, BindingTag<settings.binding>{},
+                            std::forward<decltype(args)>(args)...};
                     } else {
                         if constexpr (sizeof...(BoundArgs) ==
                                       0) {  // Accounts for 'f' being a Task, where one shouldn't
                                             // put BindingTag in it but let constructor Task to Task
                                             // trigger
                             return typename Deductor::template Type<>{
-                                std::forward<Ft>(transitPayload.f)};
+                                std::forward<decltype(transitPayload.f)>(transitPayload.f)};
                         } else {
                             return typename Deductor::template Type<>{
-                                BindingTag<settings.binding>{}, std::forward<Ft>(transitPayload.f),
-                                std::forward<Args>(args)...};
+                                BindingTag<settings.binding>{},
+                                std::forward<decltype(transitPayload.f)>(transitPayload.f),
+                                std::forward<decltype(args)>(args)...};
                         }
                     }
                 }
@@ -882,21 +954,19 @@ struct TaskTypeDeductorAuto {
 template <template <typename, typename...> typename T, typename Fd, typename... BoundArgs>
     requires(!IsTask<T<Fd, BoundArgs...>>::value && !IsNamedTask<T<Fd, BoundArgs...>>::value &&
              HasFunctionTraits<std::decay_t<Fd>> &&
-             TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, Fd,
-                              BoundArgs...>::kIsValid)
+             TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto},
-                                               Fd, BoundArgs...>::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd,
+                                               BoundArgs...>::Signature> {};
 
 template <template <bool, typename, typename...> typename T, bool B, typename Fd,
           typename... BoundArgs>
     requires(!IsTask<T<B, Fd, BoundArgs...>>::value &&
              !IsNamedTask<T<B, Fd, BoundArgs...>>::value && HasFunctionTraits<std::decay_t<Fd>> &&
-             TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto}, Fd,
-                              BoundArgs...>::kIsValid)
+             TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<B, Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{.binding = Binding::kAuto},
-                                               Fd, BoundArgs...>::Signature> {};
+    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd,
+                                               BoundArgs...>::Signature> {};
 
 }  // namespace fn
 

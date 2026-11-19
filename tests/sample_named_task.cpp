@@ -2,7 +2,6 @@
 #include <iostream>
 #include <string>
 #include <type_traits>
-#include <utility>
 
 #include <task/named_task.hpp>
 #include <task/task.hpp>
@@ -36,11 +35,8 @@ int main() {
     auto task3 = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
     auto task4 = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), 2.0);
     double number{3.0};
-    auto task5 =
-        fn::buildNamedTask([](double& a, std::string) { a *= 2; }, number).byRef().buildNamed();
-    using t1 = std::string&;
-    using t2 = const std::string&;
-    using t3 = decltype(std::forward_like<t2>(std::declval<t1>()));
+    auto task5 = fn::buildNamedTask(fn::toFuncPtr([](int, double) {}), 2.0).byRef().build();
+    static_assert(std::is_same_v<decltype(task5), decltype(task4)>);
     // task5("hi");
     std::cout << "number is " << number << '\n';
     // Now works
@@ -141,7 +137,16 @@ int main() {
             }
         };
         auto functor = Functor{};
-        auto a = fn::buildNamedTask(functor, s).byRef().bindFront().buildNamed();
+        auto a = fn::buildNamedTask(functor, s).byRef().bindFront().build();
         // a(3);
+
+        auto otherTask = fn::buildNamedTask([](std::string&, int) {}, s).byRef().build();
+        auto otherTask2 = fn::buildNamedTask(otherTask).build();
+        auto refTask = fn::buildNamedTask(otherTask).byRef().build();
+        static_assert(std::is_same_v<decltype(otherTask), decltype(otherTask2)>);
+        static_assert(!std::is_same_v<decltype(refTask), decltype(otherTask2)>);
+        otherTask = otherTask2;
+        otherTask(3);
+        refTask(3);
     }
 }

@@ -213,5 +213,8 @@ int main() {
         // Or
         auto newTask =
             fn::buildTask([](double c, std::string&) {}, 3.0).withSettings<kMySettings>().build();
+
+        auto otherTask = fn::buildTask([](int, std::string&) {}, hi).byRef().build();
+        otherTask(3);
     }
 }

@@ -225,11 +225,67 @@ struct IsPayloadTuple : std::false_type {};
 template <typename... Ts>
 struct IsPayloadTuple<PayloadTuple<Ts...>> : std::true_type {};
 
+template <typename Like, typename T>
+constexpr decltype(auto) forward_like_custom(T&& value) noexcept {  // NOLINT
+    using Qualified = std::conditional_t<
+        std::is_reference_v<T>, T,
+        std::conditional_t<std::is_const_v<std::remove_reference_t<Like>>, const T, T>>;
+
+    return static_cast<
+        std::conditional_t<std::is_lvalue_reference_v<Like>, Qualified&, Qualified&&>>(value);
+}
+
+template <typename Like, typename T>
+constexpr decltype(auto) forward_like_custom(const T&& value) noexcept {  // NOLINT
+    using Qualified = T;
+    return static_cast<
+        std::conditional_t<std::is_lvalue_reference_v<Like>, Qualified&, Qualified&&>>(value);
+}
+
+template <typename Like, typename T>
+    requires(!std::is_reference_v<T>)
+constexpr decltype(auto) forward_like_custom(T& value) noexcept {  // NOLINT
+    using Qualified =
+        std::conditional_t<std::is_const_v<std::remove_reference_t<Like>>, const T, T>;
+
+    return static_cast<
+        std::conditional_t<std::is_lvalue_reference_v<Like>, Qualified&, Qualified&&>>(value);
+}
+
+template <typename Like, typename T>
+    requires(!std::is_reference_v<T>)
+constexpr decltype(auto) forward_like_custom(const T& value) noexcept {  // NOLINT
+    using Qualified = const T;
+
+    return static_cast<
+        std::conditional_t<std::is_lvalue_reference_v<Like>, Qualified&, Qualified&&>>(value);
+}
+
+/*template <typename Like, typename T>
+constexpr decltype(auto) forward_like_custom(
+    std::remove_reference_t<T>& value) noexcept {  // NOLINT
+    using Qualified = std::conditional_t<
+        std::is_reference_v<T>, T,
+        std::conditional_t<std::is_const_v<std::remove_reference_t<Like>>, const T, T>>;
+
+    return static_cast<
+        std::conditional_t<std::is_lvalue_reference_v<Like>, Qualified&, Qualified&&>>(value);
+}*/
+
+template <typename>
+struct IsRefWrapper : std::false_type {};
+
+template <typename T>
+struct IsRefWrapper<std::reference_wrapper<T>> : std::true_type {};
+
+template <typename T>
+static constexpr auto kIsRefWrapper = IsRefWrapper<T>::value;
+
 template <typename>
 struct IsRefPayloadTuple : std::false_type {};
 
 template <typename... Ts>
-    requires((std::is_reference_v<Ts> && ...))
+    requires(((std::is_reference_v<Ts> || kIsRefWrapper<Ts>) && ...))
 struct IsRefPayloadTuple<PayloadTuple<Ts...>> : std::true_type {};
 
 template <typename T>
@@ -398,13 +454,13 @@ struct PayloadTuple<T, Ts...> {
         if constexpr (sizeof...(Ts) == 0) {
             static_assert(std::is_invocable_v<decltype(F), decltype(args)...,
                                               decltype(unwrap_arg_on_invocation(
-                                                  std::forward_like<Self>(self.head)))>,
+                                                  forward_like_custom<Self, T>(self.head)))>,
                           "F is not callable with given arguments");
             return F(unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                     unwrap_arg_on_invocation(std::forward_like<Self>(self.head)));
+                     unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)));
         } else {
             return std::forward_like<Self>(self.tail).template apply<F>(
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+                std::forward<ArgsSoFar>(args)..., forward_like_custom<Self, T>(self.head));
         }
     }
 
@@ -414,10 +470,10 @@ struct PayloadTuple<T, Ts...> {
         if constexpr (sizeof...(Ts) == 0) {
             return fn::invoke_compatible<F>(
                 unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                unwrap_arg_on_invocation(std::forward_like<Self>(self.head)));
+                unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)));
         } else {
             return std::forward_like<Self>(self.tail).template applyCompatible<F>(
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+                std::forward<ArgsSoFar>(args)..., forward_like_custom<Self, T>(self.head));
         }
     }
 
@@ -459,11 +515,11 @@ struct PayloadTuple<T, Ts...> {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
             return std::forward<decltype(callArgs)>(callArgs).template applyAsArgs<F>(
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+                std::forward<ArgsSoFar>(args)..., forward_like_custom<Self, T>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyFront<F>(
                 std::forward<decltype(callArgs)>(callArgs), std::forward<ArgsSoFar>(args)...,
-                std::forward_like<Self>(self.head));
+                forward_like_custom<Self, T>(self.head));
         }
     }
 
@@ -476,11 +532,11 @@ struct PayloadTuple<T, Ts...> {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
             return std::forward<decltype(callArgs)>(callArgs).template applyAsArgsCompatible<F>(
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+                std::forward<ArgsSoFar>(args)..., forward_like_custom<Self, T>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyFrontCompatible<F>(
                 std::forward<decltype(callArgs)>(callArgs), std::forward<ArgsSoFar>(args)...,
-                std::forward_like<Self>(self.head));
+                forward_like_custom<Self, T>(self.head));
         }
     }
 
@@ -492,15 +548,15 @@ struct PayloadTuple<T, Ts...> {
                 std::is_invocable_v<
                     unwrap_reference_qualifiers_t<F>,
                     decltype(unwrap_arg_on_invocation(std::declval<decltype(args)>()))...,
-                    decltype(unwrap_arg_on_invocation(std::forward_like<Self>(self.head)))>,
+                    decltype(unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)))>,
                 "F is not callable with given arguments");
             return std::invoke(std::forward<unwrap_reference_qualifiers_t<F>>(f),
                                unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                               unwrap_arg_on_invocation(std::forward_like<Self>(self.head)));
+                               unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)));
         } else {
-            return std::forward_like<Self>(self.tail).apply(std::forward<F>(f),
-                                                            std::forward<ArgsSoFar>(args)...,
-                                                            std::forward_like<Self>(self.head));
+            return std::forward_like<Self>(self.tail).apply(
+                std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+                forward_like_custom<Self, T>(self.head));
         }
     }
 
@@ -512,11 +568,11 @@ struct PayloadTuple<T, Ts...> {
             return fn::invoke_compatible(
                 std::forward<unwrap_reference_qualifiers_t<F>>(f),
                 unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                unwrap_arg_on_invocation(std::forward_like<Self>(self.head)));
+                unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)));
         } else {
             return std::forward_like<Self>(self.tail).applyCompatible(
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                std::forward_like<Self>(self.head));
+                forward_like_custom<Self, T>(self.head));
         }
     }
 
@@ -560,11 +616,11 @@ struct PayloadTuple<T, Ts...> {
         if constexpr (sizeof...(Ts) == 0) {
             return std::forward<decltype(callArgs)>(callArgs).applyAsArgs(
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                std::forward_like<Self>(self.head));
+                forward_like_custom<Self, T>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyFront<F>(
                 std::forward<F>(f), std::forward<decltype(callArgs)>(callArgs),
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+                std::forward<ArgsSoFar>(args)..., forward_like_custom<Self, T>(self.head));
         }
     }
 
@@ -578,11 +634,11 @@ struct PayloadTuple<T, Ts...> {
         if constexpr (sizeof...(Ts) == 0) {
             return std::forward<decltype(callArgs)>(callArgs).template applyAsArgsCompatible<F>(
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
-                std::forward_like<Self>(self.head));
+                forward_like_custom<Self, T>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyFrontCompatible<F>(
                 std::forward<F>(f), std::forward<decltype(callArgs)>(callArgs),
-                std::forward<ArgsSoFar>(args)..., std::forward_like<Self>(self.head));
+                std::forward<ArgsSoFar>(args)..., forward_like_custom<Self, T>(self.head));
         }
     }
 };
