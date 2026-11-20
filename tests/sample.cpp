@@ -197,7 +197,7 @@ int main() {
                 .byRef()
                 .build();
         task(hey);
-        std::cout << "New string is: " << hi << '\n';
+        std::cout << "New string is: " << hi << '\n';  // Prints "Hi There"
         auto task2 = std::move(task);
 
         // Or, building the print once and applying its type to any task
@@ -215,7 +215,10 @@ int main() {
         auto newTask =
             fn::buildTask([](double c, std::string&) {}, 3.0).withSettings<kMySettings>().build();
 
-        auto otherTask = fn::buildTask([](int, std::string&) {}, hi).byRef().build();
+        auto otherTask = fn::buildTask([](int, std::string&&) {}, fn::ref(hi)).build();
         otherTask(3);
+
+        // Error: std::reference_wrapper<std::string> isn't implicitly convertible to std::string&&
+        // auto otherTask2 = fn::buildTask([](int, std::string&&) {}, std::ref(hi)).build();
     }
 }

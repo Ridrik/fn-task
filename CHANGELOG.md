@@ -1,3 +1,47 @@
+## v1.4.0 - November 2026
+### Fixed
+- Various niche invocation scenarios fixed
+### Added
+- Added build factories for automatic and smooth property building for `fn::Task` and `fn::NamedTask`:
+- Added `fn::ref` and `fn::cref`. They store a reference to an object, like `std::reference_wrapper`, but with the addition of being convertible to an rvalue-reference of the inner type. Prefer them when you want a reference of an object to move it at invocation, or anywhere else where your logic isn't based directly on std::reference_wrapper.
+
+```cpp
+
+        auto hi = std::string{"hi"};
+        auto hey = std::string{"hey"};
+        auto task =
+            fn::buildTask([](std::string& a, std::string& b) noexcept { a = "Hi There"; }, hi)
+                .withSignature<void(std::string&)>()
+                .withInlineSize<8>()
+                .moveOnly()
+                .withAlignment<8>()
+                .allowHeap()
+                .bindFront()
+                .byRef()
+                .build();
+        task(hey);
+        std::cout << "New string is: " << hi << '\n';   // Prints "Hi There"
+
+        // Or, building the print once and applying its type to any task
+        constexpr auto kMySettings = fn::getSettings()
+                                         .withSignature<void(std::string&)>()
+                                         .withInlineSize<8>()
+                                         .moveOnly()
+                                         .withAlignment<8>()
+                                         .allowHeap()
+                                         .bindFront()
+                                         .byRef();
+        auto taskMimic = fn::makeTask<kMySettings>(
+            [](std::string& a, std::string& b) noexcept { a = "Hi There"; }, hi);
+
+         // Example of fn::ref
+         auto otherTask = fn::buildTask([](int, std::string&&) {}, fn::ref(hi)).build();
+            otherTask(3);
+        // Error: std::reference_wrapper<std::string> isn't implicitly convertible to std::string&&
+        // auto otherTask2 = fn::buildTask([](int, std::string&&) {}, std::ref(hi)).build();
+
+``
+
 ## v1.3.0 - November 2026
 ### Updated
 - Better deductors and conversions, including Task to Task, NamedTask to NamedTask, Signature conversions, deduction fixes, etc.
