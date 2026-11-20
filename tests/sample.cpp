@@ -11,6 +11,7 @@
 
 #include "task/deductors.hpp"
 #include "task/function_traits.hpp"
+#include "task/payload.hpp"
 
 bool foo(const std::string& /*name*/, std::string& /*data*/, int /*version*/) noexcept {
     return false;
@@ -159,7 +160,7 @@ int main() {
             }
         };
         auto functor = Functor{};
-        auto funcTask = fn::makeTask(functor, std::ref(s));
+        auto funcTask = fn::makeTask(functor, fn::ref(s));
         funcTask();
         auto funcTask2 = fn::makeTask(Functor{}, s);
     }
@@ -169,17 +170,16 @@ int main() {
         struct Functor {
             std::string data;
 
-            void operator()(std::string&& other) const {
+            void operator()(std::string&& other) && {
                 // data += other;
             }
         };
         auto hi = std::string{"hi"};
-        auto task = fn::Task<void(double), fn::Copyability::kCopyable, fn::InlineSize{48},
-                             fn::Triviality::kNonTrivial>{
-            [](const std::string&, double) noexcept {}, std::cref(hi)};
-        task(3.0);
-        std::as_const(task)(3.0);
-        std::move(task)(3.0);
+        auto functor = Functor{};
+        using kekers =
+            std::add_const_t<fn::UnwrapBoundRefWrapT<fn::BoundRefWrapTag<std::string&, false>>>;
+        auto task = fn::Task<void() const, fn::Copyability::kCopyable, fn::InlineSize{48},
+                             fn::Triviality::kNonTrivial>{fn::ref(functor), fn::ref(hi)};
     }
 
     {
@@ -194,10 +194,11 @@ int main() {
                 .withAlignment<8>()
                 .allowHeap()
                 .bindFront()
-                .byRef();
-        /*task(hey);
+                .byRef()
+                .build();
+        task(hey);
         std::cout << "New string is: " << hi << '\n';
-        auto task2 = std::move(task);*/
+        auto task2 = std::move(task);
 
         // Or, building the print once and applying its type to any task
         constexpr auto kMySettings = fn::getSettings()

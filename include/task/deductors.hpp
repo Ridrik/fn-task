@@ -94,17 +94,6 @@ struct IsNamedTask<NamedTask<S, binding, F, BoundArgs...>> : std::true_type {
 
 struct RefTag {};
 
-template <typename F>
-struct NamedTaskRefTag {};
-
-struct NTRefTagCommon {};
-
-template <auto F>
-struct NamedTaskStaticRefTag {};
-
-template <auto F>
-struct StaticFn {};
-
 template <auto F>
 struct FunctionTag {};
 
@@ -342,9 +331,9 @@ using UpdateDeductorT = typename UpdateDeductor<newSettings, OldDeductor>::type;
 template <typename RequestedSig, DeductorSettings<RequestedSig> settings, typename Ft,
           typename... BoundArgs>
     requires(kIsFunctionTag<Ft> ||
-             HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>)
+             HasFunctionTraits<std::remove_reference_t<UnwrapBoundRefWrapT<Ft>>>)
 struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
-    using F = std::unwrap_reference_t<GetCallableT<Ft>>;
+    using F = UnwrapBoundRefWrapT<GetCallableT<Ft>>;
     static constexpr auto kSettings = settings;
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::remove_cvref_t<F>>;
@@ -364,25 +353,10 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             template <Binding bindProcess, template <typename...> typename Tester,
                       template <typename> typename Modifier>
             struct ArgumentProcessor {
-                template <typename ArgFilter>
-                struct ModifierFilter;
-
-                template <typename ArgFilter>
-                    requires IsCallArgB<ArgFilter>
-                struct ModifierFilter<ArgFilter> {
-                    using type = ArgFilter;
-                };
-
-                template <typename ArgFilter>
-                    requires(!IsCallArgB<ArgFilter>)
-                struct ModifierFilter<ArgFilter> {
-                    using type = Modifier<ArgFilter>;
-                };
-
                 static constexpr bool kTestFront =
-                    Tester<F, typename ModifierFilter<FiltBoundArgs>::type..., TsR...>::value;
+                    Tester<F, Modifier<FiltBoundArgs>..., TsR...>::value;
                 static constexpr bool kTestBack =
-                    Tester<F, Ts..., typename ModifierFilter<FiltBoundArgs>::type...>::value;
+                    Tester<F, Ts..., Modifier<FiltBoundArgs>...>::value;
                 static constexpr Binding kBindDeduct =
                     (kTestBack && kTestBack)
                         ? (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
@@ -468,7 +442,7 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         };
 
         using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
-                             std::tuple<std::unwrap_reference_t<BoundArgs>...>>;
+                             std::tuple<UnwrapBoundRefWrapT<BoundArgs>...>>;
     };
 
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
@@ -569,31 +543,31 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
 template <auto settings, typename Ft, typename... BoundArgs>
 struct TaskBuilder;
 
-template <bool, typename T>
+template <bool, typename T, bool Invocable = false>
 struct AddRefWrapFilter {
-    using type = AddRefWrapperToRef_t<T>;
+    using type = AddRefWrapperToRef_t<T, Invocable>;
 };
 
-template <typename T>
-struct AddRefWrapFilter<false, T> {
+template <typename T, bool Invocable>
+struct AddRefWrapFilter<false, T, Invocable> {
     using type = T;
 };
 
-template <bool Ref, typename T>
-using AddRefWrapFilterT = AddRefWrapFilter<Ref, T>::type;
+template <bool Ref, typename T, bool Invocable = false>
+using AddRefWrapFilterT = AddRefWrapFilter<Ref, T, Invocable>::type;
 
-template <bool, typename T>
+template <bool, typename T, bool Invocable = false>
 struct TaskBuilderRefFilter {
-    using type = AddRefWrapperToRef_t<T>;
+    using type = AddRefWrapperToRef_t<T, Invocable>;
 };
 
-template <typename T>
-struct TaskBuilderRefFilter<false, T> {
+template <typename T, bool Invocable>
+struct TaskBuilderRefFilter<false, T, Invocable> {
     using type = std::decay_t<T>;
 };
 
-template <bool Ref, typename T>
-using TaskBuilderRefFilterT = TaskBuilderRefFilter<Ref, T>::type;
+template <bool Ref, typename T, bool Invocable = false>
+using TaskBuilderRefFilterT = TaskBuilderRefFilter<Ref, T, Invocable>::type;
 
 template <auto settings, typename Ft, typename... BoundArgs>
     requires((kIsFunctionTag<Ft> ||
@@ -601,12 +575,12 @@ template <auto settings, typename Ft, typename... BoundArgs>
              (IsNamedDeductorSettings<settings>::value || IsDeductorSettings<settings>::value))
 struct TaskBuilder<settings, Ft, BoundArgs...>
     : TaskTypeDeductor<DeductorSettings<typename decltype(settings)::Signature>{settings},
-                       TaskBuilderRefFilterT<settings.ref, Ft>,
+                       TaskBuilderRefFilterT<settings.ref, Ft, true>,
                        TaskBuilderRefFilterT<settings.ref, BoundArgs>...> {
     TaskBuilder(auto&& f,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
                 auto&&... args)
         requires(!kIsFunctionTag<Ft>)
-        : transitPayload{.f = std::forward<decltype(f)>(f),
+        : transitPayload{.f = {std::forward<decltype(f)>(f)},
                          .args = {std::forward<decltype(args)>(args)...}} {}
 
     TaskBuilder(BoundArgs&&... args)
@@ -622,7 +596,8 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
 
     static constexpr auto kNamedTaskBuilder = IsNamedDeductorSettings<settings>::value;
 
-    using Payload = GetPayloadT<AddRefWrapFilterT<settings.ref, Ft&&>,
+    static constexpr auto kInvocable{true};
+    using Payload = GetPayloadT<AddRefWrapFilterT<settings.ref, Ft&&, kInvocable>,
                                 AddRefWrapFilterT<settings.ref, BoundArgs&&>...>;
     Payload transitPayload;
 
@@ -636,7 +611,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
 
     using Deductor =
         TaskTypeDeductor<DeductorSettings<typename decltype(settings)::Signature>{settings},
-                         TaskBuilderRefFilterT<settings.ref, Ft>,
+                         TaskBuilderRefFilterT<settings.ref, Ft, true>,
                          TaskBuilderRefFilterT<settings.ref, BoundArgs>...>;
 
     template <typename NewSignature>
@@ -954,19 +929,19 @@ struct TaskTypeDeductorAuto {
 template <template <typename, typename...> typename T, typename Fd, typename... BoundArgs>
     requires(!IsTask<T<Fd, BoundArgs...>>::value && !IsNamedTask<T<Fd, BoundArgs...>>::value &&
              HasFunctionTraits<std::decay_t<Fd>> &&
-             TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd, BoundArgs...>::kIsValid)
+             TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd,
-                                               BoundArgs...>::Signature> {};
+    : FunctionTraits<
+          typename TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::Signature> {};
 
 template <template <bool, typename, typename...> typename T, bool B, typename Fd,
           typename... BoundArgs>
     requires(!IsTask<T<B, Fd, BoundArgs...>>::value &&
              !IsNamedTask<T<B, Fd, BoundArgs...>>::value && HasFunctionTraits<std::decay_t<Fd>> &&
-             TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd, BoundArgs...>::kIsValid)
+             TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<B, Fd, BoundArgs...>>
-    : FunctionTraits<typename TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, Fd,
-                                               BoundArgs...>::Signature> {};
+    : FunctionTraits<
+          typename TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::Signature> {};
 
 }  // namespace fn
 
