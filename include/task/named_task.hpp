@@ -41,22 +41,22 @@ struct NamedTaskInvoker<binding, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...
     template <typename T>
     using Convert = ApplyQualifiers<std::unwrap_reference_t<T>>;
 
-    static constexpr bool kCVLess = !IsConst && !LVRef && !RVRef;
+    static constexpr bool kRefLess = !LVRef && !RVRef;
 
     template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
-        kCVLess ? (IsNoExcept                                             // NOLINT
-                       ? is_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
-                       : is_compatible_invocable_b<Ft, Argst...>)
-                : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
-                              : std::is_invocable_v<Ft, Argst...>);
+        kRefLess ? (IsNoExcept                                             // NOLINT
+                        ? is_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
+                        : is_compatible_invocable_b<Ft, Argst...>)
+                 : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
+                               : std::is_invocable_v<Ft, Argst...>);
 
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept(IsNoExcept) {
         if constexpr (binding != Binding::kFront &&
                       kInvocableVerifierV<Convert<F>,
                                           CallArgTag<decltype(std::forward<Args>(args))>...,
                                           Convert<BoundArgs>...>) {
-            if constexpr (kCVLess) {
+            if constexpr (kRefLess) {
                 return std::move((const_cast<Task&>(self)).payload_)
                     .invokeCompatible(std::forward<Args>(args)...);
             } else {
@@ -67,7 +67,7 @@ struct NamedTaskInvoker<binding, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...
                              kInvocableVerifierV<
                                  Convert<F>, Convert<BoundArgs>...,
                                  CallArgTag<decltype(std::forward<Args>(args))>...>) {
-            if constexpr (kCVLess) {
+            if constexpr (kRefLess) {
                 return std::move((const_cast<Task&>(self)).payload_)
                     .invokeFrontCompatible(std::forward<Args>(args)...);
             } else {
@@ -93,7 +93,7 @@ template <typename S, Binding binding, typename F, typename... BoundArgs>
 struct NamedTask;
 
 template <typename S, Binding binding, typename F, typename... BoundArgs>
-    requires(FunctionTraits<std::remove_reference_t<std::unwrap_reference_t<F>>>::kValid &&
+    requires(FunctionTraits<std::remove_reference_t<UnwrapBoundRefWrapT<F>>>::kValid &&
              FunctionTraits<S>::kValid)
 struct NamedTask<S, binding, F, BoundArgs...>
     : NamedTaskInvoker<binding, NamedTask<S, binding, F, BoundArgs...>,

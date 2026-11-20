@@ -6,6 +6,8 @@
 #include <task/named_task.hpp>
 #include <task/task.hpp>
 
+#include "task/payload.hpp"
+
 bool foo(std::string /*name*/,  // NOLINT(performance-unnecessary-value-param)
          std::string& /*data*/, int /*version*/) {
     return false;
@@ -47,7 +49,7 @@ int main() {
     // still stored by value)
     auto fTask = fn::makeRefNamedTask(fn::toFuncPtr([](int, double) {}), c);
     // This is equivalent to calling base builder with reference_wrapping references
-    auto fTaskMimic = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), std::ref(c));
+    auto fTaskMimic = fn::makeNamedTask(fn::toFuncPtr([](int, double) {}), fn::ref(c));
     static_assert(std::is_same_v<decltype(fTask), decltype(fTaskMimic)>);
     auto fTask2 = fTask;
     fTask = fTask2;
@@ -89,7 +91,7 @@ int main() {
     // All the following yield same NamedTask
     auto str2 = std::string{"Hi There"};
     const auto compileFunc5 = fn::makeRefNamedTask<bar>(str2);
-    const auto compileFunc6 = fn::makeNamedTask<bar>(std::ref(str2));
+    const auto compileFunc6 = fn::makeNamedTask<bar>(fn::ref(str2));
     std::string& strFetch = compileFunc5.getBoundArg<0>();
     using S1 = decltype(compileFunc5)::Signature;
     using S2 = decltype(compileFunc6)::Signature;
@@ -100,7 +102,7 @@ int main() {
     static_assert(std::is_same_v<decltype(compileFunc5), decltype(compileFunc6)>);
 
     // Similar for constant template parameters
-    auto compileFunc7 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), std::ref(str2));
+    auto compileFunc7 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), fn::ref(str2));
     auto compileFunc8 = fn::makeRefNamedTask(fn::toFuncPtr<bar_mimic>(), str2);
     static_assert(std::is_same_v<decltype(compileFunc7), decltype(compileFunc8)>);
 
