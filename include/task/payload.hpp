@@ -2,6 +2,7 @@
 #define TASK_PAYLOAD_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <tuple>
 #include <type_traits>
@@ -55,6 +56,8 @@ struct BoundRefWrapTag {
         return std::invoke(val.get(), std::forward<decltype(args)>(args)...);
     }
 };
+
+enum class RefQualifier : std::uint8_t { kNone, kNonConst, kConst };
 
 constexpr auto ref(auto&& val) noexcept
     requires(std::is_lvalue_reference_v<decltype(val)>)
@@ -890,18 +893,23 @@ template <auto F, typename... Args>
     requires(PayloadNoRvalueRef<PayloadTuple<Args...>>::value)
 struct PayloadNoRvalueRef<PayloadImplArgs<F, Args...>> : std::true_type {};
 
-template <typename T, bool Invocable>
+template <typename T, bool Const, bool Invocable>
 struct AddRefWrapperToRef {
     using Type = T;
 };
 
 template <typename T, bool Invocable>
-struct AddRefWrapperToRef<T&, Invocable> {
+struct AddRefWrapperToRef<T&, false, Invocable> {
     using Type = BoundRefWrapTag<T&, Invocable>;
 };
 
 template <typename T, bool Invocable>
-using AddRefWrapperToRef_t = typename AddRefWrapperToRef<T, Invocable>::Type;
+struct AddRefWrapperToRef<T&, true, Invocable> {
+    using Type = BoundRefWrapTag<const T&, Invocable>;
+};
+
+template <typename T, bool Const, bool Invocable>
+using AddRefWrapperToRef_t = typename AddRefWrapperToRef<T, Const, Invocable>::Type;
 
 template <typename F, typename... Args>
 using PayloadT = PayloadImpl<std::decay_t<F>, std::decay_t<Args>...>;

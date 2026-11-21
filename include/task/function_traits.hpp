@@ -253,6 +253,15 @@ struct AddNoExcept {
     using Type = FunctionTraits<T>::signature_no_except;
 };
 
+template <typename SigFrom, typename... SigTo>
+struct BaseSignatureConvertible;
+
+template <typename Ret1, typename Ret2, typename... Args1, typename... Args2>
+struct BaseSignatureConvertible<Ret1(Args1...), Ret2(Args2...)> {
+    static constexpr auto kValid =
+        (std::is_convertible_v<Args2, Args1> && ...) && std::is_convertible_v<Ret1, Ret2>;
+};
+
 template <typename Sig>
 concept IsBaseSignature = std::is_same_v<Sig, typename FunctionTraits<Sig>::base_signature>;
 
@@ -260,9 +269,10 @@ template <typename Sig>
 concept IsBaseSignatureAndNoExcept =
     std::is_same_v<Sig, typename FunctionTraits<Sig>::base_signature_noexcept>;
 
-template <typename SigBase, typename SigTarget>
-concept BaseSignatureMatches = std::is_same_v<typename FunctionTraits<SigBase>::base_signature,
-                                              typename FunctionTraits<SigTarget>::base_signature>;
+template <typename SigFrom, typename SigTo>
+concept BaseSignatureMatches =
+    BaseSignatureConvertible<typename FunctionTraits<SigFrom>::base_signature,
+                             typename FunctionTraits<SigTo>::base_signature>::kValid;
 
 template <typename Sig>
 concept IsNoExcept = FunctionTraits<Sig>::kIsNoExcept;

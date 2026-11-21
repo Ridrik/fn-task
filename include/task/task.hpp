@@ -1549,79 +1549,88 @@ template <auto F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
              FunctionTraits<decltype(F)>::kValid &&
              TaskTypeDeductorAuto<F, DeductorSettings<void>{}, BoundArgs...>::kIsValid)
-Task(FunctionTag<F>, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                          TaskBuilderRefFilterT<false, BoundArgs>...>::Signature,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<false, BoundArgs>...>::kCopyable,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<false, BoundArgs>...>::kPayloadSize,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<false, BoundArgs>...>::kTriviality,
-            false, HeapPolicy::kDisallow,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<false, BoundArgs>...>::kAlignment>;
+Task(FunctionTag<F>, BoundArgs&&...) -> Task<
+    typename TaskTypeDeductorAuto<
+        F, DeductorSettings<void>{},
+        TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::Signature,
+    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kCopyable,
+    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kPayloadSize,
+    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kTriviality,
+    false, HeapPolicy::kDisallow,
+    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kAlignment>;
+
+template <typename F, typename... BoundArgs>
+    requires(!std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
+             FunctionTraits<std::remove_reference_t<
+                 std::unwrap_reference_t<TaskBuilderRefFilterT<RefQualifier::kNone, F>>>>::kValid &&
+             (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
+             TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto},
+                              TaskBuilderRefFilterT<RefQualifier::kNone, F>,
+                              TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kIsValid)
+Task(F&&, BoundArgs&&...) -> Task<
+    typename TaskTypeDeductor<DeductorSettings<void>{},
+                              TaskBuilderRefFilterT<RefQualifier::kNone, F>,
+                              TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::Signature,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNone, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kCopyable,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNone, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kPayloadSize,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNone, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kTriviality,
+    false, HeapPolicy::kDisallow,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNone, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(
-        !std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
+        !IsFunctionTag<F>::value &&
         FunctionTraits<std::remove_reference_t<
-            std::unwrap_reference_t<TaskBuilderRefFilterT<false, F>>>>::kValid &&
-        (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
-        TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, TaskBuilderRefFilterT<false, F>,
-                         TaskBuilderRefFilterT<false, BoundArgs>...>::kIsValid)
-Task(F&&, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<false, F>,
-                                      TaskBuilderRefFilterT<false, BoundArgs>...>::Signature,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<false, F>,
-                             TaskBuilderRefFilterT<false, BoundArgs>...>::kCopyable,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<false, F>,
-                             TaskBuilderRefFilterT<false, BoundArgs>...>::kPayloadSize,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<false, F>,
-                             TaskBuilderRefFilterT<false, BoundArgs>...>::kTriviality,
-            false, HeapPolicy::kDisallow,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<false, F>,
-                             TaskBuilderRefFilterT<false, BoundArgs>...>::kAlignment>;
-
-template <typename F, typename... BoundArgs>
-    requires(!IsFunctionTag<F>::value &&
-             FunctionTraits<std::remove_reference_t<
-                 std::unwrap_reference_t<TaskBuilderRefFilterT<true, F>>>>::kValid &&
-             TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<true, F>,
-                              TaskBuilderRefFilterT<true, BoundArgs>...>::kIsValid)
-Task(RefTag, F&&, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<true, F>,
-                                      BoundArgs...>::Signature,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<true, F>,
-                             TaskBuilderRefFilterT<true, BoundArgs>...>::kCopyable,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<true, F>,
-                             TaskBuilderRefFilterT<true, BoundArgs>...>::kPayloadSize,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<true, F>,
-                             TaskBuilderRefFilterT<true, BoundArgs>...>::kTriviality,
-            false, HeapPolicy::kDisallow,
-            TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<true, F>,
-                             TaskBuilderRefFilterT<true, BoundArgs>...>::kAlignment>;
+            std::unwrap_reference_t<TaskBuilderRefFilterT<RefQualifier::kNonConst, F>>>>::kValid &&
+        TaskTypeDeductor<DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
+                         TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kIsValid)
+Task(RefTag, F&&, BoundArgs&&...) -> Task<
+    typename TaskTypeDeductor<DeductorSettings<void>{},
+                              TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
+                              BoundArgs...>::Signature,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kCopyable,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kPayloadSize,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kTriviality,
+    false, HeapPolicy::kDisallow,
+    TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
+                     TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kAlignment>;
 
 template <auto F, typename... BoundArgs>
     requires(FunctionTraits<decltype(F)>::kValid &&
-             TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                  TaskBuilderRefFilterT<true, BoundArgs>...>::kIsValid)
-Task(RefTag, FunctionTag<F>, BoundArgs&&...)
-    -> Task<typename TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                          TaskBuilderRefFilterT<true, BoundArgs>...>::Signature,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<true, BoundArgs>...>::kCopyable,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<true, BoundArgs>...>::kPayloadSize,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<true, BoundArgs>...>::kTriviality,
-            false, HeapPolicy::kDisallow,
-            TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                                 TaskBuilderRefFilterT<true, BoundArgs>...>::kAlignment>;
+             TaskTypeDeductorAuto<
+                 F, DeductorSettings<void>{},
+                 TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kIsValid)
+Task(RefTag, FunctionTag<F>, BoundArgs&&...) -> Task<
+    typename TaskTypeDeductorAuto<
+        F, DeductorSettings<void>{},
+        TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::Signature,
+    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kCopyable,
+    TaskTypeDeductorAuto<
+        F, DeductorSettings<void>{},
+        TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kPayloadSize,
+    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kTriviality,
+    false, HeapPolicy::kDisallow,
+    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+                         TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kAlignment>;
 
 template <auto settings = DeductorSettings<void>{}, typename F, typename... BoundArgs>
     requires(IsDeductorSettings<settings>::value &&
-             (!IsTask<TaskBuilderRefFilterT<false, F>>::value || sizeof...(BoundArgs) > 0))
+             (!IsTask<TaskBuilderRefFilterT<RefQualifier::kNone, F>>::value ||
+              sizeof...(BoundArgs) > 0))
 FORCE_INLINE constexpr auto buildTask(F&& f, BoundArgs&&... args) {
     return TaskBuilder<settings, F, BoundArgs...>{std::forward<F>(f),
                                                   std::forward<BoundArgs>(args)...};

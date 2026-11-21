@@ -158,7 +158,7 @@ template <typename S = void>
 struct NamedDeductorSettings {
     using Signature = S;
     Binding binding{Binding::kAuto};
-    bool ref{false};
+    RefQualifier ref{RefQualifier::kNone};
 
     template <typename NewSignature>
     [[nodiscard]] constexpr auto withSignature() const noexcept {
@@ -179,7 +179,13 @@ struct NamedDeductorSettings {
 
     [[nodiscard]] constexpr auto byRef() const noexcept {
         auto copy = *this;
-        copy.ref = true;
+        copy.ref = RefQualifier::kNonConst;
+        return copy;
+    }
+
+    [[nodiscard]] constexpr auto byCRef() const noexcept {
+        auto copy = *this;
+        copy.ref = RefQualifier::kConst;
         return copy;
     }
 };
@@ -193,12 +199,12 @@ struct DeductorSettings {
     Optional<Triviality> t;
     Optional<HeapPolicy> hp;
     Optional<std::size_t> alg;
-    bool ref{false};
+    RefQualifier ref{RefQualifier::kNone};
 
     constexpr DeductorSettings() = default;
     constexpr DeductorSettings(Binding b, Optional<Copyability> c, Optional<std::size_t> s,
                                Optional<Triviality> t, Optional<HeapPolicy> h,
-                               Optional<std::size_t> a, bool r)
+                               Optional<std::size_t> a, RefQualifier r)
         : binding{b}, cb{c}, size{s}, t{t}, hp{h}, alg{a}, ref{r} {}
 
     constexpr DeductorSettings(Binding b) : binding{b} {}
@@ -257,7 +263,13 @@ struct DeductorSettings {
 
     [[nodiscard]] constexpr auto byRef() const noexcept {
         auto copy = *this;
-        copy.ref = true;
+        copy.ref = RefQualifier::kNonConst;
+        return copy;
+    }
+
+    [[nodiscard]] constexpr auto byCRef() const noexcept {
+        auto copy = *this;
+        copy.ref = RefQualifier::kConst;
         return copy;
     }
 };
@@ -543,30 +555,30 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
 template <auto settings, typename Ft, typename... BoundArgs>
 struct TaskBuilder;
 
-template <bool, typename T, bool Invocable = false>
+template <RefQualifier q, typename T, bool Invocable = false>
 struct AddRefWrapFilter {
-    using type = AddRefWrapperToRef_t<T, Invocable>;
+    using type = AddRefWrapperToRef_t<T, q == RefQualifier::kConst, Invocable>;
 };
 
 template <typename T, bool Invocable>
-struct AddRefWrapFilter<false, T, Invocable> {
+struct AddRefWrapFilter<RefQualifier::kNone, T, Invocable> {
     using type = T;
 };
 
-template <bool Ref, typename T, bool Invocable = false>
-using AddRefWrapFilterT = AddRefWrapFilter<Ref, T, Invocable>::type;
+template <RefQualifier q, typename T, bool Invocable = false>
+using AddRefWrapFilterT = AddRefWrapFilter<q, T, Invocable>::type;
 
-template <bool, typename T, bool Invocable = false>
+template <RefQualifier q, typename T, bool Invocable = false>
 struct TaskBuilderRefFilter {
-    using type = AddRefWrapperToRef_t<T, Invocable>;
+    using type = AddRefWrapperToRef_t<T, q == RefQualifier::kConst, Invocable>;
 };
 
 template <typename T, bool Invocable>
-struct TaskBuilderRefFilter<false, T, Invocable> {
+struct TaskBuilderRefFilter<RefQualifier::kNone, T, Invocable> {
     using type = std::decay_t<T>;
 };
 
-template <bool Ref, typename T, bool Invocable = false>
+template <RefQualifier Ref, typename T, bool Invocable = false>
 using TaskBuilderRefFilterT = TaskBuilderRefFilter<Ref, T, Invocable>::type;
 
 template <auto settings, typename Ft, typename... BoundArgs>
@@ -679,6 +691,25 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         }
     }
 
+    FORCE_INLINE constexpr auto byCRef() && noexcept {
+        auto&& args = std::move(transitPayload.args);
+        static constexpr bool kIgnoreRefWrapperRValueConversion{true};
+        if constexpr (kIsFunctionTag<Ft>) {
+            return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
+                []<typename... Args>(Args&&... args) {
+                    return TaskBuilder<settings.byCRef(), Ft, BoundArgs...>{
+                        std::forward<Args>(args)...};
+                });
+        } else {
+            return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
+                [this]<typename... Args>(Args&&... args) {
+                    return TaskBuilder<settings.byCRef(), Ft, BoundArgs...>{
+                        std::forward<decltype(transitPayload.f)>(transitPayload.f),
+                        std::forward<Args>(args)...};
+                });
+        }
+    }
+
     template <auto newSettings>
         requires(IsDeductorSettings<newSettings>::value)
     FORCE_INLINE constexpr auto withSettings() && noexcept {
@@ -703,7 +734,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
                 [this]<typename... Args>(Args&&... args) {
                     if constexpr (sizeof...(args) == 0 &&
                                   IsNamedTask<std::decay_t<decltype(transitPayload.f)>>::value &&
-                                  !settings.ref) {
+                                  settings.ref == RefQualifier::kNone) {
                         return std::decay_t<decltype(transitPayload.f)>{
                             std::forward<decltype(transitPayload.f)>(transitPayload.f)};
                     } else {
@@ -718,6 +749,8 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     FORCE_INLINE constexpr auto build() && noexcept
         requires(!kNamedTaskBuilder)
     {
+        static_assert(Deductor::kInvocableValid,
+                      "Given callable, bound args and binding are not valid for invocation");
         static_assert(Deductor::kSignatureValid,
                       "Requested signature is not convertible from deduced one");
         static_assert(Deductor::kCopyValid, "Task is invalid under new copyability setting");
@@ -737,7 +770,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         if constexpr (kIsFunctionTag<Ft>) {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
                 []<typename... Args>(Args&&... args) {
-                    if constexpr (settings.ref) {
+                    if constexpr (settings.ref != RefQualifier::kNone) {
                         return typename Deductor::template Type<>{
                             RefTag{}, Ft{}, BindingTag<settings.binding>{},
                             std::forward<decltype(args)>(args)...};
@@ -750,7 +783,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         } else {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
                 [this]<typename... Args>(Args&&... args) {
-                    if constexpr (settings.ref) {
+                    if constexpr (settings.ref != RefQualifier::kNone) {
                         return typename Deductor::template Type<>{
                             RefTag{}, BindingTag<settings.binding>{},
                             std::forward<decltype(transitPayload.f)>(transitPayload.f),

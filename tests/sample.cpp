@@ -187,8 +187,14 @@ int main() {
         auto hi = std::string{"hi"};
         auto hey = std::string{"hey"};
         auto task =
-            fn::buildTask([](std::string& a, std::string& b) noexcept { a = "Hi There"; }, hi)
-                .withSignature<void(std::string&)>()
+            fn::buildTask(
+                [](std::string& a, const std::string& b) noexcept -> int {
+                    a = "Hi There";
+                    return 3;
+                },
+                hi)
+                .withSignature<double(std::string)>()  // int can convert to double, std::string can
+                                                       // convert to const std::string&
                 .withInlineSize<8>()
                 .moveOnly()
                 .withAlignment<8>()
