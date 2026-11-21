@@ -214,6 +214,7 @@ int main() {
         // Or
         auto newTask =
             fn::buildTask([](double c, std::string&) {}, 3.0).withSettings<kMySettings>().build();
+        newTask.swap(taskMimic);
 
         auto otherTask = fn::buildTask([](int, std::string&&) {}, fn::ref(hi)).build();
         otherTask(3);

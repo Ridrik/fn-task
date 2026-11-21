@@ -981,6 +981,12 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         return *this;
     }
 
+    void swap(Task& other) noexcept {
+        auto tmp = Task{std::move(other)};
+        other = std::move(*this);
+        (*this) = std::move(tmp);
+    }
+
     Task& operator=(std::nullptr_t) {
         clear();
         return *this;

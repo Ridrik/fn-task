@@ -149,6 +149,7 @@ int main() {
         static_assert(!std::is_same_v<decltype(refTask), decltype(otherTask2)>);
         otherTask = otherTask2;
         otherTask(3);
+        otherTask.swap(otherTask2);
         refTask(3);
     }
 }

@@ -135,6 +135,12 @@ struct NamedTask<S, binding, F, BoundArgs...>
         return PayloadTupleGetter<I, BoundArgs...>::get(self.payload_.args);
     }
 
+    void swap(NamedTask& other) noexcept {
+        auto tmp = NamedTask{std::move(other)};
+        other = std::move(*this);
+        (*this) = std::move(tmp);
+    }
+
     NamedTask(const NamedTask&) = default;
     NamedTask& operator=(const NamedTask&) = default;
     NamedTask(NamedTask&&) = default;
@@ -250,6 +256,12 @@ struct NamedTask<S, binding, FunctionTag<F>, BoundArgs...>
     constexpr decltype(auto) getBoundArg(this auto&& self) noexcept {
         static_assert(I < sizeof...(BoundArgs), "Exceeds number of captured arguments");
         return PayloadTupleGetter<I, BoundArgs...>::get(self.payload_.args);
+    }
+
+    void swap(NamedTask& other) noexcept {
+        auto tmp = NamedTask{std::move(other)};
+        other = std::move(*this);
+        (*this) = std::move(tmp);
     }
 
     NamedTask(const NamedTask&) = default;
