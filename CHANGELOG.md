@@ -1,3 +1,9 @@
+## v1.4.1 - November 2026
+### Added
+- byCRef() factory method, taking all lvalue-ref arguments by reference to the constant referenced-to type.
+- swap() method, allowing any 2 objects of `fn::Task` or `fn::NamedTask` to be swapped (type - including template - must match).
+- Expanded/relaxed signature conversion at factory/build. For instance, this allows the user to request a signature of `int(std::string&)` given a factory-deduced signature of `double(const std::string&)`, since double is convertible to int, and `std::string&` is convertible to `const std::string&`.
+
 ## v1.4.0 - November 2026
 ### Fixed
 - Various niche invocation scenarios fixed
@@ -40,7 +46,7 @@
         // Error: std::reference_wrapper<std::string> isn't implicitly convertible to std::string&&
         // auto otherTask2 = fn::buildTask([](int, std::string&&) {}, std::ref(hi)).build();
 
-``
+```
 
 ## v1.3.0 - November 2026
 ### Updated
