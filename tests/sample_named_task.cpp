@@ -92,7 +92,7 @@ int main() {
     auto str2 = std::string{"Hi There"};
     const auto compileFunc5 = fn::makeRefNamedTask<bar>(str2);
     const auto compileFunc6 = fn::makeNamedTask<bar>(fn::ref(str2));
-    std::string& strFetch = compileFunc5.getBoundArg<0>();
+    std::string& strFetch = compileFunc6.getBoundArg<0>();
     using S1 = decltype(compileFunc5)::Signature;
     using S2 = decltype(compileFunc6)::Signature;
     const auto compileFunc6Copy = fn::makeNamedTask(compileFunc5);

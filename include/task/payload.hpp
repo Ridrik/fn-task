@@ -436,6 +436,8 @@ constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
 
 template <>
 struct PayloadTuple<> {
+    constexpr PayloadTuple() = default;
+
     template <auto F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/,
                                                 ArgsSoFar&&... args) {
@@ -541,6 +543,9 @@ template <typename T, typename... Ts>
 struct PayloadTuple<T, Ts...> {
     T head;
     [[no_unique_address]] PayloadTuple<Ts...> tail{};
+
+    PayloadTuple(auto&& first, auto&&... args)
+        : head{std::forward<decltype(first)>(first)}, tail{std::forward<decltype(args)>(args)...} {}
 
     template <auto F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, ArgsSoFar&&... args) {
@@ -752,17 +757,17 @@ struct RefWrapToRef {
 };
 
 template <typename T>
-struct RefWrapToRef<std::reference_wrapper<T>> {
-    using Type = T&;
+struct RefWrapToRef<BoundRefWrapTag<T>> {
+    using Type = T;
 };
 
 template <typename T, typename... Ts>
 struct PayloadTupleGetter<0, T, Ts...> {
-    static constexpr T& get(PayloadTuple<T, Ts...>& tuple) {
+    static constexpr RefWrapToRef<T>::Type& get(PayloadTuple<T, Ts...>& tuple) {
         return tuple.head;
     }
 
-    static constexpr const T& get(const PayloadTuple<T, Ts...>& tuple) {
+    static constexpr const RefWrapToRef<T>::Type& get(const PayloadTuple<T, Ts...>& tuple) {
         return tuple.head;
     }
 
