@@ -1,3 +1,17 @@
+## v1.5.0 - November 2026
+### Added
+- Added index binding, extending options to bind from just front/back binding. This allows bound arguments to bind to any localized argument of the inner callable. Use `bintTo` on build factory to bind to specific indices (example below):
+
+```cpp
+            auto customBindTask =
+                fn::buildTask([](const std::string&, const int&, const std::string&) {}, "hi",
+                              "hey")
+                    .bindTo<0, 2>()
+                    .build();
+            customBindTask(3);
+
+```
+
 ## v1.4.1 - November 2026
 ### Added
 - byCRef() factory method, taking all lvalue-ref arguments by reference to the constant referenced-to type.
