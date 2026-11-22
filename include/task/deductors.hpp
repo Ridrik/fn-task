@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "function_traits.hpp"
 #include "payload.hpp"
@@ -65,19 +66,192 @@ struct IsTask<Task<Signature, cb, size, t, Extended, hp, align>> : std::true_typ
 
 enum class Binding : std::uint8_t { kAuto, kFront, kBack };
 
-template <Binding bind>
-struct BindingTag {};
+template <std::size_t... Indices>
+struct Binder {};
+
+template <>
+struct Binder<> {
+    constexpr Binder(Binding b) : binding{b} {}
+    constexpr Binder() = default;
+
+    constexpr operator Binding() const noexcept {
+        return binding;
+    }
+
+    Binding binding{Binding::kAuto};
+};
+
+template <auto V>
+struct IsBinder : std::false_type {};
+
+template <std::size_t... Is, Binder<Is...> binder>
+struct IsBinder<binder> : std::true_type {};
+
+template <auto V>
+static constexpr auto kIsBinder = IsBinder<V>::value;
+
+template <auto V>
+struct IsIndicelessBinder : std::false_type {};
+
+template <Binder<> binder>
+struct IsIndicelessBinder<binder> : std::true_type {};
+
+template <auto V>
+static constexpr auto kIsIndicelessBinder = IsIndicelessBinder<V>::value;
+
+template <auto bind>
+    requires kIsBinder<bind>
+struct BinderTag {};
 
 template <typename>
-struct IsBindingTag : std::false_type {};
+struct IsBinderTag : std::false_type {};
 
-template <Binding bind>
-struct IsBindingTag<BindingTag<bind>> : std::true_type {};
+template <std::size_t... Is, Binder<Is...> bind>
+struct IsBinderTag<BinderTag<bind>> : std::true_type {};
 
 template <typename T>
-static constexpr bool IsBindingTagB = IsBindingTag<T>::value;  // NOLINT
+static constexpr bool IsBinderTagB = IsBinderTag<T>::value;  // NOLINT
 
-template <typename S, Binding binding, typename F, typename... BoundArgs>
+template <std::size_t... Is>
+struct IndicesHolder {};
+
+template <auto binder>
+    requires kIsBinder<binder> && (!kIsIndicelessBinder<binder>)
+struct GetBinderIndicesTuple;
+
+template <std::size_t... Is, Binder<Is...> binder>
+    requires(sizeof...(Is) > 0)
+struct GetBinderIndicesTuple<binder> {
+    using type = IndicesHolder<Is...>;
+};
+
+template <auto binder>
+    requires kIsBinder<binder> && (!kIsIndicelessBinder<binder>)
+using GetBinderIndicesT = GetBinderIndicesTuple<binder>::type;
+
+template <typename SelectedTuple, typename CallTuple, typename RemainingTuple,
+          typename RemainingBoundTuple, typename Indices, std::size_t curIdx>
+struct rebind_search;
+
+template <typename... SelectedArgs, typename CallArgsTuple, std::size_t curIdx>
+struct rebind_search<std::tuple<SelectedArgs...>, CallArgsTuple, std::tuple<>, std::tuple<>,
+                     IndicesHolder<>, curIdx> {
+    using type = std::tuple<SelectedArgs...>;
+    using CallTuple = CallArgsTuple;
+};
+
+template <typename... SelectedArgs, typename... CallArgs, typename... RemainingArgs,
+          std::size_t curIdx>
+    requires(sizeof...(RemainingArgs) > 0)
+struct rebind_search<std::tuple<SelectedArgs...>, std::tuple<CallArgs...>,
+                     std::tuple<RemainingArgs...>, std::tuple<>, IndicesHolder<>, curIdx> {
+    using type = std::tuple<SelectedArgs..., RemainingArgs...>;
+    using CallTuple = std::tuple<CallArgs..., RemainingArgs...>;
+};
+
+template <typename... SelectedArgs, typename... CallArgs, typename NextArg,
+          typename... RemainingArgs, typename NextBoundArg, typename... RemainingBoundArgs,
+          std::size_t nextBoundIdx, std::size_t... Is, std::size_t curIdx>
+struct rebind_search<
+    std::tuple<SelectedArgs...>, std::tuple<CallArgs...>, std::tuple<NextArg, RemainingArgs...>,
+    std::tuple<NextBoundArg, RemainingBoundArgs...>, IndicesHolder<nextBoundIdx, Is...>, curIdx> {
+    static_assert(sizeof...(Is) == sizeof...(RemainingBoundArgs));
+    static_assert(curIdx <= nextBoundIdx);
+    using Next = std::conditional_t<
+        curIdx == nextBoundIdx,
+        rebind_search<std::tuple<SelectedArgs..., NextBoundArg>, std::tuple<CallArgs...>,
+                      std::tuple<RemainingArgs...>, std::tuple<RemainingBoundArgs...>,
+                      IndicesHolder<Is...>, curIdx + 1>,
+        rebind_search<std::tuple<SelectedArgs..., NextArg>, std::tuple<CallArgs..., NextArg>,
+                      std::tuple<RemainingArgs...>, std::tuple<NextBoundArg, RemainingBoundArgs...>,
+                      IndicesHolder<nextBoundIdx, Is...>, curIdx + 1>>;
+    using type = typename Next::type;
+    using CallTuple = Next::CallTuple;
+};
+
+template <typename AllTuple, typename BoundTuple, std::size_t... Is>
+struct rebind {  // NOLINT
+    using searcher =
+        rebind_search<std::tuple<>, std::tuple<>, AllTuple, BoundTuple, IndicesHolder<Is...>, 0>;
+    using type = typename searcher::type;
+    using CallTuple = typename searcher::CallTuple;
+};
+
+template <typename SelectedTuple, typename RemainingTuple, typename RemainingBoundTuple,
+          typename Indices, std::size_t curIdx>
+struct rebind_search_call_and_bound;
+
+template <typename... SelectedArgs, std::size_t curIdx>
+struct rebind_search_call_and_bound<std::tuple<SelectedArgs...>, std::tuple<>, std::tuple<>,
+                                    IndicesHolder<>, curIdx> {
+    using type = std::tuple<SelectedArgs...>;
+};
+
+template <typename... SelectedArgs, typename... RemainingArgs, std::size_t curIdx>
+struct rebind_search_call_and_bound<std::tuple<SelectedArgs...>, std::tuple<RemainingArgs...>,
+                                    std::tuple<>, IndicesHolder<>, curIdx> {
+    using type = std::tuple<SelectedArgs..., RemainingArgs...>;
+};
+
+template <typename... SelectedArgs, typename... RemainingBoundArgs, std::size_t... Is,
+          std::size_t curIdx>
+struct rebind_search_call_and_bound<std::tuple<SelectedArgs...>, std::tuple<>,
+                                    std::tuple<RemainingBoundArgs...>, IndicesHolder<Is...>,
+                                    curIdx> {
+    static_assert(sizeof...(Is) == sizeof...(RemainingBoundArgs));
+    using type = std::tuple<SelectedArgs..., RemainingBoundArgs...>;
+};
+
+template <typename... SelectedArgs, typename NextArg, typename... RemainingArgs,
+          typename NextBoundArg, typename... RemainingBoundArgs, std::size_t nextBoundIdx,
+          std::size_t... Is, std::size_t curIdx>
+struct rebind_search_call_and_bound<
+    std::tuple<SelectedArgs...>, std::tuple<NextArg, RemainingArgs...>,
+    std::tuple<NextBoundArg, RemainingBoundArgs...>, IndicesHolder<nextBoundIdx, Is...>, curIdx> {
+    static_assert(sizeof...(Is) == sizeof...(RemainingBoundArgs));
+    static_assert(curIdx <= nextBoundIdx);
+    using Next = std::conditional_t<
+        curIdx == nextBoundIdx,
+        rebind_search_call_and_bound<
+            std::tuple<SelectedArgs..., NextBoundArg>, std::tuple<NextArg, RemainingArgs...>,
+            std::tuple<RemainingBoundArgs...>, IndicesHolder<Is...>, curIdx + 1>,
+        rebind_search_call_and_bound<std::tuple<SelectedArgs..., NextArg>,
+                                     std::tuple<RemainingArgs...>,
+                                     std::tuple<NextBoundArg, RemainingBoundArgs...>,
+                                     IndicesHolder<nextBoundIdx, Is...>, curIdx + 1>>;
+    using type = typename Next::type;
+};
+
+template <typename CallTuple, typename BoundTuple, auto binder>
+    requires kIsBinder<binder> && (!kIsIndicelessBinder<binder>)
+struct rebind_call_and_bound;
+
+template <typename CallTuple, typename BoundTuple, std::size_t... Is, Binder<Is...> binder>
+    requires(sizeof...(Is) > 0)
+struct rebind_call_and_bound<CallTuple, BoundTuple, binder> {
+    using type = rebind_search_call_and_bound<std::tuple<>, CallTuple, BoundTuple,
+                                              IndicesHolder<Is...>, 0>::type;
+};
+
+template <std::size_t N, typename Tuple, typename Indices = std::make_index_sequence<N>>
+struct slice_first;
+
+template <std::size_t N, typename... Args, std::size_t... Is>
+struct slice_first<N, std::tuple<Args...>, std::index_sequence<Is...>> {
+    using type = std::tuple<std::tuple_element_t<Is, std::tuple<Args...>>...>;
+};
+
+template <std::size_t N, typename Tuple, typename Indices = std::make_index_sequence<N>>
+struct slice_last;
+
+template <std::size_t N, typename... Args, std::size_t... Is>
+struct slice_last<N, std::tuple<Args...>, std::index_sequence<Is...>> {
+    static constexpr std::size_t kTotal = sizeof...(Args);
+    static_assert(N <= kTotal, "Slice size N cannot exceed total tuple size.");
+    using type = std::tuple<std::tuple_element_t<Is + (kTotal - N), std::tuple<Args...>>...>;
+};
+
+template <typename S, auto binder, typename F, typename... BoundArgs>
 struct NamedTask;
 
 template <typename>
@@ -86,8 +260,8 @@ struct IsNamedTask : std::false_type {
     static constexpr bool kIsAuto{false};
 };
 
-template <typename S, Binding binding, typename F, typename... BoundArgs>
-struct IsNamedTask<NamedTask<S, binding, F, BoundArgs...>> : std::true_type {
+template <typename S, auto binder, typename F, typename... BoundArgs>
+struct IsNamedTask<NamedTask<S, binder, F, BoundArgs...>> : std::true_type {
     static constexpr bool kIsRef{false};
     static constexpr bool kIsAuto{false};
 };
@@ -151,30 +325,55 @@ struct Optional {
     }
 };
 
-template <typename S = void>
+template <typename S = void, std::size_t... Is>
 struct DeductorSettings;
 
-template <typename S = void>
+template <typename S = void, std::size_t... Is>
 struct NamedDeductorSettings {
     using Signature = S;
-    Binding binding{Binding::kAuto};
+    Binder<Is...> binding{};
     RefQualifier ref{RefQualifier::kNone};
+
+    constexpr NamedDeductorSettings() = default;
+    constexpr NamedDeductorSettings(Binding b, RefQualifier r)
+        requires(sizeof...(Is) == 0)
+        : binding{b}, ref{r} {}
+
+    constexpr NamedDeductorSettings(RefQualifier r)
+        requires(sizeof...(Is) > 0)
+        : ref{r} {}
+
+    constexpr NamedDeductorSettings(Binding b)
+        requires(sizeof...(Is) == 0)
+        : binding{b} {}
 
     template <typename NewSignature>
     [[nodiscard]] constexpr auto withSignature() const noexcept {
-        return DeductorSettings<NewSignature>{.binding = binding, .ref = ref};
+        if constexpr (sizeof...(Is) == 0) {
+            return DeductorSettings<NewSignature>{binding, ref};
+        } else {
+            return DeductorSettings<NewSignature, Is...>{ref};
+        }
     }
 
     [[nodiscard]] constexpr auto bindFront() const noexcept {
-        auto copy = *this;
+        /*auto copy = *this;
         copy.binding = Binding::kFront;
-        return copy;
+        return copy;*/
+        return NamedDeductorSettings<Signature>{Binding::kFront, ref};
     }
 
     [[nodiscard]] constexpr auto bindBack() const noexcept {
-        auto copy = *this;
+        /*auto copy = *this;
         copy.binding = Binding::kBack;
-        return copy;
+        return copy;*/
+        return NamedDeductorSettings<Signature>{Binding::kBack, ref};
+    }
+
+    template <std::size_t... NewIndices>
+        requires(sizeof...(NewIndices) > 0)
+    [[nodiscard]] constexpr auto bindTo() const noexcept {
+        return NamedDeductorSettings<Signature, NewIndices...>{ref};
     }
 
     [[nodiscard]] constexpr auto byRef() const noexcept {
@@ -190,10 +389,10 @@ struct NamedDeductorSettings {
     }
 };
 
-template <typename S>
+template <typename S, std::size_t... Is>
 struct DeductorSettings {
     using Signature = S;
-    Binding binding{Binding::kAuto};
+    Binder<Is...> binding{};
     Optional<Copyability> cb;
     Optional<std::size_t> size;
     Optional<Triviality> t;
@@ -205,16 +404,29 @@ struct DeductorSettings {
     constexpr DeductorSettings(Binding b, Optional<Copyability> c, Optional<std::size_t> s,
                                Optional<Triviality> t, Optional<HeapPolicy> h,
                                Optional<std::size_t> a, RefQualifier r)
+        requires(sizeof...(Is) == 0)
         : binding{b}, cb{c}, size{s}, t{t}, hp{h}, alg{a}, ref{r} {}
 
-    constexpr DeductorSettings(Binding b) : binding{b} {}
+    constexpr DeductorSettings(Optional<Copyability> c, Optional<std::size_t> s,
+                               Optional<Triviality> t, Optional<HeapPolicy> h,
+                               Optional<std::size_t> a, RefQualifier r)
+        requires(sizeof...(Is) > 0)
+        : cb{c}, size{s}, t{t}, hp{h}, alg{a}, ref{r} {}
 
-    constexpr DeductorSettings(const NamedDeductorSettings<S>& namedSettings)
+    constexpr DeductorSettings(Binding b)
+        requires(sizeof...(Is) == 0)
+        : binding{b} {}
+
+    constexpr DeductorSettings(const NamedDeductorSettings<S, Is...>& namedSettings)
         : binding{namedSettings.binding}, ref{namedSettings.ref} {}
 
     template <typename NewSignature>
     [[nodiscard]] constexpr auto withSignature() const noexcept {
-        return DeductorSettings<NewSignature>{binding, cb, size, t, hp, alg, ref};
+        if constexpr (sizeof...(Is) == 0) {
+            return DeductorSettings<NewSignature>{binding, cb, size, t, hp, alg, ref};
+        } else {
+            return DeductorSettings<NewSignature, Is...>{cb, size, t, hp, alg, ref};
+        }
     }
 
     template <std::size_t N>
@@ -250,15 +462,23 @@ struct DeductorSettings {
     }
 
     [[nodiscard]] constexpr auto bindFront() const noexcept {
-        auto copy = *this;
+        /*auto copy = *this;
         copy.binding = Binding::kFront;
-        return copy;
+        return copy;*/
+        return DeductorSettings<Signature>{Binding::kFront, cb, size, t, hp, alg, ref};
     }
 
     [[nodiscard]] constexpr auto bindBack() const noexcept {
-        auto copy = *this;
+        /*auto copy = *this;
         copy.binding = Binding::kBack;
-        return copy;
+        return copy;*/
+        return DeductorSettings<Signature>{Binding::kBack, cb, size, t, hp, alg, ref};
+    }
+
+    template <std::size_t... NewIndices>
+        requires(sizeof...(NewIndices) > 0)
+    [[nodiscard]] constexpr auto bindTo() const noexcept {
+        return DeductorSettings<Signature, NewIndices...>{cb, size, t, hp, alg, ref};
     }
 
     [[nodiscard]] constexpr auto byRef() const noexcept {
@@ -281,13 +501,13 @@ FORCE_INLINE constexpr auto getSettings() noexcept {
 template <auto>
 struct IsDeductorSettings : std::false_type {};
 
-template <typename Sig, DeductorSettings<Sig> deductor>
+template <typename Sig, std::size_t... Is, DeductorSettings<Sig, Is...> deductor>
 struct IsDeductorSettings<deductor> : std::true_type {};
 
 template <auto>
 struct IsNamedDeductorSettings : std::false_type {};
 
-template <typename Sig, NamedDeductorSettings<Sig> deductor>
+template <typename Sig, std::size_t... Is, NamedDeductorSettings<Sig, Is...> deductor>
 struct IsNamedDeductorSettings<deductor> : std::true_type {};
 
 template <typename T>
@@ -340,12 +560,13 @@ struct UpdateDeductor<newSettings, TaskTypeDeductor<settings, Ft, BoundArgs...>>
 template <auto newSettings, typename OldDeductor>
 using UpdateDeductorT = typename UpdateDeductor<newSettings, OldDeductor>::type;
 
-template <typename RequestedSig, DeductorSettings<RequestedSig> settings, typename Ft,
-          typename... BoundArgs>
+template <typename RequestedSig, std::size_t... Is, DeductorSettings<RequestedSig, Is...> settings,
+          typename Ft, typename... BoundArgs>
     requires(kIsFunctionTag<Ft> ||
-             HasFunctionTraits<std::remove_reference_t<UnwrapBoundRefWrapT<Ft>>>)
+             HasFunctionTraits<
+                 std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<Ft>>>>)
 struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
-    using F = UnwrapBoundRefWrapT<GetCallableT<Ft>>;
+    using F = std::unwrap_reference_t<UnwrapBoundRefWrapT<GetCallableT<Ft>>>;
     static constexpr auto kSettings = settings;
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::remove_cvref_t<F>>;
@@ -362,28 +583,86 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
-            template <Binding bindProcess, template <typename...> typename Tester,
+            template <auto binder, template <typename...> typename Tester,
                       template <typename> typename Modifier>
-            struct ArgumentProcessor {
+            struct ArgumentProcessor;
+
+            template <Binder<> binder, template <typename...> typename Tester,
+                      template <typename> typename Modifier>
+            struct ArgumentProcessor<binder, Tester, Modifier> {
+                static constexpr auto kBindingProcess = Binding{binder};
                 static constexpr bool kTestFront =
                     Tester<F, Modifier<FiltBoundArgs>..., TsR...>::value;
                 static constexpr bool kTestBack =
                     Tester<F, Ts..., Modifier<FiltBoundArgs>...>::value;
-                static constexpr Binding kBindDeduct =
+                static constexpr auto kBindDeduct =
                     (kTestBack && kTestBack)
-                        ? (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
-                                   Binding::kAuto
-                               ? Binding::kBack
-                               : bindProcess)
-                        : (kTestBack ? Binding::kBack : Binding::kFront);
+                        ? (kBindingProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
+                                   Binder<>{Binding::kAuto}
+                               ? Binder<>{Binding::kBack}
+                               : Binder<>{kBindingProcess})
+                        : (kTestBack ? Binder<>{Binding::kBack} : Binder<>{Binding::kFront});
 
                 static constexpr bool kIsValid =
-                    bindProcess == Binding::kFront
+                    kBindingProcess == Binding::kFront
                         ? kTestFront
-                        : (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
+                        : (kBindingProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
                                    Binding::kBack
                                ? kTestBack
                                : (kTestFront || kTestBack));
+                using base_signature = std::conditional_t<Binding{kBindDeduct} == Binding::kFront,
+                                                          Ret(TsR...), Ret(Ts...)>;
+            };
+
+            template <std::size_t... is, Binder<is...> binder,
+                      template <typename...> typename Tester, template <typename> typename Modifier>
+                requires(sizeof...(is) > 0 && sizeof...(is) == sizeof...(BoundArgs))
+            struct ArgumentProcessor<binder, Tester, Modifier> {
+                using rebinder = rebind<AllArgs, std::tuple<Modifier<FiltBoundArgs>...>, is...>;
+                using TestTuple = rebinder::type;
+                using CallTuple = rebinder::CallTuple;
+
+                template <typename, typename>
+                struct UnwrapTester;
+
+                template <typename... TestArgs, typename... CallArgs>
+                struct UnwrapTester<std::tuple<TestArgs...>, std::tuple<CallArgs...>> {
+                    static constexpr auto kValid = Tester<F, TestArgs...>::value;
+                    using base_signature = Ret(CallArgs...);
+                };
+
+                static constexpr auto kIsValid = UnwrapTester<TestTuple, CallTuple>::kValid;
+                static constexpr auto kBindDeduct = Binder<is...>{};
+                using base_signature = UnwrapTester<TestTuple, CallTuple>::base_signature;
+            };
+
+            template <typename BaseSignature, bool IsConst, bool LVRef, bool RVRef, bool NoExcept>
+            struct ToFullSignature;
+
+            template <typename r, typename... cArgs, bool IsConst, bool LVRef, bool RVRef,
+                      bool NoExcept>
+            struct ToFullSignature<r(cArgs...), IsConst, LVRef, RVRef, NoExcept> {
+                using Signature = std::conditional_t<
+                    Traits::kIsNoExcept,
+                    // --- NOEXCEPT BRANCH ---
+                    std::conditional_t<
+                        IsConst,
+                        std::conditional_t<LVRef, r(cArgs...) const & noexcept,
+                                           std::conditional_t<RVRef, r(cArgs...) const && noexcept,
+                                                              r(cArgs...) const noexcept>>,
+                        std::conditional_t<LVRef, r(cArgs...) & noexcept,
+                                           std::conditional_t<RVRef, r(cArgs...) && noexcept,
+                                                              r(cArgs...) noexcept>>>,
+                    // --- NON-NOEXCEPT BRANCH ---
+
+                    std::conditional_t<
+                        IsConst,
+                        std::conditional_t<
+                            LVRef, r(cArgs...) const&,
+                            std::conditional_t<RVRef, r(cArgs...) const&&, r(cArgs...) const>>,
+                        std::conditional_t<
+                            LVRef, r(cArgs...) &,
+                            std::conditional_t<RVRef, r(cArgs...) &&, r(cArgs...)>>>>;
             };
 
             template <typename T>
@@ -392,14 +671,14 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             template <typename T>
             using MakeMovable = std::add_rvalue_reference_t<std::remove_reference_t<T>>;
 
-            template <Binding bindProcess, template <typename...> typename Tester,
+            template <auto binder, template <typename...> typename Tester,
                       template <typename> typename Modifier>
-            using ArgumentProcessorV = ArgumentProcessor<bindProcess, Tester, Modifier>::kValid;
+            using ArgumentProcessorV = ArgumentProcessor<binder, Tester, Modifier>::kValid;
 
             using Processor = ArgumentProcessor<settings.binding, is_compatible_invocable, NoMod>;
             static constexpr bool kIsValid = Processor::kIsValid;
-            static constexpr Binding kBinderDeduct = Processor::kBindDeduct;
-            static constexpr bool kIsReverse = kBinderDeduct == Binding::kFront;
+            static constexpr auto kBinderDeduct = Processor::kBindDeduct;
+            using base_signature = Processor::base_signature;
             static constexpr bool kIsConst =
                 Traits::kIsConst &&
                 ArgumentProcessor<kBinderDeduct, std::is_invocable, std::add_const_t>::kIsValid;
@@ -409,48 +688,8 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             static constexpr bool kIsLValRef =
                 Traits::kIsLValueRef && ArgumentProcessor<kBinderDeduct, std::is_invocable,
                                                           std::add_lvalue_reference_t>::kIsValid;
-            using Signature = std::conditional_t<
-                Traits::kIsNoExcept,
-                // --- NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
-                                               Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                                              Ret(TsR...) noexcept>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
-                                               Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                                              Ret(Ts...) noexcept>>>>,
-                // --- NON-NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const&,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) &,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const&,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) &,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
+            using Signature = ToFullSignature<base_signature, kIsConst, kIsLValRef, kIsRValRef,
+                                              Traits::kIsNoExcept>::Signature;
         };
 
         using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
@@ -490,7 +729,12 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         !settings.size.has_value() || *settings.size >= kPayloadSize ||
         (settings.hp.has_value() && *settings.hp == HeapPolicy::kAllow &&
          *settings.size >= sizeof(std::byte*));
-    static constexpr auto kSize = settings.size.has_value() ? *settings.size : kPayloadSize;
+    static constexpr auto kSize =
+        settings.size.has_value()
+            ? *settings.size
+            : ((settings.hp.has_value() && *settings.hp == HeapPolicy::kAllow)  // NOLINT
+                   ? std::min<std::size_t>(kPayloadSize, 16U)
+                   : kPayloadSize);
     static constexpr auto kHeapPolicy =
         settings.hp.has_value() ? *settings.hp : HeapPolicy::kDisallow;
     using TypeTraits = StripBoundArgs::type;
@@ -506,10 +750,7 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
     using Type = Task<Sig, kCopyable, kSize, kTriviality, false, kHeapPolicy, kAlignment>;
 
     template <typename Sig = Signature>
-    using NamedType =
-        NamedTask<Sig,
-                  settings.binding == Binding::kAuto ? TypeTraits::kBinderDeduct : settings.binding,
-                  Ft, BoundArgs...>;
+    using NamedType = NamedTask<Sig, settings.binding, Ft, BoundArgs...>;
 
     template <typename Sig = Signature, InlineSize size = 16>
     using HeapType = Task<Sig, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
@@ -583,11 +824,11 @@ using TaskBuilderRefFilterT = TaskBuilderRefFilter<Ref, T, Invocable>::type;
 
 template <auto settings, typename Ft, typename... BoundArgs>
     requires((kIsFunctionTag<Ft> ||
-              HasFunctionTraits<std::remove_reference_t<std::unwrap_reference_t<Ft>>>) &&
+              HasFunctionTraits<
+                  std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<Ft>>>>) &&
              (IsNamedDeductorSettings<settings>::value || IsDeductorSettings<settings>::value))
 struct TaskBuilder<settings, Ft, BoundArgs...>
-    : TaskTypeDeductor<DeductorSettings<typename decltype(settings)::Signature>{settings},
-                       TaskBuilderRefFilterT<settings.ref, Ft, true>,
+    : TaskTypeDeductor<DeductorSettings{settings}, TaskBuilderRefFilterT<settings.ref, Ft, true>,
                        TaskBuilderRefFilterT<settings.ref, BoundArgs>...> {
     TaskBuilder(auto&& f,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
                 auto&&... args)
@@ -622,8 +863,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     }
 
     using Deductor =
-        TaskTypeDeductor<DeductorSettings<typename decltype(settings)::Signature>{settings},
-                         TaskBuilderRefFilterT<settings.ref, Ft, true>,
+        TaskTypeDeductor<DeductorSettings{settings}, TaskBuilderRefFilterT<settings.ref, Ft, true>,
                          TaskBuilderRefFilterT<settings.ref, BoundArgs>...>;
 
     template <typename NewSignature>
@@ -672,6 +912,19 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         return TaskBuilder<settings.bindBack(), Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
+    template <std::size_t... Is>
+        requires(sizeof...(Is) > 0 && !kNamedTaskBuilder)
+    FORCE_INLINE constexpr auto bindTo() && noexcept {
+        return TaskBuilder<settings.template bindTo<Is...>(), Ft, BoundArgs...>{
+            std::move(transitPayload)};
+    }
+
+    template <std::size_t... Is>
+        requires(sizeof...(Is) > 0 && kNamedTaskBuilder)
+    FORCE_INLINE constexpr auto bindTo() && noexcept {
+        static_assert(false, "bindTo functionality for fn::NamedTask is still in development");
+    }
+
     FORCE_INLINE constexpr auto byRef() && noexcept {
         auto&& args = std::move(transitPayload.args);
         static constexpr bool kIgnoreRefWrapperRValueConversion{true};
@@ -717,7 +970,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     }
 
     FORCE_INLINE constexpr auto build() && noexcept
-        requires(kNamedTaskBuilder)
+        requires kNamedTaskBuilder
     {
         static_assert(Deductor::kInvocableValid,
                       "Given callable, bound args and binding are not valid for invocation");
@@ -772,11 +1025,11 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
                 []<typename... Args>(Args&&... args) {
                     if constexpr (settings.ref != RefQualifier::kNone) {
                         return typename Deductor::template Type<>{
-                            RefTag{}, Ft{}, BindingTag<settings.binding>{},
+                            RefTag{}, Ft{}, BinderTag<settings.binding>{},
                             std::forward<decltype(args)>(args)...};
                     } else {
                         return typename Deductor::template Type<>{
-                            Ft{}, BindingTag<settings.binding>{},
+                            Ft{}, BinderTag<settings.binding>{},
                             std::forward<decltype(args)>(args)...};
                     }
                 });
@@ -785,7 +1038,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
                 [this]<typename... Args>(Args&&... args) {
                     if constexpr (settings.ref != RefQualifier::kNone) {
                         return typename Deductor::template Type<>{
-                            RefTag{}, BindingTag<settings.binding>{},
+                            RefTag{}, BinderTag<settings.binding>{},
                             std::forward<decltype(transitPayload.f)>(transitPayload.f),
                             std::forward<decltype(args)>(args)...};
 
@@ -798,7 +1051,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
                                 std::forward<decltype(transitPayload.f)>(transitPayload.f)};
                         } else {
                             return typename Deductor::template Type<>{
-                                BindingTag<settings.binding>{},
+                                BinderTag<settings.binding>{},
                                 std::forward<decltype(transitPayload.f)>(transitPayload.f),
                                 std::forward<decltype(args)>(args)...};
                         }
@@ -806,166 +1059,6 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
                 });
         }
     }
-};
-
-template <auto F_auto, DeductorSettings settings, typename... BoundArgs>
-    requires(HasFunctionTraits<decltype(F_auto)>)
-struct TaskTypeDeductorAuto {
-    struct StripBoundArgs {
-        using F = std::decay_t<decltype(F_auto)>;
-        using F_Unwrapped = F;
-        using Traits = FunctionTraits<F>;
-        using AllArgs = typename Traits::args_tuple;
-
-        static constexpr std::size_t kRemainingCount =
-            std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
-
-        using SlicedTuple = typename slice_first<kRemainingCount, AllArgs>::type;
-        using SlicedTupleReverse = typename slice_last<kRemainingCount, AllArgs>::type;
-
-        template <typename Ret, typename Tuple, typename TupleReverse, typename FiltBoundARgs>
-        struct rebuild;
-        template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
-        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
-            template <Binding bindProcess, template <typename...> typename Tester,
-                      template <typename> typename Modifier>
-            struct ArgumentProcessor {
-                template <typename ArgFilter>
-                struct ModifierFilter;
-
-                template <typename ArgFilter>
-                    requires IsCallArgB<ArgFilter>
-                struct ModifierFilter<ArgFilter> {
-                    using type = ArgFilter;
-                };
-
-                template <typename ArgFilter>
-                    requires(!IsCallArgB<ArgFilter>)
-                struct ModifierFilter<ArgFilter> {
-                    using type = Modifier<ArgFilter>;
-                };
-
-                static constexpr bool kTestFront =
-                    Tester<F, typename ModifierFilter<FiltBoundArgs>::type..., TsR...>::value;
-                static constexpr bool kTestBack =
-                    Tester<F, Ts..., typename ModifierFilter<FiltBoundArgs>::type...>::value;
-                static constexpr Binding kBindDeduct =
-                    (kTestBack && kTestBack)
-                        ? (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
-                                   Binding::kAuto
-                               ? Binding::kBack
-                               : bindProcess)
-                        : (kTestBack ? Binding::kBack : Binding::kFront);
-
-                static constexpr bool kIsValid =
-                    bindProcess == Binding::kFront
-                        ? kTestFront
-                        : (bindProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
-                                   Binding::kBack
-                               ? kTestBack
-                               : (kTestFront || kTestBack));
-            };
-
-            template <typename T>
-            using NoMod = T;
-
-            template <typename T>
-            using MakeMovable = std::add_rvalue_reference_t<std::remove_reference_t<T>>;
-
-            template <Binding bindProcess, template <typename...> typename Tester,
-                      template <typename> typename Modifier>
-            using ArgumentProcessorV = ArgumentProcessor<bindProcess, Tester, Modifier>::kValid;
-
-            static constexpr bool kIsNormalOrder =
-                is_compatible_invocable_b<F, Ts..., FiltBoundArgs...>;
-            using Processor = ArgumentProcessor<settings.binding, is_compatible_invocable, NoMod>;
-            static constexpr bool kIsValid = Processor::kIsValid;
-            static constexpr Binding kBinderDeduct = Processor::kBindDeduct;
-            static constexpr bool kIsReverse = !kIsNormalOrder;
-            using R = Ret;
-            using Args = std::conditional_t<kIsReverse, std::tuple<TsR...>, std::tuple<Ts...>>;
-            static constexpr bool kIsConst =
-                Traits::kIsConst &&
-                ArgumentProcessor<kBinderDeduct, std::is_invocable, std::add_const_t>::kIsValid;
-            static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef &&
-                ArgumentProcessor<kBinderDeduct, std::is_invocable, MakeMovable>::kIsValid;
-            static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef && ArgumentProcessor<kBinderDeduct, std::is_invocable,
-                                                          std::add_lvalue_reference_t>::kIsValid;
-            using Signature = std::conditional_t<
-                Traits::kIsNoExcept,
-                // --- NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const && noexcept,
-                                               Ret(TsR...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(TsR...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(TsR...) && noexcept,
-                                                              Ret(TsR...) noexcept>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const & noexcept,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const && noexcept,
-                                               Ret(Ts...) const noexcept>>,
-                        std::conditional_t<kIsLValRef, Ret(Ts...) & noexcept,
-                                           std::conditional_t<kIsRValRef, Ret(Ts...) && noexcept,
-                                                              Ret(Ts...) noexcept>>>>,
-                // --- NON-NOEXCEPT BRANCH ---
-                std::conditional_t<
-                    kIsReverse,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) const&,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) const&&, Ret(TsR...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(TsR...) &,
-                            std::conditional_t<kIsRValRef, Ret(TsR...) &&, Ret(TsR...)>>>,
-                    std::conditional_t<
-                        kIsConst,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) const&,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) const&&, Ret(Ts...) const>>,
-                        std::conditional_t<
-                            kIsLValRef, Ret(Ts...) &,
-                            std::conditional_t<kIsRValRef, Ret(Ts...) &&, Ret(Ts...)>>>>>;
-        };
-
-        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
-                             std::tuple<std::unwrap_reference_t<BoundArgs>...>>;
-    };
-
-    // To complete one needs case where F is static (no decay), but in that case it would be trivial
-    // anyway, hence not urgent to change for now
-    using PayloadType = PayloadImplArgs<F_auto, BoundArgs...>;
-    static constexpr auto kCopyable = std::is_copy_constructible_v<PayloadType>
-                                          ? Copyability::kCopyable
-                                          : Copyability::kNonCopyable;
-
-    static constexpr Alignment kAlignment =
-        std::max(alignof(PayloadType), alignof(std::max_align_t));
-    static constexpr auto kTriviality =
-        TrivialUse<PayloadType, kCopyable>::value ? Triviality::kTrivial : Triviality::kNonTrivial;
-    static constexpr auto kPayloadSize = sizeof...(BoundArgs) > 0 ? sizeof(PayloadType) : 0;
-    using TypeTraits = StripBoundArgs::type;
-    using Signature = TypeTraits::Signature;
-    static constexpr bool kIsValid = TypeTraits::kIsValid;
-
-    template <typename Sig = Signature>
-    using Type =
-        Task<Sig, kCopyable, kPayloadSize, kTriviality, false, HeapPolicy::kDisallow, kAlignment>;
-
-    template <typename Sig = Signature>
-    using NamedType = NamedTask<Sig, TypeTraits::kBinderDeduct, FunctionTag<F_auto>, BoundArgs...>;
-
-    template <typename Sig = Signature, InlineSize size = 16>
-    using HeapType = Task<Sig, kCopyable, size, kTriviality, false, HeapPolicy::kAllow, kAlignment>;
 };
 
 // Support for std::bind, std::bind_front, std::bind_back... (Note, it's implementation defined,

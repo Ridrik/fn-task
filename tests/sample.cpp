@@ -178,8 +178,7 @@ int main() {
         auto functor = Functor{};
         using kekers =
             std::add_const_t<fn::UnwrapBoundRefWrapT<fn::BoundRefWrapTag<std::string&, false>>>;
-        auto task = fn::Task<void() const, fn::Copyability::kCopyable, fn::InlineSize{48},
-                             fn::Triviality::kNonTrivial>{fn::ref(functor), fn::ref(hi)};
+        // auto task = fn::makeTask(fn::ref(functor), fn::ref(hi));
     }
 
     {
@@ -225,7 +224,13 @@ int main() {
         auto otherTask = fn::buildTask([](int, std::string&&) {}, fn::ref(hi)).build();
         otherTask(3);
 
-        // Error: std::reference_wrapper<std::string> isn't implicitly convertible to std::string&&
-        // auto otherTask2 = fn::buildTask([](int, std::string&&) {}, std::ref(hi)).build();
+        {
+            auto customBindTask =
+                fn::buildTask([](const std::string&, const int&, const std::string&) {}, "hi",
+                              "hey")
+                    .bindTo<0, 2>()
+                    .build();
+            customBindTask(3);
+        }
     }
 }

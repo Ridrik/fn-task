@@ -10,6 +10,7 @@
 #include <functional>
 #include <new>
 #include <span>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -57,7 +58,33 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                  : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, UndoIfCallArgT<Argst>...>
                                : std::is_invocable_v<Ft, UndoIfCallArgT<Argst>...>);
 
-    template <Binding /*binding*/, typename PayloadType, auto F, typename... BoundArgs>
+    template <typename, typename>
+    struct UnwrapTester;
+
+    template <typename F, typename... TestArgs>
+    struct UnwrapTester<F, std::tuple<TestArgs...>> {
+        static constexpr auto kValid = kInvocableVerifierV<F, TestArgs...>;
+    };
+
+    template <typename PayloadType, auto binder, bool Indirection = false>
+    struct InvokeBinder;
+
+    template <typename PayloadType, std::size_t... Is, Binder<Is...> binder, bool Indirection>
+    struct InvokeBinder<PayloadType, binder, Indirection> {
+        static constexpr Ret call(void* s, auto&&... args) noexcept(IsNoExcept) {
+            if constexpr (Indirection) {
+                return std::forward_like<ApplyQualifiers<PayloadType>>(
+                           **static_cast<PayloadType**>(s))
+                    .template invoke<Is...>(std::forward<Args>(args)...);
+            } else {
+                return std::forward_like<ApplyQualifiers<PayloadType>>(
+                           *static_cast<PayloadType*>(s))
+                    .template invoke<Is...>(std::forward<Args>(args)...);
+            }
+        }
+    };
+
+    template <auto /*binding*/, typename PayloadType, auto F, typename... BoundArgs>
         requires(size == 0)
     FORCE_INLINE static constexpr TypeNoBuffer getInvoker() noexcept {
         static_assert(sizeof...(BoundArgs) == 0);
@@ -65,8 +92,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
             [](Args... args) noexcept(IsNoExcept) -> Ret { return F(std::forward<Args>(args)...); };
     }
 
-    template <Binding binding, typename PayloadType, typename F, typename... BoundArgs>
-        requires(size > 0)
+    template <auto binder, typename PayloadType, typename F, typename... BoundArgs>
+        requires(size > 0 && kIsBinder<binder>)
     FORCE_INLINE static constexpr Type
     getInvoker() noexcept {  // NOLINT(readability-function-cognitive-complexity)
         return [](void* s,   // NOLINT(readability-function-cognitive-complexity)
@@ -77,7 +104,16 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                                         CallArgTag<decltype(std::forward<Args>(args))>...>,
                     "F is not callable with the provided arguments!");
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
-            } else if constexpr (binding != Binding::kFront &&
+            } else if constexpr (!kIsIndicelessBinder<binder>) {
+                using ArgsOrderTuple =
+                    rebind_call_and_bound<std::tuple<Args...>, std::tuple<Convert<BoundArgs>...>,
+                                          binder>::type;
+                static_assert(UnwrapTester<Convert<F>, ArgsOrderTuple>::kValid,
+                              "F is not callable with the provided arguments.");
+                static constexpr auto kIndirection = sizeof(PayloadType) > size;
+                return InvokeBinder<PayloadType, binder, kIndirection>::call(
+                    s, std::forward<Args>(args)...);
+            } else if constexpr (binder != Binding::kFront &&
                                  kInvocableVerifierV<
                                      Convert<F>, CallArgTag<decltype(std::forward<Args>(args))>...,
                                      Convert<BoundArgs>...>) {
@@ -100,7 +136,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                             .invoke(std::forward<Args>(args)...);
                     }
                 }
-            } else if constexpr (binding != Binding::kBack &&
+            } else if constexpr (binder != Binding::kBack &&
                                  kInvocableVerifierV<
                                      Convert<F>, Convert<BoundArgs>...,
                                      CallArgTag<decltype(std::forward<Args>(args))>...>) {
@@ -140,8 +176,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
         };
     }
 
-    template <Binding binding, typename PayloadType, auto F, typename... BoundArgs>
-        requires(size > 0)
+    template <auto binder, typename PayloadType, auto F, typename... BoundArgs>
+        requires(size > 0 && kIsBinder<binder>)
     FORCE_INLINE static constexpr Type
     getInvoker() noexcept {  // NOLINT(readability-function-cognitive-complexity)
         return [](void* s,   // NOLINT(readability-function-cognitive-complexity)
@@ -150,14 +186,21 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 static_assert(std::is_invocable_v<decltype(F), Args...>,
                               "F is not callable with the provided arguments!");
                 return F(std::forward<Args>(args)...);
-            } else if constexpr (binding != Binding::kFront &&
+            } else if constexpr (!kIsIndicelessBinder<binder>) {
+                using ArgsOrderTuple =
+                    rebind_call_and_bound<std::tuple<Args...>, std::tuple<Convert<BoundArgs>...>,
+                                          binder>::type;
+
+                static_assert(UnwrapTester<Convert<decltype(F)>, ArgsOrderTuple>::kValid,
+                              "F is not callable with the provided arguments.");
+
+            } else if constexpr (binder != Binding::kFront &&
                                  kInvocableVerifierV<Convert<decltype(F)>, Args...,
                                                      Convert<BoundArgs>...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     if constexpr (kRefLess) {
                         return std::move(*static_cast<PayloadType*>(s))
-                            .template invokeCompatible<sizeof...(Args), sizeof...(BoundArgs)>(
-                                std::forward<Args>(args)...);
+                            .invokeCompatible(std::forward<Args>(args)...);
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
@@ -173,14 +216,13 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                             .invoke(std::forward<Args>(args)...);
                     }
                 }
-            } else if constexpr (binding != Binding::kBack &&
+            } else if constexpr (binder != Binding::kBack &&
                                  kInvocableVerifierV<Convert<decltype(F)>, Convert<BoundArgs>...,
                                                      Args...>) {
                 if constexpr (sizeof(PayloadType) <= size) {
                     if constexpr (kRefLess) {
                         return std::move(*static_cast<PayloadType*>(s))
-                            .template invokeFrontCompatible<sizeof...(Args), sizeof...(BoundArgs)>(
-                                std::forward<Args>(args)...);
+                            .invokeFrontCompatible(std::forward<Args>(args)...);
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
@@ -189,8 +231,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 } else {
                     if constexpr (kRefLess) {
                         return std::move(**static_cast<PayloadType**>(s))
-                            .template invokeFrontCompatible<sizeof...(Args), sizeof...(BoundArgs)>(
-                                std::forward<Args>(args)...);
+                            .invokeFrontCompatible(std::forward<Args>(args)...);
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
@@ -1012,7 +1053,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/,
                    BoundArgs&&... args)  // NOLINT
         : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                       template getInvoker<Binding::kAuto, PayloadArgsT<F, BoundArgs...>, F,
+                       template getInvoker<Binder<>{}, PayloadArgsT<F, BoundArgs...>, F,
                                            std::decay_t<BoundArgs>...>()} {
         using PayloadType = PayloadArgsT<F, BoundArgs...>;
         if constexpr (!std::is_empty_v<PayloadType>) {
@@ -1058,13 +1099,13 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         }
     }
 
-    template <auto F, Binding binding, typename... BoundArgs>
-    constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BindingTag<binding> /*unused*/,
+    template <auto F, Binder binder, typename... BoundArgs>
+    constexpr Task([[maybe_unused]] FunctionTag<F> /*unused*/, BinderTag<binder> /*unused*/,
                    BoundArgs&&... args)  // NOLINT
         : storage_{
               .invoker =
                   InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>,
-                                 size>::template getInvoker<binding, PayloadArgsT<F, BoundArgs...>,
+                                 size>::template getInvoker<binder, PayloadArgsT<F, BoundArgs...>,
                                                             F, std::decay_t<BoundArgs>...>()} {
         using PayloadType = PayloadArgsT<F, BoundArgs...>;
         if constexpr (!std::is_empty_v<PayloadType>) {
@@ -1113,12 +1154,12 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     template <typename... BoundArgs>
     constexpr Task(auto&& f, BoundArgs&&... args)  // NOLINT
         requires(!std::is_same_v<std::remove_cvref_t<decltype(f)>, RefTag> &&
-                 !IsBindingTagB<std::remove_cvref_t<decltype(f)>> &&
+                 !IsBinderTagB<std::remove_cvref_t<decltype(f)>> &&
                  !IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                  template getInvoker<Binding::kAuto, PayloadT<decltype(f), BoundArgs...>,
+                  template getInvoker<Binder<>{}, PayloadT<decltype(f), BoundArgs...>,
                                       std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
@@ -1165,14 +1206,14 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         }
     }
 
-    template <Binding binding, typename... BoundArgs>
-    constexpr Task(BindingTag<binding> /*unused*/, auto&& f, BoundArgs&&... args)  // NOLINT
+    template <Binder binder, typename... BoundArgs>
+    constexpr Task(BinderTag<binder> /*unused*/, auto&& f, BoundArgs&&... args)  // NOLINT
         requires(!std::is_same_v<std::remove_cvref_t<decltype(f)>, RefTag> &&
                  !IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                  template getInvoker<binding, PayloadT<decltype(f), BoundArgs...>,
+                  template getInvoker<binder, PayloadT<decltype(f), BoundArgs...>,
                                       std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
         using PayloadType = PayloadT<F, BoundArgs...>;
@@ -1223,9 +1264,9 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     constexpr Task([[maybe_unused]] RefTag /*unused*/, F&& f,
                    BoundArgs&&... args)  // NOLINT
         requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value &&
-                 !IsBindingTagB<std::remove_cvref_t<decltype(f)>>)
+                 !IsBinderTagB<std::remove_cvref_t<decltype(f)>>)
         : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                       template getInvoker<Binding::kAuto, PayloadImpl<F, BoundArgs...>, F,
+                       template getInvoker<Binder<>{}, PayloadImpl<F, BoundArgs...>, F,
                                            BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
@@ -1277,13 +1318,13 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         }
     }
 
-    template <Binding binding, typename F, typename... BoundArgs>
-    constexpr Task([[maybe_unused]] RefTag /*unused*/, BindingTag<binding> /*unused*/, F&& f,
+    template <Binder binder, typename F, typename... BoundArgs>
+    constexpr Task([[maybe_unused]] RefTag /*unused*/, BinderTag<binder> /*unused*/, F&& f,
                    BoundArgs&&... args)  // NOLINT
         requires(!IsFunctionTag<std::remove_cvref_t<decltype(f)>>::value)
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                  template getInvoker<binding, PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
+                  template getInvoker<binder, PayloadImpl<F, BoundArgs...>, F, BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
                std::is_lvalue_reference_v<BoundArgs>) ||
@@ -1339,7 +1380,7 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
                    [[maybe_unused]] FunctionTag<F> /*unused*/,
                    BoundArgs&&... args)  // NOLINT
         : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                       template getInvoker<Binding::kAuto, PayloadImplArgs<F, BoundArgs...>, F,
+                       template getInvoker<Binder<>{}, PayloadImplArgs<F, BoundArgs...>, F,
                                            BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
@@ -1391,12 +1432,12 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
         }
     }
 
-    template <auto F, Binding binding, typename... BoundArgs>
+    template <auto F, Binder binder, typename... BoundArgs>
     constexpr Task([[maybe_unused]] RefTag /*unused*/,  // NOLINT
-                   [[maybe_unused]] FunctionTag<F> /*unused*/, BindingTag<binding> /*unused*/,
+                   [[maybe_unused]] FunctionTag<F> /*unused*/, BinderTag<binder> /*unused*/,
                    BoundArgs&&... args)  // NOLINT
         : storage_{.invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                       template getInvoker<binding, PayloadImplArgs<F, BoundArgs...>, F,
+                       template getInvoker<binder, PayloadImplArgs<F, BoundArgs...>, F,
                                            BoundArgs...>()} {
         static_assert(
             (((std::is_lvalue_reference_v<decltype(args)> &&
@@ -1545,7 +1586,7 @@ template <typename Sig, Copyability cp, InlineSize size, Triviality t, bool Ext,
           Alignment align>
 Task(Task<Sig, cp, size, t, Ext, hp, align>) -> Task<Sig, cp, size, t, Ext, hp, align>;
 
-template <auto F, typename... BoundArgs>
+/*template <auto F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
              FunctionTraits<decltype(F)>::kValid &&
              TaskTypeDeductorAuto<F, DeductorSettings<void>{}, BoundArgs...>::kIsValid)
@@ -1561,7 +1602,7 @@ Task(FunctionTag<F>, BoundArgs&&...) -> Task<
                          TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kTriviality,
     false, HeapPolicy::kDisallow,
     TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kAlignment>;
+                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kAlignment>;*/
 
 template <typename F, typename... BoundArgs>
     requires(!std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
@@ -1607,7 +1648,7 @@ Task(RefTag, F&&, BoundArgs&&...) -> Task<
     TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
                      TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kAlignment>;
 
-template <auto F, typename... BoundArgs>
+/*template <auto F, typename... BoundArgs>
     requires(FunctionTraits<decltype(F)>::kValid &&
              TaskTypeDeductorAuto<
                  F, DeductorSettings<void>{},
@@ -1625,7 +1666,8 @@ Task(RefTag, FunctionTag<F>, BoundArgs&&...) -> Task<
                          TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kTriviality,
     false, HeapPolicy::kDisallow,
     TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                         TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kAlignment>;
+                         TaskBuilderRefFilterT<RefQualifier::kNonConst,
+BoundArgs>...>::kAlignment>;*/
 
 template <auto settings = DeductorSettings<void>{}, typename F, typename... BoundArgs>
     requires(IsDeductorSettings<settings>::value &&
@@ -1682,7 +1724,7 @@ FORCE_INLINE constexpr auto makeTask(BoundArgs&&... args) {
 }
 
 FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+    requires(sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value)
 {
     return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
         .bindFront()
@@ -1690,7 +1732,7 @@ FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
 }
 
 FORCE_INLINE auto bindBackTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+    requires(sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value)
 {
     return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
         .bindBack()
@@ -1699,7 +1741,7 @@ FORCE_INLINE auto bindBackTask(auto&& f, auto&&... args)
 
 template <typename Sig>
 FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+    requires(sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value)
 {
     return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
         .bindFront()
@@ -1709,7 +1751,7 @@ FORCE_INLINE auto bindFrontTask(auto&& f, auto&&... args)
 
 template <typename Sig>
 FORCE_INLINE auto bindBackTask(auto&& f, auto&&... args)
-    requires((sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value))
+    requires(sizeof...(args) > 0 || !IsNamedTask<std::decay_t<decltype(f)>>::value)
 {
     return buildTask(std::forward<decltype(f)>(f), std::forward<decltype(args)>(args)...)
         .bindBack()

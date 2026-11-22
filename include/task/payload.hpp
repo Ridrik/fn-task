@@ -332,17 +332,6 @@ constexpr decltype(auto) forward_like_custom(const T& value) noexcept {  // NOLI
         std::conditional_t<std::is_lvalue_reference_v<Like>, Qualified&, Qualified&&>>(value);
 }
 
-/*template <typename Like, typename T>
-constexpr decltype(auto) forward_like_custom(
-    std::remove_reference_t<T>& value) noexcept {  // NOLINT
-    using Qualified = std::conditional_t<
-        std::is_reference_v<T>, T,
-        std::conditional_t<std::is_const_v<std::remove_reference_t<Like>>, const T, T>>;
-
-    return static_cast<
-        std::conditional_t<std::is_lvalue_reference_v<Like>, Qualified&, Qualified&&>>(value);
-}*/
-
 template <typename>
 struct IsRefWrapper : std::false_type {};
 
@@ -437,6 +426,8 @@ constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
     return arg.get();
 }
 
+struct Barrier {};
+
 template <>
 struct PayloadTuple<> {
     constexpr PayloadTuple() = default;
@@ -498,6 +489,28 @@ struct PayloadTuple<> {
                            unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...);
     }
 
+    template <std::size_t curIdx, typename F, typename... ArgsSoFar, typename NextCallArg,
+              typename... ArgsRemaining>
+    FORCE_INLINE constexpr decltype(auto) apply(
+        this auto&& self, F&& f, PayloadTuple<ArgsSoFar...>&& args,
+        PayloadTuple<NextCallArg, ArgsRemaining...>&& argsRemaining) {
+        using Self = decltype(self);
+        static_assert(curIdx == sizeof...(ArgsSoFar));
+        return std::forward_like<Self>(self).template apply<curIdx + 1>(
+            std::forward<F>(f),
+            PayloadTuple<ArgsSoFar..., NextCallArg>{std::move(args),
+                                                    std::forward<NextCallArg>(argsRemaining.head)},
+            std::move(argsRemaining).tail);
+    }
+
+    template <std::size_t curIdx, typename F, typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, F&& f,
+                                                PayloadTuple<ArgsSoFar...>&& args,
+                                                PayloadTuple<>&& /*unused*/) {
+        static_assert(curIdx == sizeof...(ArgsSoFar));
+        return std::move(args).applyAsArgs(std::forward<F>(f));
+    }
+
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyCompatible([[maybe_unused]] this auto&& /*self*/,
                                                           F&& f, ArgsSoFar&&... args) {
@@ -546,6 +559,17 @@ template <typename T, typename... Ts>
 struct PayloadTuple<T, Ts...> {
     T head;
     [[no_unique_address]] PayloadTuple<Ts...> tail{};
+
+    template <typename... T1>
+        requires(sizeof...(T1) > 0)
+    PayloadTuple(PayloadTuple<T1...>&& p1, auto&& newTail)
+        : head{std::forward<decltype(p1.head)>(p1.head)},
+          tail{std::move(p1).tail, std::forward<decltype(newTail)>(newTail)} {}
+
+    PayloadTuple(PayloadTuple<>&& /*unused*/, auto&& newTail)
+        : head{std::forward<decltype(newTail)>(newTail)} {
+        static_assert(sizeof...(Ts) == 0);
+    }
 
     PayloadTuple(auto&& first, auto&&... args)
         : head{std::forward<decltype(first)>(first)}, tail{std::forward<decltype(args)>(args)...} {}
@@ -660,6 +684,53 @@ struct PayloadTuple<T, Ts...> {
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
                 forward_like_custom<Self, T>(self.head));
         }
+    }
+
+    template <std::size_t curIdx, std::size_t NextBoundArgIdx, std::size_t... Is, typename F,
+              typename... ArgsSoFar, typename NextCallArg, typename... ArgsRemaining>
+    FORCE_INLINE constexpr decltype(auto) apply(
+        this auto&& self, F&& f, PayloadTuple<ArgsSoFar...>&& args,
+        PayloadTuple<NextCallArg, ArgsRemaining...>&& remainingTuple) {
+        static_assert(curIdx <= NextBoundArgIdx);
+        static_assert(curIdx == sizeof...(ArgsSoFar));
+        static constexpr auto kPickBoundArg = curIdx == NextBoundArgIdx;
+        using Self = decltype(self);
+        if constexpr (kPickBoundArg) {
+            return std::forward_like<Self>(self.tail).template apply<curIdx + 1, Is...>(
+                std::forward<F>(f),
+                PayloadTuple<ArgsSoFar..., decltype(forward_like_custom<Self, T>(self.head))>{
+                    std::move(args), forward_like_custom<Self, T>(self.head)},
+                std::move(remainingTuple));
+        } else {
+            return std::forward_like<Self>(self).template apply<curIdx + 1, NextBoundArgIdx, Is...>(
+                std::forward<F>(f),
+                PayloadTuple<ArgsSoFar..., NextCallArg>{
+                    std::move(args), std::forward<NextCallArg>(remainingTuple.head)},
+                std::move(remainingTuple).tail);
+        }
+    }
+
+    template <std::size_t curIdx, typename F, typename... ArgsSoFar, typename NextCallArg,
+              typename... ArgsRemaining>
+    FORCE_INLINE constexpr decltype(auto) apply(
+        this auto&& self, F&& f, PayloadTuple<ArgsSoFar...>&& /*unused*/,
+        PayloadTuple<NextCallArg, ArgsRemaining...>&& /*unused*/) {
+        static_assert(false);
+    }
+
+    template <std::size_t curIdx, std::size_t NextBoundArgIdx, std::size_t... Is, typename F,
+              typename... ArgsSoFar>
+    FORCE_INLINE constexpr decltype(auto) apply(this auto&& self, F&& f,
+                                                PayloadTuple<ArgsSoFar...>&& args,
+                                                PayloadTuple<>&& remainingTuple) {
+        static_assert(curIdx == sizeof...(ArgsSoFar));
+        static_assert(sizeof...(Is) > 0 || sizeof...(Ts) == 0);
+        using Self = decltype(self);
+        return std::forward_like<Self>(self.tail).template apply<curIdx + 1, Is...>(
+            std::forward<F>(f),
+            PayloadTuple<ArgsSoFar..., decltype(forward_like_custom<Self, T>(self.head))>{
+                std::move(args), forward_like_custom<Self, T>(self.head)},
+            std::move(remainingTuple));
     }
 
     template <typename F, typename... ArgsSoFar>
@@ -815,6 +886,17 @@ struct PayloadImpl {
         return std::forward_like<Self>(self.args).apply(
             std::forward_like<Self>(self.f),
             CallArgTag<decltype(t)>{std::forward<decltype(t)>(t)}...);
+    }
+
+    template <std::size_t... Is>
+        requires(sizeof...(Is) > 0)
+    FORCE_INLINE constexpr auto invoke(this auto&& self, auto&&... t) -> decltype(auto) {
+        using Self = decltype(self);
+        static_assert((std::is_reference_v<decltype(t)> && ...));
+        return std::forward_like<Self>(self.args).template apply<0, Is...>(
+            std::forward_like<Self>(self.f), PayloadTuple<>{},
+            PayloadTuple<CallArgTag<decltype(t)>...>{
+                CallArgTag<decltype(t)>{std::forward<decltype(t)>(t)}...});
     }
 
     FORCE_INLINE constexpr auto invokeCompatible(this auto&& self, auto&&... t) -> decltype(auto) {
