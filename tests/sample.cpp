@@ -225,7 +225,13 @@ int main() {
         auto otherTask = fn::buildTask([](int, std::string&&) {}, fn::ref(hi)).build();
         otherTask(3);
 
-        // Error: std::reference_wrapper<std::string> isn't implicitly convertible to std::string&&
-        // auto otherTask2 = fn::buildTask([](int, std::string&&) {}, std::ref(hi)).build();
+        {
+            auto customBindTask =
+                fn::buildTask([](const std::string&, const int&, const std::string&) {}, "hi",
+                              "hey")
+                    .bindTo<0, 2>()
+                    .build();
+            customBindTask(3);
+        }
     }
 }

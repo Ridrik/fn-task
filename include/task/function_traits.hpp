@@ -1,7 +1,6 @@
 #ifndef TASK_FUNCTION_TRAITS_HPP
 #define TASK_FUNCTION_TRAITS_HPP
 
-#include <cstddef>
 #include <functional>
 #include <tuple>
 #include <type_traits>
@@ -22,24 +21,6 @@ struct RefToConstRef {
 template <typename U>
 struct RefToConstRef<std::reference_wrapper<U>> {
     using Type = std::reference_wrapper<const U>;
-};
-
-template <std::size_t N, typename Tuple, typename Indices = std::make_index_sequence<N>>
-struct slice_first;
-
-template <std::size_t N, typename... Args, std::size_t... Is>
-struct slice_first<N, std::tuple<Args...>, std::index_sequence<Is...>> {
-    using type = std::tuple<std::tuple_element_t<Is, std::tuple<Args...>>...>;
-};
-
-template <std::size_t N, typename Tuple, typename Indices = std::make_index_sequence<N>>
-struct slice_last;
-
-template <std::size_t N, typename... Args, std::size_t... Is>
-struct slice_last<N, std::tuple<Args...>, std::index_sequence<Is...>> {
-    static constexpr std::size_t kTotal = sizeof...(Args);
-    static_assert(N <= kTotal, "Slice size N cannot exceed total tuple size.");
-    using type = std::tuple<std::tuple_element_t<Is + (kTotal - N), std::tuple<Args...>>...>;
 };
 
 template <typename T>
