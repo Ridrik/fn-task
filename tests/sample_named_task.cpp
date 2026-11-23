@@ -90,16 +90,16 @@ int main() {
 
     // All the following yield same NamedTask
     auto str2 = std::string{"Hi There"};
-    // const auto compileFunc5 = fn::makeRefNamedTask<bar>(str2);
+    const auto compileFunc5 = fn::makeRefNamedTask<bar>(str2);
     const auto compileFunc6 = fn::makeNamedTask<bar>(fn::ref(str2));
     std::string& strFetch = compileFunc6.getBoundArg<0>();
-    // using S1 = decltype(compileFunc5)::Signature;
-    //  using S2 = decltype(compileFunc6)::Signature;
-    // const auto compileFunc6Copy = fn::makeNamedTask(compileFunc5);
-    // const auto compileFunc6Copy2 = fn::NamedTask{compileFunc5};
-    // static_assert(std::is_same_v<decltype(compileFunc6), decltype(compileFunc6Copy)>);
-    // static_assert(std::is_same_v<decltype(compileFunc6), decltype(compileFunc6Copy2)>);
-    // static_assert(std::is_same_v<decltype(compileFunc5), decltype(compileFunc6)>);
+    using S1 = decltype(compileFunc5)::Signature;
+    using S2 = decltype(compileFunc6)::Signature;
+    const auto compileFunc6Copy = fn::makeNamedTask(compileFunc5);
+    const auto compileFunc6Copy2 = fn::NamedTask{compileFunc5};
+    static_assert(std::is_same_v<decltype(compileFunc6), decltype(compileFunc6Copy)>);
+    static_assert(std::is_same_v<decltype(compileFunc6), decltype(compileFunc6Copy2)>);
+    static_assert(std::is_same_v<decltype(compileFunc5), decltype(compileFunc6)>);
 
     // Similar for constant template parameters
     auto compileFunc7 = fn::makeNamedTask(fn::toFuncPtr<bar_mimic>(), fn::ref(str2));
@@ -107,9 +107,8 @@ int main() {
     static_assert(std::is_same_v<decltype(compileFunc7), decltype(compileFunc8)>);
 
     // A NamedTask can shelter another NamedTask by reference
-    // auto refNTaskFromAutoTask = fn::makeRefNamedTask(compileFunc5);
-    // static_assert(sizeof(refNTaskFromAutoTask) ==
-    //               sizeof(std::reference_wrapper<decltype(compileFunc5)>));
+    auto refNTaskFromAutoTask = fn::makeRefNamedTask(compileFunc5);
+    static_assert(sizeof(refNTaskFromAutoTask) == sizeof(decltype(compileFunc5)*));
     std::cout << "str is " << str2 << '\n';
 
     // A NamedTask allows to retrieve any bound argument in it
@@ -119,7 +118,7 @@ int main() {
     std::string& strArg = funcWithLiterals.getBoundArg<2>();
     using S = decltype(funcWithLiterals)::Signature;
     static_assert(std::is_invocable_v<const std::decay_t<decltype(funcWithLiterals)>&>);
-    auto nTask = fn::Task{funcWithLiterals};
+    // auto nTask = fn::Task{funcWithLiterals};
     auto nTask2 = fn::makeTask(funcWithLiterals);
 
     // Bind support

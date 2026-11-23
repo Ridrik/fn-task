@@ -40,11 +40,10 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
 
     template <typename T>
     using ApplyQualifiers = std::conditional_t<
-        LVRef, std::add_lvalue_reference_t<std::conditional_t<IsConst, std::add_const_t<T>, T>>,
+        LVRef, std::conditional_t<IsConst, const T, T>&,
         std::conditional_t<RVRef,
-                           std::add_rvalue_reference_t<std::remove_reference_t<
-                               std::conditional_t<IsConst, std::add_const_t<T>, T>>>,
-                           std::conditional_t<IsConst, std::add_const_t<T>, T>>>;
+                           std::remove_reference_t<std::conditional_t<IsConst, const T, T>>&&,
+                           std::conditional_t<IsConst, const T, T>>>;
 
     template <typename T>
     using Convert = ApplyQualifiers<UnwrapBoundRefWrapT<T>>;
@@ -1647,27 +1646,6 @@ Task(RefTag, F&&, BoundArgs&&...) -> Task<
     false, HeapPolicy::kDisallow,
     TaskTypeDeductor<DeductorSettings<void>{}, TaskBuilderRefFilterT<RefQualifier::kNonConst, F>,
                      TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kAlignment>;
-
-/*template <auto F, typename... BoundArgs>
-    requires(FunctionTraits<decltype(F)>::kValid &&
-             TaskTypeDeductorAuto<
-                 F, DeductorSettings<void>{},
-                 TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kIsValid)
-Task(RefTag, FunctionTag<F>, BoundArgs&&...) -> Task<
-    typename TaskTypeDeductorAuto<
-        F, DeductorSettings<void>{},
-        TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::Signature,
-    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                         TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kCopyable,
-    TaskTypeDeductorAuto<
-        F, DeductorSettings<void>{},
-        TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kPayloadSize,
-    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                         TaskBuilderRefFilterT<RefQualifier::kNonConst, BoundArgs>...>::kTriviality,
-    false, HeapPolicy::kDisallow,
-    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                         TaskBuilderRefFilterT<RefQualifier::kNonConst,
-BoundArgs>...>::kAlignment>;*/
 
 template <auto settings = DeductorSettings<void>{}, typename F, typename... BoundArgs>
     requires(IsDeductorSettings<settings>::value &&

@@ -347,6 +347,10 @@ struct NamedDeductorSettings {
         requires(sizeof...(Is) == 0)
         : binding{b} {}
 
+    [[nodiscard]] constexpr const auto toDeductorSettings() const noexcept {
+        return DeductorSettings<S, Is...>{*this};
+    }
+
     template <typename NewSignature>
     [[nodiscard]] constexpr auto withSignature() const noexcept {
         if constexpr (sizeof...(Is) == 0) {
@@ -357,16 +361,10 @@ struct NamedDeductorSettings {
     }
 
     [[nodiscard]] constexpr auto bindFront() const noexcept {
-        /*auto copy = *this;
-        copy.binding = Binding::kFront;
-        return copy;*/
         return NamedDeductorSettings<Signature>{Binding::kFront, ref};
     }
 
     [[nodiscard]] constexpr auto bindBack() const noexcept {
-        /*auto copy = *this;
-        copy.binding = Binding::kBack;
-        return copy;*/
         return NamedDeductorSettings<Signature>{Binding::kBack, ref};
     }
 
@@ -419,6 +417,10 @@ struct DeductorSettings {
 
     constexpr DeductorSettings(const NamedDeductorSettings<S, Is...>& namedSettings)
         : binding{namedSettings.binding}, ref{namedSettings.ref} {}
+
+    [[nodiscard]] constexpr const auto& toDeductorSettings() const noexcept {
+        return *this;
+    }
 
     template <typename NewSignature>
     [[nodiscard]] constexpr auto withSignature() const noexcept {
@@ -567,6 +569,8 @@ template <typename RequestedSig, std::size_t... Is, DeductorSettings<RequestedSi
                  std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<Ft>>>>)
 struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
     using F = std::unwrap_reference_t<UnwrapBoundRefWrapT<GetCallableT<Ft>>>;
+    static_assert(!std::is_rvalue_reference_v<F>);
+    static constexpr auto kFIsReference = std::is_lvalue_reference_v<F>;
     static constexpr auto kSettings = settings;
     struct StripBoundArgs {
         using Traits = FunctionTraits<std::remove_cvref_t<F>>;
@@ -592,9 +596,9 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             struct ArgumentProcessor<binder, Tester, Modifier> {
                 static constexpr auto kBindingProcess = Binding{binder};
                 static constexpr bool kTestFront =
-                    Tester<F, Modifier<FiltBoundArgs>..., TsR...>::value;
+                    Tester<Modifier<F>, Modifier<FiltBoundArgs>..., TsR...>::value;
                 static constexpr bool kTestBack =
-                    Tester<F, Ts..., Modifier<FiltBoundArgs>...>::value;
+                    Tester<Modifier<F>, Ts..., Modifier<FiltBoundArgs>...>::value;
                 static constexpr auto kBindDeduct =
                     (kTestBack && kTestBack)
                         ? (kBindingProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
@@ -627,7 +631,7 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
 
                 template <typename... TestArgs, typename... CallArgs>
                 struct UnwrapTester<std::tuple<TestArgs...>, std::tuple<CallArgs...>> {
-                    static constexpr auto kValid = Tester<F, TestArgs...>::value;
+                    static constexpr auto kValid = Tester<Modifier<F>, TestArgs...>::value;
                     using base_signature = Ret(CallArgs...);
                 };
 
@@ -669,7 +673,11 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             using NoMod = T;
 
             template <typename T>
-            using MakeMovable = std::add_rvalue_reference_t<std::remove_reference_t<T>>;
+            using NonRefMovable = T&&;
+
+            template <typename T>
+            using MakeReferencesMovable =
+                std::conditional_t<std::is_lvalue_reference_v<T>, std::remove_reference_t<T>&&, T>;
 
             template <auto binder, template <typename...> typename Tester,
                       template <typename> typename Modifier>
@@ -680,14 +688,16 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             static constexpr auto kBinderDeduct = Processor::kBindDeduct;
             using base_signature = Processor::base_signature;
             static constexpr bool kIsConst =
-                Traits::kIsConst &&
-                ArgumentProcessor<kBinderDeduct, std::is_invocable, std::add_const_t>::kIsValid;
+                (Traits::kIsConst || kFIsReference) &&
+                ArgumentProcessor<kBinderDeduct, is_compatible_invocable,
+                                  std::add_const_t>::kIsValid;
             static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef &&
-                ArgumentProcessor<kBinderDeduct, std::is_invocable, MakeMovable>::kIsValid;
+                Traits::kIsRValueRef && ArgumentProcessor<kBinderDeduct, std::is_invocable,
+                                                          MakeReferencesMovable>::kIsValid;
             static constexpr bool kIsLValRef =
-                Traits::kIsLValueRef && ArgumentProcessor<kBinderDeduct, std::is_invocable,
-                                                          std::add_lvalue_reference_t>::kIsValid;
+                (Traits::kIsLValueRef || kFIsReference) &&
+                ArgumentProcessor<kBinderDeduct, std::is_invocable,
+                                  std::add_lvalue_reference_t>::kIsValid;
             using Signature = ToFullSignature<base_signature, kIsConst, kIsLValRef, kIsRValRef,
                                               Traits::kIsNoExcept>::Signature;
         };
@@ -828,7 +838,7 @@ template <auto settings, typename Ft, typename... BoundArgs>
                   std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<Ft>>>>) &&
              (IsNamedDeductorSettings<settings>::value || IsDeductorSettings<settings>::value))
 struct TaskBuilder<settings, Ft, BoundArgs...>
-    : TaskTypeDeductor<DeductorSettings{settings}, TaskBuilderRefFilterT<settings.ref, Ft, true>,
+    : TaskTypeDeductor<settings.toDeductorSettings(), TaskBuilderRefFilterT<settings.ref, Ft, true>,
                        TaskBuilderRefFilterT<settings.ref, BoundArgs>...> {
     TaskBuilder(auto&& f,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
                 auto&&... args)

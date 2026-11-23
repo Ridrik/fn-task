@@ -41,20 +41,24 @@ struct BoundRefWrapTag {
         return val.get();
     }
 
-    constexpr std::remove_reference_t<T>&& move() && noexcept {
+    constexpr operator std::remove_reference_t<T>&&() const noexcept {
         return std::move(val.get());
     }
 
-    constexpr decltype(auto) get() const noexcept {
+    constexpr std::remove_reference_t<T>&& move() const&& noexcept {
+        return std::move(val.get());
+    }
+
+    constexpr T get() const noexcept {
         return val.get();
     }
 
-    decltype(auto) operator()(auto&&... args) const
+    /*decltype(auto) operator()(auto&&... args) const
         noexcept(std::is_nothrow_invocable_v<T, decltype(args)...>)
         requires Invocable
     {
         return std::invoke(val.get(), std::forward<decltype(args)>(args)...);
-    }
+    }*/
 };
 
 enum class RefQualifier : std::uint8_t { kNone, kNonConst, kConst };
@@ -132,7 +136,7 @@ struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>> {
     using LRef = invocable_combinator<F, TypeList<Tested..., std::add_lvalue_reference_t<T>>,
                                       TypeList<Rest...>>;
 
-    template <bool, bool, typename Dummy = void>
+    template <bool, bool>
     struct Select {
         using RRef = invocable_combinator<
             F, TypeList<Tested..., std::add_rvalue_reference_t<std::remove_reference_t<T>>>,
@@ -143,8 +147,8 @@ struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>> {
         using Selected = typename RRef::Selected;
     };
 
-    template <bool NoThrow, typename Dummy>
-    struct Select<true, NoThrow, Dummy> {
+    template <bool NoThrow>
+    struct Select<true, NoThrow> {
         static constexpr bool kValid = true;
         static constexpr bool kNoThrow = NoThrow;
         using Selected = typename LRef::Selected;
@@ -197,11 +201,10 @@ template <typename F, typename... Args>
     requires(std::disjunction_v<
              detail::is_valid<
                  detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>>,
+             detail::is_valid<
+                 detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>>>,
              detail::is_valid<detail::invocable_combinator<
-                 std::add_lvalue_reference_t<F>, detail::TypeList<>, detail::TypeList<Args...>>>,
-             detail::is_valid<detail::invocable_combinator<
-                 std::add_rvalue_reference_t<std::remove_reference_t<F>>, detail::TypeList<>,
-                 detail::TypeList<Args...>>>>)
+                 std::remove_reference_t<F> &&, detail::TypeList<>, detail::TypeList<Args...>>>>)
 struct is_compatible_invocable<F, Args...> : std::true_type {};
 
 template <typename F, typename... Args>
@@ -241,14 +244,12 @@ constexpr decltype(auto) invoke_compatible(F&& f, Args&&... args) noexcept(
 template <typename F, typename... Args>
     requires(!detail::invocable_combinator<F, detail::TypeList<>,
                                            detail::TypeList<Args...>>::kValid) &&
-            detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
-                                         detail::TypeList<Args...>>::kValid
+            detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>>::kValid
 constexpr decltype(auto) invoke_compatible(
     F&& f, Args&&... args) noexcept(  // NOLINT(cppcoreguidelines-missing-std-forward)
-    detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
-                                 detail::TypeList<Args...>>::kNoThrow) {
-    using Selection = detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
-                                                   detail::TypeList<Args...>>;
+    detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>>::kNoThrow) {
+    using Selection =
+        detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>>;
     auto references = std::forward_as_tuple(std::forward<Args>(args)...);
     return detail::invoke_selected(f, references, typename Selection::Selected{},
                                    std::index_sequence_for<Args...>{});
@@ -257,17 +258,16 @@ constexpr decltype(auto) invoke_compatible(
 template <typename F, typename... Args>
     requires(!detail::invocable_combinator<F, detail::TypeList<>,
                                            detail::TypeList<Args...>>::kValid) &&
-            (!detail::invocable_combinator<std::add_lvalue_reference<F>, detail::TypeList<>,
+            (!detail::invocable_combinator<F&, detail::TypeList<>,
                                            detail::TypeList<Args...>>::kValid) &&
-            detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
-                                         detail::TypeList<>, detail::TypeList<Args...>>::kValid
+            detail::invocable_combinator<std::remove_reference_t<F>&&, detail::TypeList<>,
+                                         detail::TypeList<Args...>>::kValid
 constexpr decltype(auto) invoke_compatible(
     F&& f, Args&&... args) noexcept(  // NOLINT(cppcoreguidelines-missing-std-forward)
-    detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
-                                 detail::TypeList<>, detail::TypeList<Args...>>::kNoThrow) {
-    using Selection =
-        detail::invocable_combinator<std::add_rvalue_reference_t<std::remove_reference_t<F>>,
-                                     detail::TypeList<>, detail::TypeList<Args...>>;
+    detail::invocable_combinator<std::remove_reference_t<F>&&, detail::TypeList<>,
+                                 detail::TypeList<Args...>>::kNoThrow) {
+    using Selection = detail::invocable_combinator<std::remove_reference_t<F>&&, detail::TypeList<>,
+                                                   detail::TypeList<Args...>>;
     auto references = std::forward_as_tuple(std::forward<Args>(args)...);
     return detail::invoke_selected(std::move(f), references,  // NOLINT
                                    typename Selection::Selected{},
@@ -344,8 +344,8 @@ static constexpr auto kIsRefWrapper = IsRefWrapper<T>::value;
 template <typename>
 struct IsBoundRefWrapper : std::false_type {};
 
-template <typename T>
-struct IsBoundRefWrapper<BoundRefWrapTag<T>> : std::true_type {};
+template <typename T, bool Invocable>
+struct IsBoundRefWrapper<BoundRefWrapTag<T, Invocable>> : std::true_type {};
 
 template <typename T>
 static constexpr auto kIsBoundRefWrapper = IsBoundRefWrapper<T>::value;
@@ -399,7 +399,11 @@ template <typename T>
 using unwrap_reference_qualifiers_t = typename unwrap_reference_qualifiers<T>::type;
 
 template <bool Ignore = false>
-constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept {
+constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
+    requires((!IsBoundRefWrapper<std::remove_cvref_t<decltype(arg)>>::value &&
+              !IsCallArg<std::remove_cvref_t<decltype(arg)>>::value) ||
+             Ignore)
+{
     return std::forward<decltype(arg)>(arg);
 }
 
@@ -411,19 +415,30 @@ constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
     return arg.operator typename std::decay_t<decltype(arg)>::type();
 }
 
-template <bool Ignore = false, typename T>
+/*template <bool Ignore = false, typename T>
     requires(!Ignore)
 constexpr decltype(auto) unwrap_arg_on_invocation(BoundRefWrapTag<T>&& arg) noexcept {  // NOLINT
     return std::move(arg).move();
 }
+
+template <bool Ignore = false, typename T>
+    requires(!Ignore)
+constexpr decltype(auto) unwrap_arg_on_invocation(
+    const BoundRefWrapTag<T>&& arg) noexcept {  // NOLINT
+    return std::move(arg).move();
+}*/
 
 template <bool Ignore = false>
     requires(!Ignore)
 constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
     requires(IsBoundRefWrapper<std::remove_cvref_t<decltype(arg)>>::value)
 {  // NOLINT
-    static_assert(std::is_lvalue_reference_v<decltype(arg)>);
-    return arg.get();
+    // static_assert(std::is_lvalue_reference_v<decltype(arg)>);
+    if constexpr (std::is_lvalue_reference_v<decltype(arg)>) {
+        return arg.get();
+    } else {
+        return std::move(arg).move();
+    }
 }
 
 struct Barrier {};
@@ -481,9 +496,9 @@ struct PayloadTuple<> {
     template <typename F, typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) apply([[maybe_unused]] this auto&& /*self*/, F&& f,
                                                 ArgsSoFar&&... args) {
-        static_assert(std::is_invocable_v<
-                          decltype(unwrap_arg_on_invocation(std::declval<decltype(f)>())),
-                          decltype(unwrap_arg_on_invocation(std::declval<decltype(args)>()))...>,
+        static_assert(std::is_invocable_v<decltype(unwrap_arg_on_invocation(std::forward<F>(f))),
+                                          decltype(unwrap_arg_on_invocation(
+                                              std::forward<ArgsSoFar>(args)))...>,
                       "F is not callable with given arguments");
         return std::invoke(unwrap_arg_on_invocation(std::forward<F>(f)),
                            unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...);

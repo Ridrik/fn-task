@@ -32,14 +32,13 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
                         RVRef, IsNoExcept> {
     template <typename T>
     using ApplyQualifiers = std::conditional_t<
-        LVRef, std::add_lvalue_reference_t<std::conditional_t<IsConst, std::add_const_t<T>, T>>,
+        LVRef, std::conditional_t<IsConst, const T, T>&,
         std::conditional_t<RVRef,
-                           std::add_rvalue_reference_t<std::remove_reference_t<
-                               std::conditional_t<IsConst, std::add_const_t<T>, T>>>,
-                           std::conditional_t<IsConst, std::add_const_t<T>, T>>>;
+                           std::remove_reference_t<std::conditional_t<IsConst, const T, T>>&&,
+                           std::conditional_t<IsConst, const T, T>>>;
 
     template <typename T>
-    using Convert = ApplyQualifiers<std::unwrap_reference_t<T>>;
+    using Convert = ApplyQualifiers<UnwrapBoundRefWrapT<T>>;
 
     static constexpr bool kRefLess = !LVRef && !RVRef;
 
@@ -332,44 +331,6 @@ FORCE_INLINE auto toFuncPtr() {
         typename FunctionTraits<std::decay_t<std::unwrap_reference_t<decltype(F)>>>::func_ptr>(F);
 }
 
-template <typename T>
-concept ErasableToPointer = requires(T t) { static_cast<void*>(t); };
-
-template <Binding binding = Binding::kAuto, typename F, typename BoundArg>
-    requires(
-        requires {
-            typename FunctionTraits<
-                std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<F>>>>::func_ptr;
-        } &&
-        std::is_convertible_v<F, typename FunctionTraits<std::remove_reference_t<
-                                     std::unwrap_reference_t<UnwrapBoundRefWrapT<F>>>>::func_ptr>)
-FORCE_INLINE auto makeThisTask(F&& f, BoundArg&& arg)
-    requires ErasableToPointer<decltype(arg)>
-{
-    using ptr = typename FunctionTraits<
-        std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<F>>>>::func_ptr;
-    return NamedTask<
-        typename TaskTypeDeductor<DeductorSettings<void>{binding}, ptr, void*>::Signature,
-        Binder<>{binding}, ptr, void*>{std::forward<F>(f), std::forward<BoundArg>(arg)};
-}
-
-template <auto F, Binding binding = Binding::kAuto, typename BoundArg>
-    requires(
-        requires {
-            typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr;
-        } &&
-        std::is_convertible_v<
-            decltype(F),
-            typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr>)
-FORCE_INLINE auto makeThisTask(BoundArg&& arg)
-    requires ErasableToPointer<decltype(arg)>
-{
-    using ptr = typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr;
-    return NamedTask<
-        typename TaskTypeDeductor<DeductorSettings<void>{binding}, ptr, void*>::Signature,
-        Binder<>{binding}, ptr, void*>{static_cast<ptr>(F), std::forward<BoundArg>(arg)};
-}
-
 template <auto settings = NamedDeductorSettings<void>{}, typename F, typename... BoundArgs>
     requires(IsNamedDeductorSettings<settings>::value)
 FORCE_INLINE constexpr auto buildNamedTask(F&& f, BoundArgs&&... args) {
@@ -391,6 +352,42 @@ FORCE_INLINE auto makeNamedTask(F&& f, BoundArgs&&... args) {
 template <auto F, auto settings = NamedDeductorSettings<void>{}, typename... BoundArgs>
 FORCE_INLINE constexpr auto makeNamedTask(BoundArgs&&... args) {
     return buildNamedTask<F, settings>(std::forward<BoundArgs>(args)...).build();
+}
+
+template <typename T>
+concept ErasableToPointer = requires(T t) { static_cast<void*>(t); };
+
+template <auto settings = NamedDeductorSettings<>{}, typename F, typename BoundArg>
+    requires(
+        requires {
+            typename FunctionTraits<
+                std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<F>>>>::func_ptr;
+        } &&
+        std::is_convertible_v<F, typename FunctionTraits<std::remove_reference_t<
+                                     std::unwrap_reference_t<UnwrapBoundRefWrapT<F>>>>::func_ptr>)
+FORCE_INLINE auto makeThisTask(F&& f, BoundArg&& arg)
+    requires ErasableToPointer<decltype(arg)>
+{
+    using ptr = typename FunctionTraits<
+        std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<F>>>>::func_ptr;
+    return buildNamedTask<settings, ptr, void*>(std::forward<F>(f), std::forward<BoundArg>(arg))
+        .build();
+}
+
+template <auto F, auto settings = NamedDeductorSettings<>{}, typename BoundArg>
+    requires(
+        requires {
+            typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr;
+        } &&
+        std::is_convertible_v<
+            decltype(F),
+            typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr>)
+FORCE_INLINE auto makeThisTask(BoundArg&& arg)
+    requires ErasableToPointer<decltype(arg)>
+{
+    using ptr = typename FunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>::func_ptr;
+    return buildNamedTask<settings, ptr, void*>(static_cast<ptr>(F), std::forward<BoundArg>(arg))
+        .build();
 }
 
 template <auto settings = NamedDeductorSettings<void>{}>
@@ -432,8 +429,7 @@ FORCE_INLINE auto makeRefNamedTask(F&& f, BoundArgs&&... args) {
 }
 
 template <auto F, auto settings = NamedDeductorSettings<void>{}, typename... BoundArgs>
-    requires HasFunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>> &&
-             TaskTypeDeductor<settings, FunctionTag<F>, BoundArgs...>::kIsValid
+    requires HasFunctionTraits<std::decay_t<std::unwrap_reference<decltype(F)>>>
 FORCE_INLINE auto makeRefNamedTask(BoundArgs&&... args) {
     return buildNamedTask<F, settings>(std::forward<decltype(args)>(args)...).byRef().build();
 }

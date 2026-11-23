@@ -176,9 +176,8 @@ int main() {
         };
         auto hi = std::string{"hi"};
         auto functor = Functor{};
-        using kekers =
-            std::add_const_t<fn::UnwrapBoundRefWrapT<fn::BoundRefWrapTag<std::string&, false>>>;
-        // auto task = fn::makeTask(fn::ref(functor), fn::ref(hi));
+        auto task = fn::buildTask(fn::ref(functor), fn::ref(hi)).build();
+        task();
     }
 
     {
@@ -231,6 +230,9 @@ int main() {
                     .bindTo<0, 2>()
                     .build();
             customBindTask(3);
+
+            auto str = std::string{"hello"};
+            auto task = fn::FlexTask<void()>([](auto&& b) {}, fn::ref(str));
         }
     }
 }
