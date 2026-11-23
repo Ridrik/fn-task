@@ -45,9 +45,9 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
 
     template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
-        kRefLess ? (IsNoExcept                                             // NOLINT
-                        ? is_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
-                        : is_compatible_invocable_b<Ft, Argst...>)
+        kRefLess ? (IsNoExcept                                                 // NOLINT
+                        ? is_any_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
+                        : is_any_compatible_invocable_b<Ft, Argst...>)
                  : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
                                : std::is_invocable_v<Ft, Argst...>);
 

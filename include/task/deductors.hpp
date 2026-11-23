@@ -679,21 +679,21 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             using MakeReferencesMovable =
                 std::conditional_t<std::is_lvalue_reference_v<T>, std::remove_reference_t<T>&&, T>;
 
-            using Processor = ArgumentProcessor<settings.binding, is_compatible_invocable, NoMod>;
+            using Processor =
+                ArgumentProcessor<settings.binding, is_any_compatible_invocable, NoMod>;
             static constexpr bool kIsValid = Processor::kIsValid;
             static constexpr auto kBinderDeduct = Processor::kBindDeduct;
             using base_signature = Processor::base_signature;
             static constexpr bool kIsConst =
                 (Traits::kIsConst || kFIsReference) &&
-                ArgumentProcessor<kBinderDeduct, is_compatible_invocable,
+                ArgumentProcessor<kBinderDeduct, is_any_compatible_invocable,
                                   std::add_const_t>::kIsValid;
-            static constexpr bool kIsRValRef = Traits::kIsRValueRef &&
-                                               ArgumentProcessor<kBinderDeduct, std::is_invocable,
-                                                                 MakeReferencesMovable>::kIsValid &&
-                                               (!std::is_lvalue_reference_v<FiltBoundArgs> || ...);
+            static constexpr bool kIsRValRef =
+                Traits::kIsRValueRef && ArgumentProcessor<kBinderDeduct, is_compatible_invocable,
+                                                          MakeReferencesMovable>::kIsValid;
             static constexpr bool kIsLValRef =
                 (Traits::kIsLValueRef || kFIsReference) &&
-                ArgumentProcessor<kBinderDeduct, std::is_invocable,
+                ArgumentProcessor<kBinderDeduct, is_compatible_invocable,
                                   std::add_lvalue_reference_t>::kIsValid;
             using Signature = ToFullSignature<base_signature, kIsConst, kIsLValRef, kIsRValRef,
                                               Traits::kIsNoExcept>::Signature;
@@ -939,13 +939,13 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         static constexpr bool kIgnoreRefWrapperRValueConversion{true};
         if constexpr (kIsFunctionTag<Ft>) {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                []<typename... Args>(Args&&... args) {
+                []<typename... Args>(Args&&... args) {  // NOLINT
                     return TaskBuilder<settings.byRef(), Ft, BoundArgs...>{
                         std::forward<Args>(args)...};
                 });
         } else {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                [this]<typename... Args>(Args&&... args) {
+                [this]<typename... Args>(Args&&... args) {  // NOLINT
                     return TaskBuilder<settings.byRef(), Ft, BoundArgs...>{
                         std::forward<decltype(transitPayload.f)>(transitPayload.f),
                         std::forward<Args>(args)...};
@@ -958,13 +958,13 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         static constexpr bool kIgnoreRefWrapperRValueConversion{true};
         if constexpr (kIsFunctionTag<Ft>) {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                []<typename... Args>(Args&&... args) {
+                []<typename... Args>(Args&&... args) {  // NOLINT
                     return TaskBuilder<settings.byCRef(), Ft, BoundArgs...>{
                         std::forward<Args>(args)...};
                 });
         } else {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                [this]<typename... Args>(Args&&... args) {
+                [this]<typename... Args>(Args&&... args) {  // NOLINT
                     return TaskBuilder<settings.byCRef(), Ft, BoundArgs...>{
                         std::forward<decltype(transitPayload.f)>(transitPayload.f),
                         std::forward<Args>(args)...};
@@ -987,13 +987,13 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         static constexpr bool kIgnoreRefWrapperRValueConversion{true};
         if constexpr (kIsFunctionTag<Ft>) {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                []<typename... Args>(Args&&... args) {
+                []<typename... Args>(Args&&... args) {  // NOLINT
                     return typename Deductor::template NamedType<>{
                         std::forward<decltype(args)>(args)...};
                 });
         } else {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                [this]<typename... Args>(Args&&... args) {
+                [this]<typename... Args>(Args&&... args) {  // NOLINT
                     if constexpr (sizeof...(args) == 0 &&
                                   IsNamedTask<std::decay_t<decltype(transitPayload.f)>>::value &&
                                   settings.ref == RefQualifier::kNone) {
@@ -1031,7 +1031,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         static constexpr bool kIgnoreRefWrapperRValueConversion{true};
         if constexpr (kIsFunctionTag<Ft>) {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                []<typename... Args>(Args&&... args) {
+                []<typename... Args>(Args&&... args) {  // NOLINT
                     if constexpr (settings.ref != RefQualifier::kNone) {
                         return typename Deductor::template Type<>{
                             RefTag{}, Ft{}, BinderTag<settings.binding>{},
@@ -1044,7 +1044,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
                 });
         } else {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
-                [this]<typename... Args>(Args&&... args) {
+                [this]<typename... Args>(Args&&... args) {  // NOLINT
                     if constexpr (settings.ref != RefQualifier::kNone) {
                         return typename Deductor::template Type<>{
                             RefTag{}, BinderTag<settings.binding>{},

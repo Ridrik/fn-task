@@ -52,8 +52,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
 
     template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
-        kRefLess ? (IsNoExcept ? is_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
-                               : is_compatible_invocable_b<Ft, Argst...>)
+        kRefLess ? (IsNoExcept ? is_any_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
+                               : is_any_compatible_invocable_b<Ft, Argst...>)
                  : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, UndoIfCallArgT<Argst>...>
                                : std::is_invocable_v<Ft, UndoIfCallArgT<Argst>...>);
 
@@ -172,10 +172,10 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                             .invokeFront(std::forward<Args>(args)...);
                     }
                 }
-            } else if constexpr (is_compatible_invocable_b<
+            } else if constexpr (is_any_compatible_invocable_b<
                                      UnwrapBoundRefWrapT<F>, UnwrapBoundRefWrapT<BoundArgs>...,
                                      CallArgTag<decltype(std::forward<Args>(args))>...> ||
-                                 is_compatible_invocable_b<
+                                 is_any_compatible_invocable_b<
                                      UnwrapBoundRefWrapT<F>,
                                      CallArgTag<decltype(std::forward<Args>(args))>...,
                                      UnwrapBoundRefWrapT<BoundArgs>...>) {
@@ -253,12 +253,12 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                             .invokeFront(std::forward<Args>(args)...);
                     }
                 }
-            } else if constexpr (is_compatible_invocable_b<std::unwrap_reference_t<decltype(F)>,
-                                                           std::unwrap_reference_t<BoundArgs>...,
-                                                           Args...> ||
-                                 is_compatible_invocable_b<std::unwrap_reference_t<decltype(F)>,
-                                                           Args...,
-                                                           std::unwrap_reference_t<BoundArgs>...>) {
+            } else if constexpr (is_any_compatible_invocable_b<
+                                     std::unwrap_reference_t<decltype(F)>,
+                                     std::unwrap_reference_t<BoundArgs>..., Args...> ||
+                                 is_any_compatible_invocable_b<
+                                     std::unwrap_reference_t<decltype(F)>, Args...,
+                                     std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier or noexcept");

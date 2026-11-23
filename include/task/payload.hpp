@@ -52,13 +52,6 @@ struct BoundRefWrapTag {
     constexpr T get() const noexcept {
         return val.get();
     }
-
-    /*decltype(auto) operator()(auto&&... args) const
-        noexcept(std::is_nothrow_invocable_v<T, decltype(args)...>)
-        requires Invocable
-    {
-        return std::invoke(val.get(), std::forward<decltype(args)>(args)...);
-    }*/
 };
 
 enum class RefQualifier : std::uint8_t { kNone, kNonConst, kConst };
@@ -89,6 +82,25 @@ struct UnwrapBoundRefWrap<BoundRefWrapTag<T, Invocable>> {
 template <typename T>
 using UnwrapBoundRefWrapT = UnwrapBoundRefWrap<T>::type;
 
+template <typename>
+struct IsBoundRefWrapper : std::false_type {};
+
+template <typename T, bool Invocable>
+struct IsBoundRefWrapper<BoundRefWrapTag<T, Invocable>> : std::true_type {};
+
+template <typename T>
+static constexpr auto kIsBoundRefWrapper = IsBoundRefWrapper<T>::value;
+
+template <typename T>
+struct IsNotBoundRefWrapper {
+    static constexpr auto value = !kIsBoundRefWrapper<T>;  // NOLINT
+};
+
+template <typename T>
+struct NotLValueReference {
+    static constexpr auto value = !std::is_lvalue_reference_v<T>;  // NOLINT
+};
+
 template <typename T>
 struct IsCallArg : std::false_type {};
 
@@ -117,30 +129,32 @@ namespace detail {
 template <typename... Ts>
 struct TypeList {};
 
-template <typename F, typename TupleOfTested, typename TupleOfRemaining>
+template <typename F, typename TupleOfTested, typename TupleOfRemaining,
+          template <typename> typename NoExpandPolicy = IsCallArg>
 struct invocable_combinator;
 
 // Base case: No arguments remaining, test std::is_invocable with the accumulated tested types
-template <typename F, typename... Tested>
-struct invocable_combinator<F, TypeList<Tested...>, TypeList<>> {
+template <typename F, typename... Tested, template <typename> typename Policy>
+struct invocable_combinator<F, TypeList<Tested...>, TypeList<>, Policy> {
     static constexpr bool kValid = std::is_invocable_v<F, Tested...>;
     static constexpr bool kNoThrow = std::is_nothrow_invocable_v<F, Tested...>;
     using Selected = TypeList<Tested...>;
 };
 
 // Recursive step: Take the next argument T, branch out into its common value/cv-ref variations
-template <typename F, typename... Tested, typename T, typename... Rest>
-    requires(!IsCallArgB<std::remove_cvref_t<T>>)
-struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>> {
+template <typename F, typename... Tested, typename T, typename... Rest,
+          template <typename> typename Policy>
+    requires(!Policy<std::remove_cvref_t<T>>::value)
+struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>, Policy> {
    private:
     using LRef = invocable_combinator<F, TypeList<Tested..., std::add_lvalue_reference_t<T>>,
-                                      TypeList<Rest...>>;
+                                      TypeList<Rest...>, Policy>;
 
     template <bool, bool>
     struct Select {
         using RRef = invocable_combinator<
             F, TypeList<Tested..., std::add_rvalue_reference_t<std::remove_reference_t<T>>>,
-            TypeList<Rest...>>;
+            TypeList<Rest...>, Policy>;
 
         static constexpr bool kValid = RRef::kValid;
         static constexpr bool kNoThrow = RRef::kNoThrow;
@@ -162,11 +176,12 @@ struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>> {
     using Selected = typename Result::Selected;
 };
 
-template <typename F, typename... Tested, typename T, typename... Rest>
-    requires(IsCallArgB<std::remove_cvref_t<T>>)
-struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>>
-    : invocable_combinator<F, TypeList<Tested..., typename std::remove_cvref_t<T>::type>,
-                           TypeList<Rest...>> {};
+template <typename F, typename... Tested, typename T, typename... Rest,
+          template <typename> typename Policy>
+    requires(Policy<std::remove_cvref_t<T>>::value)
+struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>, Policy>
+    : invocable_combinator<F, TypeList<Tested..., T /*typename std::remove_cvref_t<T>::type*/>,
+                           TypeList<Rest...>, Policy> {};
 
 template <typename F, typename Tuple, typename... Selected, std::size_t... I>
 constexpr decltype(auto) invoke_selected(
@@ -195,7 +210,7 @@ struct is_no_throw : std::bool_constant<is_valid<T>::value && T::kNoThrow> {};  
 }  // namespace detail
 
 template <typename F, typename... Args>
-struct is_compatible_invocable : std::false_type {};  // NOLINT
+struct is_any_compatible_invocable : std::false_type {};  // NOLINT
 
 template <typename F, typename... Args>
     requires(std::disjunction_v<
@@ -204,31 +219,49 @@ template <typename F, typename... Args>
              detail::is_valid<
                  detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>>>,
              detail::is_valid<detail::invocable_combinator<
-                 std::remove_reference_t<F> &&, detail::TypeList<>, detail::TypeList<Args...>>>>)
-struct is_compatible_invocable<F, Args...> : std::true_type {};
+                 std::remove_reference_t<F>&&, detail::TypeList<>, detail::TypeList<Args...>>>>)
+struct is_any_compatible_invocable<F, Args...> : std::true_type {};
 
 template <typename F, typename... Args>
-struct is_compatible_nothrow_invocable : std::false_type {};  // NOLINT
+struct is_compatible_invocable : std::false_type {};
+
+template <typename F, typename... Args>
+    requires((!std::is_lvalue_reference_v<F>) &&
+             detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>,
+                                          NotLValueReference>::kValid)
+struct is_compatible_invocable<F, Args...> : std::true_type {};  // NOLINT
+
+template <typename F, typename... Args>
+    requires(std::is_lvalue_reference_v<F> &&
+             std::disjunction_v<
+                 detail::is_valid<detail::invocable_combinator<
+                     F, detail::TypeList<>, detail::TypeList<Args...>, NotLValueReference>>,
+                 detail::is_valid<
+                     detail::invocable_combinator<std::remove_reference_t<F>&&, detail::TypeList<>,
+                                                  detail::TypeList<Args...>, NotLValueReference>>>)
+struct is_compatible_invocable<F, Args...> : std::true_type {};  // NOLINT
+
+template <typename F, typename... Args>
+struct is_any_compatible_nothrow_invocable : std::false_type {};  // NOLINT
 
 template <typename F, typename... Args>
     requires(std::disjunction_v<
              detail::is_no_throw<
                  detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>>,
+             detail::is_no_throw<
+                 detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>>>,
              detail::is_no_throw<detail::invocable_combinator<
-                 std::add_lvalue_reference_t<F>, detail::TypeList<>, detail::TypeList<Args...>>>,
-             detail::is_no_throw<detail::invocable_combinator<
-                 std::add_rvalue_reference_t<std::remove_reference_t<F>>, detail::TypeList<>,
-                 detail::TypeList<Args...>>>>)
-struct is_compatible_nothrow_invocable<F, Args...> : std::true_type {};
+                 std::remove_reference_t<F>&&, detail::TypeList<>, detail::TypeList<Args...>>>>)
+struct is_any_compatible_nothrow_invocable<F, Args...> : std::true_type {};
 
 // Main trait: checks if there is any valid combination of cv/ref qualifiers
 template <typename F, typename... Args>
-constexpr bool is_compatible_invocable_b =  // NOLINT
-    is_compatible_invocable<F, Args...>::value;
+constexpr bool is_any_compatible_invocable_b =  // NOLINT
+    is_any_compatible_invocable<F, Args...>::value;
 
 template <typename F, typename... Args>
-constexpr bool is_compatible_nothrow_invocable_b =  // NOLINT
-    is_compatible_nothrow_invocable<F, Args...>::value;
+constexpr bool is_any_compatible_nothrow_invocable_b =  // NOLINT
+    is_any_compatible_nothrow_invocable<F, Args...>::value;
 
 template <typename F, typename... Args>
     requires detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>::kValid
@@ -340,15 +373,6 @@ struct IsRefWrapper<std::reference_wrapper<T>> : std::true_type {};
 
 template <typename T>
 static constexpr auto kIsRefWrapper = IsRefWrapper<T>::value;
-
-template <typename>
-struct IsBoundRefWrapper : std::false_type {};
-
-template <typename T, bool Invocable>
-struct IsBoundRefWrapper<BoundRefWrapTag<T, Invocable>> : std::true_type {};
-
-template <typename T>
-static constexpr auto kIsBoundRefWrapper = IsBoundRefWrapper<T>::value;
 
 template <typename>
 struct IsRefPayloadTuple : std::false_type {};
@@ -969,7 +993,7 @@ struct PayloadTuple<T, Ts...> {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
             static_assert(
-                is_compatible_invocable_b<
+                is_any_compatible_invocable_b<
                     decltype(unwrap_arg_on_invocation(std::forward<F>(f))),
                     decltype(unwrap_arg_on_invocation(std::declval<decltype(args)>()))...,
                     decltype(unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)))>,
