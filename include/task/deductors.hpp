@@ -920,16 +920,18 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     }
 
     template <std::size_t... Is>
-        requires(sizeof...(Is) > 0 && !kNamedTaskBuilder)
+        requires(sizeof...(Is) > 0)
     FORCE_INLINE constexpr auto bindTo() && noexcept {
         return TaskBuilder<settings.template bindTo<Is...>(), Ft, BoundArgs...>{
             std::move(transitPayload)};
     }
 
-    template <std::size_t... Is>
-        requires(sizeof...(Is) > 0 && kNamedTaskBuilder)
-    FORCE_INLINE constexpr auto bindTo() && noexcept {
-        static_assert(false, "bindTo functionality for fn::NamedTask is still in development");
+    template <std::size_t StartIdx>
+    FORCE_INLINE constexpr auto bindFrom() && noexcept {
+        return [this]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return TaskBuilder<settings.template bindTo<(StartIdx + Is)...>(), Ft, BoundArgs...>{
+                std::move(transitPayload)};
+        }(std::make_index_sequence<sizeof...(BoundArgs)>{});
     }
 
     FORCE_INLINE constexpr auto byRef() && noexcept {

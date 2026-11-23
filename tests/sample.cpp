@@ -225,9 +225,9 @@ int main() {
 
         {
             auto str = std::string{"hello"};
-            auto customBindTask = fn::buildTask([](std::string&&, const int&, std::string&&) {},
+            auto customBindTask = fn::buildTask([](const int&, std::string a, std::string) {},
                                                 fn::ref(str), fn::ref(str))
-                                      .bindTo<0, 2>()
+                                      .bindFrom<1>()
                                       .build();
             customBindTask(3);
             auto task = fn::FlexTask<void()>([](auto&& b) {}, fn::ref(str));

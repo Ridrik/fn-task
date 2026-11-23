@@ -151,4 +151,13 @@ int main() {
         otherTask.swap(otherTask2);
         refTask(3);
     }
+
+    {
+        auto str = std::string{"hello"};
+        auto customBindTask = fn::buildNamedTask([](std::string&&, const int&, std::string&&) {},
+                                                 fn::ref(str), fn::ref(str))
+                                  .bindTo<0, 2>()
+                                  .build();
+        customBindTask(3);
+    }
 }
