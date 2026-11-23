@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -50,11 +51,33 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
                  : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
                                : std::is_invocable_v<Ft, Argst...>);
 
+    template <typename, typename>
+    struct UnwrapTester;
+
+    template <typename f, typename... TestArgs>
+    struct UnwrapTester<f, std::tuple<TestArgs...>> {
+        static constexpr auto kValid = kInvocableVerifierV<F, TestArgs...>;
+    };
+
     FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept(IsNoExcept) {
-        if constexpr (binder != Binding::kFront &&
-                      kInvocableVerifierV<Convert<F>,
-                                          CallArgTag<decltype(std::forward<Args>(args))>...,
-                                          Convert<BoundArgs>...>) {
+        if constexpr (!kIsIndicelessBinder<binder>) {
+            using ArgsOrderTuple =
+                rebind_call_and_bound<std::tuple<Args...>, std::tuple<Convert<BoundArgs>...>,
+                                      binder>::type;
+            static_assert(UnwrapTester<Convert<F>, ArgsOrderTuple>::kValid,
+                          "F is not callable with the provided arguments.");
+            static constexpr auto kInvokeCompatible = kRefLess;
+            if constexpr (kInvokeCompatible) {
+                return std::move((const_cast<Task&>(self)).payload_)
+                    .template invokeCompatible<Is...>(std::forward<Args>(args)...);
+            } else {
+                return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
+                    .template invoke<Is...>(std::forward<Args>(args)...);
+            }
+        } else if constexpr (binder != Binding::kFront &&
+                             kInvocableVerifierV<Convert<F>,
+                                                 CallArgTag<decltype(std::forward<Args>(args))>...,
+                                                 Convert<BoundArgs>...>) {
             if constexpr (kRefLess) {
                 return std::move((const_cast<Task&>(self)).payload_)
                     .invokeCompatible(std::forward<Args>(args)...);

@@ -224,14 +224,12 @@ int main() {
         otherTask(3);
 
         {
-            auto customBindTask =
-                fn::buildTask([](const std::string&, const int&, const std::string&) {}, "hi",
-                              "hey")
-                    .bindTo<0, 2>()
-                    .build();
-            customBindTask(3);
-
             auto str = std::string{"hello"};
+            auto customBindTask = fn::buildTask([](std::string&&, const int&, std::string&&) {},
+                                                fn::ref(str), fn::ref(str))
+                                      .bindTo<0, 2>()
+                                      .build();
+            customBindTask(3);
             auto task = fn::FlexTask<void()>([](auto&& b) {}, fn::ref(str));
         }
     }

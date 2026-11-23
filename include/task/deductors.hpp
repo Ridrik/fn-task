@@ -679,10 +679,6 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             using MakeReferencesMovable =
                 std::conditional_t<std::is_lvalue_reference_v<T>, std::remove_reference_t<T>&&, T>;
 
-            template <auto binder, template <typename...> typename Tester,
-                      template <typename> typename Modifier>
-            using ArgumentProcessorV = ArgumentProcessor<binder, Tester, Modifier>::kValid;
-
             using Processor = ArgumentProcessor<settings.binding, is_compatible_invocable, NoMod>;
             static constexpr bool kIsValid = Processor::kIsValid;
             static constexpr auto kBinderDeduct = Processor::kBindDeduct;
@@ -691,9 +687,10 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
                 (Traits::kIsConst || kFIsReference) &&
                 ArgumentProcessor<kBinderDeduct, is_compatible_invocable,
                                   std::add_const_t>::kIsValid;
-            static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef && ArgumentProcessor<kBinderDeduct, std::is_invocable,
-                                                          MakeReferencesMovable>::kIsValid;
+            static constexpr bool kIsRValRef = Traits::kIsRValueRef &&
+                                               ArgumentProcessor<kBinderDeduct, std::is_invocable,
+                                                                 MakeReferencesMovable>::kIsValid &&
+                                               (!std::is_lvalue_reference_v<FiltBoundArgs> || ...);
             static constexpr bool kIsLValRef =
                 (Traits::kIsLValueRef || kFIsReference) &&
                 ArgumentProcessor<kBinderDeduct, std::is_invocable,

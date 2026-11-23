@@ -65,20 +65,33 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
         static constexpr auto kValid = kInvocableVerifierV<F, TestArgs...>;
     };
 
-    template <typename PayloadType, auto binder, bool Indirection = false>
+    template <typename PayloadType, auto binder, bool Compatible, bool Indirection = false>
     struct InvokeBinder;
 
-    template <typename PayloadType, std::size_t... Is, Binder<Is...> binder, bool Indirection>
-    struct InvokeBinder<PayloadType, binder, Indirection> {
+    template <typename PayloadType, std::size_t... Is, Binder<Is...> binder, bool Compatible,
+              bool Indirection>
+    struct InvokeBinder<PayloadType, binder, Compatible, Indirection> {
         static constexpr Ret call(void* s, auto&&... args) noexcept(IsNoExcept) {
             if constexpr (Indirection) {
-                return std::forward_like<ApplyQualifiers<PayloadType>>(
-                           **static_cast<PayloadType**>(s))
-                    .template invoke<Is...>(std::forward<Args>(args)...);
+                if constexpr (Compatible) {
+                    return std::forward_like<ApplyQualifiers<PayloadType>>(
+                               **static_cast<PayloadType**>(s))
+                        .template invokeCompatible<Is...>(std::forward<Args>(args)...);
+                } else {
+                    return std::forward_like<ApplyQualifiers<PayloadType>>(
+                               **static_cast<PayloadType**>(s))
+                        .template invoke<Is...>(std::forward<Args>(args)...);
+                }
             } else {
-                return std::forward_like<ApplyQualifiers<PayloadType>>(
-                           *static_cast<PayloadType*>(s))
-                    .template invoke<Is...>(std::forward<Args>(args)...);
+                if constexpr (Compatible) {
+                    return std::forward_like<ApplyQualifiers<PayloadType>>(
+                               *static_cast<PayloadType*>(s))
+                        .template invokeCompatible<Is...>(std::forward<Args>(args)...);
+                } else {
+                    return std::forward_like<ApplyQualifiers<PayloadType>>(
+                               *static_cast<PayloadType*>(s))
+                        .template invoke<Is...>(std::forward<Args>(args)...);
+                }
             }
         }
     };
@@ -110,7 +123,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 static_assert(UnwrapTester<Convert<F>, ArgsOrderTuple>::kValid,
                               "F is not callable with the provided arguments.");
                 static constexpr auto kIndirection = sizeof(PayloadType) > size;
-                return InvokeBinder<PayloadType, binder, kIndirection>::call(
+                static constexpr auto kInvokeCompatible = kRefLess;
+                return InvokeBinder<PayloadType, binder, kInvokeCompatible, kIndirection>::call(
                     s, std::forward<Args>(args)...);
             } else if constexpr (binder != Binding::kFront &&
                                  kInvocableVerifierV<
@@ -189,10 +203,12 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 using ArgsOrderTuple =
                     rebind_call_and_bound<std::tuple<Args...>, std::tuple<Convert<BoundArgs>...>,
                                           binder>::type;
-
                 static_assert(UnwrapTester<Convert<decltype(F)>, ArgsOrderTuple>::kValid,
                               "F is not callable with the provided arguments.");
-
+                static constexpr auto kIndirection = sizeof(PayloadType) > size;
+                static constexpr auto kInvokeCompatible = kRefLess;
+                return InvokeBinder<PayloadType, binder, kInvokeCompatible, kIndirection>::call(
+                    s, std::forward<Args>(args)...);
             } else if constexpr (binder != Binding::kFront &&
                                  kInvocableVerifierV<Convert<decltype(F)>, Args...,
                                                      Convert<BoundArgs>...>) {
