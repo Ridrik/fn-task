@@ -224,10 +224,16 @@ int main() {
 
         {
             auto str = std::string{"hello"};
+<<<<<<< HEAD
             auto customBindTask = fn::buildTask([](int, std::string& a, std::string&) {}, 2,
                                                 fn::ref(str), fn::ref(str))
                                       .withSignature<void() &&>()
                                       .bindFrom<0>()
+=======
+            auto customBindTask = fn::buildTask([](const int&, std::string a, std::string) {},
+                                                fn::ref(str), fn::ref(str))
+                                      .bindFrom<1>()
+>>>>>>> 25597b2 (bindFrom method)
                                       .build();
             auto task = fn::FlexTask<void() noexcept>([](auto&& b) noexcept {}, fn::ref(str));
         }
