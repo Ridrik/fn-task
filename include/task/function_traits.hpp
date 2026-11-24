@@ -295,18 +295,24 @@ concept NoExceptMapsToThrowingSignature =
     !IsNoExcept<SigTo> && std::is_same_v<SigFrom, typename AddNoExcept<SigTo>::Type>;
 
 template <typename SigFrom, typename SigTo>
+concept BaseToRefAllowance =
+    IsBaseSignature<SigFrom> && BaseSignatureMatches<SigFrom, SigTo> &&
+    (IsConst<SigFrom> || !IsConst<SigTo>) && (IsNoExcept<SigFrom> || !IsNoExcept<SigTo>);
+
+template <typename SigFrom, typename SigTo, bool AllRefValid = false>
 struct IsSignatureCompatible : std::false_type {};
 
-template <typename SigFrom, typename SigTo>
-static constexpr auto kIsSignatureCompatibleB = IsSignatureCompatible<SigFrom, SigTo>::value;
-
-template <typename SigFrom, typename SigTo>
+template <typename SigFrom, typename SigTo, bool AllRefValid>
     requires(std::is_same_v<SigFrom, SigTo> || AnySignatureConvertibleToItsBase<SigFrom, SigTo> ||
              AnySignatureConvertibleToItsBaseNoExcept<SigFrom, SigTo> ||
              NoExceptMapsToThrowingSignature<SigFrom, SigTo> ||
              SignatureConstConvertible<SigFrom, SigTo> ||
-             SignatureConstToNonConstConvertible<SigFrom, SigTo>)
-struct IsSignatureCompatible<SigFrom, SigTo> : std::true_type {};
+             SignatureConstToNonConstConvertible<SigFrom, SigTo> ||
+             (AllRefValid && BaseToRefAllowance<SigFrom, SigTo>))
+struct IsSignatureCompatible<SigFrom, SigTo, AllRefValid> : std::true_type {};
+
+template <typename SigFrom, typename SigTo, bool AllRefValid = false>
+static constexpr auto kIsSignatureCompatibleB = IsSignatureCompatible<SigFrom, SigTo>::value;
 
 }  // namespace fn
 
