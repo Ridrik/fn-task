@@ -46,16 +46,21 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                            std::conditional_t<IsConst, const T, T>>>;
 
     template <typename T>
-    using Convert = ApplyQualifiers<UnwrapBoundRefWrapT<T>>;
+    using Convert = ApplyQualifiers<T>;
 
     static constexpr bool kRefLess = !LVRef && !RVRef;
 
     template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
-        kRefLess ? (IsNoExcept ? is_any_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
-                               : is_any_compatible_invocable_b<IsCallArg, Ft, Argst...>)
-                 : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, UndoIfCallArgT<Argst>...>
-                               : std::is_invocable_v<Ft, UndoIfCallArgT<Argst>...>);
+        kRefLess
+            ? (IsNoExcept  // NOLINT
+                   ? is_any_compatible_nothrow_invocable_b<IsCallArg, Ft, Argst...>
+                   : is_any_compatible_invocable_b<IsCallArg, Ft, Argst...>)
+            : (IsNoExcept
+                   ? is_any_compatible_nothrow_invocable_b<IgnoreExpansionPolicyOnRefInvocation, Ft,
+                                                           Argst...>
+                   : is_any_compatible_invocable_b<IgnoreExpansionPolicyOnRefInvocation, Ft,
+                                                   Argst...>);
 
     template <typename, typename>
     struct UnwrapTester;
@@ -80,11 +85,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 } else {
                     return std::forward_like<ApplyQualifiers<PayloadType>>(
                                **static_cast<PayloadType**>(s))
-                        .template invokeCompatible<NotBoundLValueReference, Is...>(
+                        .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation, Is...>(
                             std::forward<Args>(args)...);
-                    /*return std::forward_like<ApplyQualifiers<PayloadType>>(
-                               **static_cast<PayloadType**>(s))
-                        .template invoke<Is...>(std::forward<Args>(args)...);*/
                 }
             } else {
                 if constexpr (Compatible) {
@@ -94,11 +96,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 } else {
                     return std::forward_like<ApplyQualifiers<PayloadType>>(
                                *static_cast<PayloadType*>(s))
-                        .template invokeCompatible<NotBoundLValueReference, Is...>(
+                        .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation, Is...>(
                             std::forward<Args>(args)...);
-                    /*return std::forward_like<ApplyQualifiers<PayloadType>>(
-                               *static_cast<PayloadType*>(s))
-                        .template invoke<Is...>(std::forward<Args>(args)...);*/
                 }
             }
         }
@@ -126,8 +125,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 return (*static_cast<PayloadType*>(s)).invoke(std::forward<Args>(args)...);
             } else if constexpr (!kIsIndicelessBinder<binder>) {
                 using ArgsOrderTuple =
-                    rebind_call_and_bound<std::tuple<Args...>, std::tuple<Convert<BoundArgs>...>,
-                                          binder>::type;
+                    rebind_call_and_bound<std::tuple<CallArgTag<Args&&>...>,
+                                          std::tuple<Convert<BoundArgs>...>, binder>::type;
                 static_assert(UnwrapTester<Convert<F>, ArgsOrderTuple>::kValid,
                               "F is not callable with the provided arguments.");
                 static constexpr auto kIndirection = sizeof(PayloadType) > size;
@@ -145,7 +144,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
-                            .template invokeCompatible<NotBoundLValueReference>(
+                            .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation>(
                                 std::forward<Args>(args)...);
                     }
                 } else {
@@ -155,7 +154,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
-                            .template invokeCompatible<NotBoundLValueReference>(
+                            .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation>(
                                 std::forward<Args>(args)...);
                     }
                 }
@@ -170,7 +169,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
-                            .invokeFront(std::forward<Args>(args)...);
+                            .template invokeFrontCompatible<IgnoreExpansionPolicyOnRefInvocation>(
+                                std::forward<Args>(args)...);
                     }
                 } else {
                     if constexpr (kRefLess) {
@@ -179,18 +179,17 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
-                            .template invokeFrontCompatible<NotBoundLValueReference>(
+                            .template invokeFrontCompatible<IgnoreExpansionPolicyOnRefInvocation>(
                                 std::forward<Args>(args)...);
                     }
                 }
             } else if constexpr (is_any_compatible_invocable_b<
-                                     IsCallArg, UnwrapBoundRefWrapT<F>,
-                                     UnwrapBoundRefWrapT<BoundArgs>...,
+                                     IsCallArg, F, BoundArgs...,
                                      CallArgTag<decltype(std::forward<Args>(args))>...> ||
                                  is_any_compatible_invocable_b<
-                                     IsCallArg, UnwrapBoundRefWrapT<F>,
+                                     IsCallArg, F,
                                      CallArgTag<decltype(std::forward<Args>(args))>...,
-                                     UnwrapBoundRefWrapT<BoundArgs>...>) {
+                                     BoundArgs...>) {
                 static_assert(AlwaysFalse<F>::value,
                               "F is not callable with the provided arguments since it wouldn't "
                               "preserve signature qualifier, noexcept, or is not rightly ordered");
@@ -213,8 +212,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 return F(std::forward<Args>(args)...);
             } else if constexpr (!kIsIndicelessBinder<binder>) {
                 using ArgsOrderTuple =
-                    rebind_call_and_bound<std::tuple<Args...>, std::tuple<Convert<BoundArgs>...>,
-                                          binder>::type;
+                    rebind_call_and_bound<std::tuple<CallArgTag<Args&&>...>,
+                                          std::tuple<Convert<BoundArgs>...>, binder>::type;
                 static_assert(UnwrapTester<Convert<decltype(F)>, ArgsOrderTuple>::kValid,
                               "F is not callable with the provided arguments.");
                 static constexpr auto kIndirection = sizeof(PayloadType) > size;
@@ -231,7 +230,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
-                            .invoke(std::forward<Args>(args)...);
+                            .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation>(
+                                std::forward<Args>(args)...);
                     }
                 } else {
                     if constexpr (kRefLess) {
@@ -240,7 +240,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
-                            .invoke(std::forward<Args>(args)...);
+                            .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation>(
+                                std::forward<Args>(args)...);
                     }
                 }
             } else if constexpr (binder != Binding::kBack &&
@@ -253,7 +254,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
-                            .invokeFront(std::forward<Args>(args)...);
+                            .template invokeFrontCompatible<IgnoreExpansionPolicyOnRefInvocation>(
+                                std::forward<Args>(args)...);
                     }
                 } else {
                     if constexpr (kRefLess) {
@@ -262,7 +264,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
-                            .invokeFront(std::forward<Args>(args)...);
+                            .template invokeFrontCompatible<IgnoreExpansionPolicyOnRefInvocation>(
+                                std::forward<Args>(args)...);
                     }
                 }
             } else if constexpr (is_any_compatible_invocable_b<

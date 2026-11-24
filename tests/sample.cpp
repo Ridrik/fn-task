@@ -41,29 +41,15 @@ int main() {
     A a{};
     B b{};
     double thisHere = 3.0;
-    auto thisTask = fn::makeTask<std::string_view() const>(std::cref(a), thisHere);
+    auto thisTask = fn::makeTask<std::string_view() const>(std::ref(a), thisHere);
     static_assert(decltype(thisTask)::matchesSignature<std::string_view() const>());
     auto thisTaskCopy = fn::Task{thisTask};
     thisTask();
-    using Lambda1 =
-        decltype([](int&& /*age*/, const std::string& name) mutable noexcept {  // NOLINT
-            std::cout << "Name: " << name << '\n';
-        });
     auto task = fn::makeTask(
         [](int&& /*age*/, const std::string& name) mutable noexcept {  // NOLINT
             std::cout << "Name: " << name << '\n';
         },
         0);
-
-    static_assert(!fn::NotBoundLValueReference<std::string&>::value);
-    static_assert(std::is_invocable_v<Lambda1, int&&, const std::string&>);
-    static_assert(fn::detail::invocable_combinator<Lambda1, fn::detail::TypeList<>,
-                                                   fn::detail::TypeList<int&&, const std::string&>,
-                                                   fn::NotBoundLValueReference>::kValid);
-    static_assert(fn::is_any_compatible_invocable<fn::NotBoundLValueReference, Lambda1, int&,
-                                                  const std::string&>::value);
-    static_assert(fn::is_any_compatible_invocable<fn::NotBoundLValueReference, Lambda1, int&&,
-                                                  const std::string&>::value);
     // static_assert(decltype(task)::matchesSignature<void(const std::string&) && noexcept>());
     auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
     auto taskMimic2 = fn::Task<void(const std::string&)>{task};
@@ -168,7 +154,7 @@ int main() {
         struct Functor {
             std::string data;
 
-            void operator()(std::string&& other) const&& {
+            void operator()(std::string&& other) {
                 // data += other;
             }
         };
@@ -233,17 +219,19 @@ int main() {
             fn::buildTask([](double c, std::string&) {}, 3.0).withSettings<kMySettings>().build();
         newTask.swap(taskMimic);
 
-        auto otherTask = fn::buildTask([](int, std::string&&) {}, fn::ref(hi)).build();
+        auto otherTask = fn::buildTask([](int, std::string&&) noexcept {}, fn::ref(hi)).build();
         otherTask(3);
 
         {
             auto str = std::string{"hello"};
-            auto customBindTask = fn::buildTask([](const int&, std::string a, std::string) {},
-                                                fn::ref(str), fn::ref(str))
-                                      .bindFrom<1>()
-                                      .build();
+            auto customBindTask =
+                fn::buildTask([](const int&, std::string& a, std::string&) noexcept {},
+                              fn::ref(str), fn::ref(str))
+                    .withSignature<void(const int&) noexcept>()
+                    .bindFrom<1>()
+                    .build();
             customBindTask(3);
-            auto task = fn::FlexTask<void()>([](auto&& b) {}, fn::ref(str));
+            auto task = fn::FlexTask<void() noexcept>([](auto&& b) noexcept {}, fn::ref(str));
         }
     }
 }

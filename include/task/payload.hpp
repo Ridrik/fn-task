@@ -35,6 +35,7 @@ struct CallArgTag {
 template <typename T, bool Invocable = false>
     requires(std::is_lvalue_reference_v<T>)
 struct BoundRefWrapTag {
+    using type = T;
     std::reference_wrapper<std::remove_reference_t<T>> val;
 
     constexpr operator T() const noexcept {
@@ -68,20 +69,6 @@ constexpr auto cref(auto&& val) noexcept
     return BoundRefWrapTag<const std::remove_cvref_t<decltype(val)>&>{std::cref(val)};
 }
 
-template <typename T>
-struct UnwrapBoundRefWrap {
-    using type = T;
-};
-
-template <typename T, bool Invocable>
-struct UnwrapBoundRefWrap<BoundRefWrapTag<T, Invocable>> {
-    static_assert(std::is_lvalue_reference_v<T>);
-    using type = T;
-};
-
-template <typename T>
-using UnwrapBoundRefWrapT = UnwrapBoundRefWrap<T>::type;
-
 template <typename>
 struct IsBoundRefWrapper : std::false_type {};
 
@@ -92,13 +79,27 @@ template <typename T>
 static constexpr auto kIsBoundRefWrapper = IsBoundRefWrapper<T>::value;
 
 template <typename T>
+struct UnwrapBoundRefWrap {
+    using type = T;
+};
+
+template <typename T>
+    requires(kIsBoundRefWrapper<std::remove_cvref_t<T>>)
+struct UnwrapBoundRefWrap<T> {
+    using type = typename std::remove_cvref_t<T>::type;
+};
+
+template <typename T>
+using UnwrapBoundRefWrapT = UnwrapBoundRefWrap<T>::type;
+
+template <typename T>
 struct IsNotBoundRefWrapper {
     static constexpr auto value = !kIsBoundRefWrapper<T>;  // NOLINT
 };
 
 template <typename T>
-struct NotBoundLValueReference {
-    static constexpr auto value = !std::is_lvalue_reference_v<T>;  // NOLINT
+struct IgnoreExpansionPolicyOnRefInvocation {
+    static constexpr auto value = !kIsBoundRefWrapper<std::remove_cvref_t<T>>;  // NOLINT
 };
 
 template <typename T>
@@ -118,6 +119,60 @@ struct IsCallArg<CallArgTag<T>&&> : std::true_type {};
 
 template <typename T>
 struct IsCallArg<const CallArgTag<T>&&> : std::true_type {};
+
+template <typename T>
+struct ExpandArgToLVRef {
+    using type = T&;
+};
+
+template <typename T>
+    requires(kIsBoundRefWrapper<std::remove_cvref_t<T>>)
+struct ExpandArgToLVRef<T> {
+    using type = std::remove_cvref_t<T>::type;
+};
+
+template <typename T>
+    requires(IsCallArg<std::remove_cvref_t<T>>::value)
+struct ExpandArgToLVRef<T> {
+    static_assert(false, "Internal error");
+};
+
+template <typename T>
+struct ExpandArgToRVRef {
+    using type = std::remove_reference_t<T>&&;
+};
+
+template <typename T>
+    requires(kIsBoundRefWrapper<std::remove_cvref_t<T>>)
+struct ExpandArgToRVRef<T> {
+    using type = std::remove_reference_t<typename std::remove_cvref_t<T>::type>&&;
+};
+
+template <typename T>
+    requires(IsCallArg<std::remove_cvref_t<T>>::value)
+struct ExpandArgToRVRef<T> {
+    static_assert(false, "Internal error");
+};
+
+template <typename T>
+struct UnwrapWrappers {
+    using type = T;
+};
+
+template <typename T>
+    requires(kIsBoundRefWrapper<std::remove_cvref_t<T>>)
+struct UnwrapWrappers<T> {
+    using type = std::remove_cvref_t<T>::type;
+};
+
+template <typename T>
+    requires(IsCallArg<std::remove_cvref_t<T>>::value)
+struct UnwrapWrappers<T> {
+    using type = std::remove_cvref_t<T>::type;
+};
+
+template <typename T>
+using UnwrapWrappersT = UnwrapWrappers<T>::type;
 
 template <typename T>
 struct UndoIfCallArg {
@@ -159,12 +214,14 @@ template <typename F, typename... Tested, typename T, typename... Rest,
     requires(!Policy<T>::value)
 struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>, Policy> {
    private:
-    using LRef = invocable_combinator<F, TypeList<Tested..., T&>, TypeList<Rest...>, Policy>;
+    using LRef = invocable_combinator<F, TypeList<Tested..., typename ExpandArgToLVRef<T>::type>,
+                                      TypeList<Rest...>, Policy>;
 
     template <bool, bool>
     struct Select {
-        using RRef = invocable_combinator<F, TypeList<Tested..., std::remove_reference_t<T>&&>,
-                                          TypeList<Rest...>, Policy>;
+        using RRef =
+            invocable_combinator<F, TypeList<Tested..., typename ExpandArgToRVRef<T>::type>,
+                                 TypeList<Rest...>, Policy>;
 
         static constexpr bool kValid = RRef::kValid;
         static constexpr bool kNoThrow = RRef::kNoThrow;
@@ -190,8 +247,9 @@ template <typename F, typename... Tested, typename T, typename... Rest,
           template <typename> typename Policy>
     requires(Policy<T>::value)
 struct invocable_combinator<F, TypeList<Tested...>, TypeList<T, Rest...>, Policy>
-    : invocable_combinator<F, TypeList<Tested..., T /*typename std::remove_cvref_t<T>::type*/>,
-                           TypeList<Rest...>, Policy> {};
+    : invocable_combinator<
+          F, TypeList<Tested..., UnwrapWrappersT<T> /*typename std::remove_cvref_t<T>::type*/>,
+          TypeList<Rest...>, Policy> {};
 
 template <typename F, typename Tuple, typename... Selected, std::size_t... I>
 constexpr decltype(auto) invoke_selected(
@@ -219,134 +277,128 @@ struct is_no_throw : std::bool_constant<is_valid<T>::value && T::kNoThrow> {};  
 
 }  // namespace detail
 
+template <bool Ignore = false>
+constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
+    requires((!IsBoundRefWrapper<std::remove_cvref_t<decltype(arg)>>::value &&
+              !IsCallArg<std::remove_cvref_t<decltype(arg)>>::value) ||
+             Ignore)
+{
+    return std::forward<decltype(arg)>(arg);
+}
+
+template <bool Ignore = false>
+constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
+    requires(IsCallArg<std::decay_t<decltype(arg)>>::value && !Ignore)
+{
+    static_assert(std::is_rvalue_reference_v<decltype(arg)>);
+    return arg.operator typename std::decay_t<decltype(arg)>::type();
+}
+
+template <bool Ignore = false>
+    requires(!Ignore)
+constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
+    requires(IsBoundRefWrapper<std::remove_cvref_t<decltype(arg)>>::value)
+{  // NOLINT
+    if constexpr (std::is_lvalue_reference_v<decltype(arg)>) {
+        return arg.get();
+    } else {
+        return std::move(arg).move();  // NOLINT
+    }
+}
+
 template <template <typename> typename NoExpandPolicy, typename F, typename... Args>
 struct is_any_compatible_invocable : std::false_type {};  // NOLINT
 
-template <typename F, typename... Args>
-    requires(std::disjunction_v<
-             detail::is_valid<detail::invocable_combinator<F, detail::TypeList<>,
-                                                           detail::TypeList<Args...>, IsCallArg>>,
-             detail::is_valid<detail::invocable_combinator<F&, detail::TypeList<>,
-                                                           detail::TypeList<Args...>, IsCallArg>>,
-             detail::is_valid<
-                 detail::invocable_combinator<std::remove_reference_t<F> &&, detail::TypeList<>,
-                                              detail::TypeList<Args...>, IsCallArg>>>)
-struct is_any_compatible_invocable<IsCallArg, F, Args...> : std::true_type {};
-
-template <typename F, typename... Args>
+template <template <typename> typename NoExpandPolicy, typename F, typename... Args>
     requires(
-        (!std::is_lvalue_reference_v<F>) &&
         std::disjunction_v<
-            detail::is_valid<detail::invocable_combinator<
-                F, detail::TypeList<>, detail::TypeList<Args...>, NotBoundLValueReference>>,
-            detail::is_valid<detail::invocable_combinator<
-                const F, detail::TypeList<>, detail::TypeList<Args...>, NotBoundLValueReference>>>)
-struct is_any_compatible_invocable<NotBoundLValueReference, F, Args...> : std::true_type {
-};  // NOLINT
-
-template <typename F, typename... Args>
-    requires(
-        std::is_lvalue_reference_v<F> &&
-        std::disjunction_v<
-            detail::is_valid<detail::invocable_combinator<
-                F, detail::TypeList<>, detail::TypeList<Args...>, NotBoundLValueReference>>,
             detail::is_valid<
-                detail::invocable_combinator<std::remove_reference_t<F> &&, detail::TypeList<>,
-                                             detail::TypeList<Args...>, NotBoundLValueReference>>,
-            detail::is_valid<detail::invocable_combinator<
-                std::add_const_t<std::remove_reference_t<F>> &&, detail::TypeList<>,
-                detail::TypeList<Args...>, NotBoundLValueReference>>>)
-struct is_any_compatible_invocable<NotBoundLValueReference, F, Args...> : std::true_type {
-};  // NOLINT
-
-template <typename F, typename... Args>
-struct is_compatible_invocable : std::false_type {};
-
-template <typename F, typename... Args>
-    requires((!std::is_lvalue_reference_v<F>) &&
-             detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>,
-                                          NotBoundLValueReference>::kValid)
-struct is_compatible_invocable<F, Args...> : std::true_type {};  // NOLINT
-
-template <typename F, typename... Args>
-    requires(
-        std::is_lvalue_reference_v<F> &&
-        std::disjunction_v<
-            detail::is_valid<detail::invocable_combinator<
-                F, detail::TypeList<>, detail::TypeList<Args...>, NotBoundLValueReference>>,
+                detail::invocable_combinator<UnwrapBoundRefWrapT<F>, detail::TypeList<>,
+                                             detail::TypeList<Args...>, NoExpandPolicy>>,
             detail::is_valid<
-                detail::invocable_combinator<std::remove_reference_t<F> &&, detail::TypeList<>,
-                                             detail::TypeList<Args...>, NotBoundLValueReference>>>)
-struct is_compatible_invocable<F, Args...> : std::true_type {};  // NOLINT
+                detail::invocable_combinator<typename ExpandArgToLVRef<F>::type, detail::TypeList<>,
+                                             detail::TypeList<Args...>, NoExpandPolicy>>,
+            detail::is_valid<
+                detail::invocable_combinator<typename ExpandArgToRVRef<F>::type, detail::TypeList<>,
+                                             detail::TypeList<Args...>, NoExpandPolicy>>>)
+struct is_any_compatible_invocable<NoExpandPolicy, F, Args...> : std::true_type {};
 
-template <typename F, typename... Args>
+template <template <typename> typename NoExpandPolicy, typename F, typename... Args>
 struct is_any_compatible_nothrow_invocable : std::false_type {};  // NOLINT
 
-template <typename F, typename... Args>
-    requires(std::disjunction_v<
-             detail::is_no_throw<
-                 detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>>>,
-             detail::is_no_throw<
-                 detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>>>,
-             detail::is_no_throw<detail::invocable_combinator<
-                 std::remove_reference_t<F> &&, detail::TypeList<>, detail::TypeList<Args...>>>>)
-struct is_any_compatible_nothrow_invocable<F, Args...> : std::true_type {};
+template <template <typename> typename NoExpandPolicy, typename F, typename... Args>
+    requires(
+        std::disjunction_v<
+            detail::is_no_throw<
+                detail::invocable_combinator<UnwrapBoundRefWrapT<F>, detail::TypeList<>,
+                                             detail::TypeList<Args...>, NoExpandPolicy>>,
+            detail::is_no_throw<
+                detail::invocable_combinator<typename ExpandArgToLVRef<F>::type, detail::TypeList<>,
+                                             detail::TypeList<Args...>, NoExpandPolicy>>,
+            detail::is_no_throw<
+                detail::invocable_combinator<typename ExpandArgToRVRef<F>::type, detail::TypeList<>,
+                                             detail::TypeList<Args...>, NoExpandPolicy>>>)
+struct is_any_compatible_nothrow_invocable<NoExpandPolicy, F, Args...> : std::true_type {};
 
 // Main trait: checks if there is any valid combination of cv/ref qualifiers
 template <template <typename> typename NoExpandPolicy, typename F, typename... Args>
 constexpr bool is_any_compatible_invocable_b =  // NOLINT
     is_any_compatible_invocable<NoExpandPolicy, F, Args...>::value;
 
-template <typename F, typename... Args>
+template <template <typename> typename NoExpandPolicy, typename F, typename... Args>
 constexpr bool is_any_compatible_nothrow_invocable_b =  // NOLINT
-    is_any_compatible_nothrow_invocable<F, Args...>::value;
+    is_any_compatible_nothrow_invocable<NoExpandPolicy, F, Args...>::value;
 
 template <template <typename> typename NoExpandPolicy = IsCallArg, typename F, typename... Args>
-    requires detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>,
-                                          NoExpandPolicy>::kValid
+    requires detail::invocable_combinator<UnwrapBoundRefWrapT<F>, detail::TypeList<>,
+                                          detail::TypeList<Args...>, NoExpandPolicy>::kValid
 constexpr decltype(auto) invoke_any_compatible(F&& f, Args&&... args) noexcept(
-    detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>,
-                                 NoExpandPolicy>::kNoThrow) {
-    using Selection = detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>,
-                                                   NoExpandPolicy>;
-    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
-    return detail::invoke_selected(std::forward<F>(f), references, typename Selection::Selected{},
-                                   std::index_sequence_for<Args...>{});
-}
-
-template <template <typename> typename NoExpandPolicy = IsCallArg, typename F, typename... Args>
-    requires(!detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>,
-                                           NoExpandPolicy>::kValid) &&
-            detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>,
-                                         NoExpandPolicy>::kValid
-constexpr decltype(auto) invoke_any_compatible(
-    F&& f, Args&&... args) noexcept(  // NOLINT(cppcoreguidelines-missing-std-forward)
-    detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>,
-                                 NoExpandPolicy>::kNoThrow) {
-    using Selection = detail::invocable_combinator<F&, detail::TypeList<>,
+    detail::invocable_combinator<UnwrapBoundRefWrapT<F>, detail::TypeList<>,
+                                 detail::TypeList<Args...>, NoExpandPolicy>::kNoThrow) {
+    using Selection = detail::invocable_combinator<UnwrapBoundRefWrapT<F>, detail::TypeList<>,
                                                    detail::TypeList<Args...>, NoExpandPolicy>;
-    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
-    return detail::invoke_selected(f, references, typename Selection::Selected{},
+    auto references = std::forward_as_tuple(unwrap_arg_on_invocation(std::forward<Args>(args))...);
+    return detail::invoke_selected(unwrap_arg_on_invocation(std::forward<F>(f)), references,
+                                   typename Selection::Selected{},
                                    std::index_sequence_for<Args...>{});
 }
 
 template <template <typename> typename NoExpandPolicy = IsCallArg, typename F, typename... Args>
-    requires(!detail::invocable_combinator<F, detail::TypeList<>, detail::TypeList<Args...>,
-                                           NoExpandPolicy>::kValid) &&
-            (!detail::invocable_combinator<F&, detail::TypeList<>, detail::TypeList<Args...>,
-                                           NoExpandPolicy>::kValid) &&
-            detail::invocable_combinator<std::remove_reference_t<F>&&, detail::TypeList<>,
+    requires(!detail::invocable_combinator<UnwrapBoundRefWrapT<F>, detail::TypeList<>,
+                                           detail::TypeList<Args...>, NoExpandPolicy>::kValid) &&
+            detail::invocable_combinator<typename ExpandArgToLVRef<F>::type, detail::TypeList<>,
                                          detail::TypeList<Args...>, NoExpandPolicy>::kValid
 constexpr decltype(auto) invoke_any_compatible(
     F&& f, Args&&... args) noexcept(  // NOLINT(cppcoreguidelines-missing-std-forward)
-    detail::invocable_combinator<std::remove_reference_t<F>&&, detail::TypeList<>,
+    detail::invocable_combinator<typename ExpandArgToLVRef<F>::type, detail::TypeList<>,
                                  detail::TypeList<Args...>, NoExpandPolicy>::kNoThrow) {
-    using Selection = detail::invocable_combinator<std::remove_reference_t<F>&&, detail::TypeList<>,
-                                                   detail::TypeList<Args...>, NoExpandPolicy>;
-    auto references = std::forward_as_tuple(std::forward<Args>(args)...);
-    return detail::invoke_selected(std::move(f), references,  // NOLINT
+    using Selection =
+        detail::invocable_combinator<typename ExpandArgToLVRef<F>::type, detail::TypeList<>,
+                                     detail::TypeList<Args...>, NoExpandPolicy>;
+    auto references = std::forward_as_tuple(unwrap_arg_on_invocation(std::forward<Args>(args))...);
+    return detail::invoke_selected(unwrap_arg_on_invocation(std::forward<F>(f)), references,
                                    typename Selection::Selected{},
                                    std::index_sequence_for<Args...>{});
+}
+
+template <template <typename> typename NoExpandPolicy = IsCallArg, typename F, typename... Args>
+    requires(!detail::invocable_combinator<UnwrapBoundRefWrapT<F>, detail::TypeList<>,
+                                           detail::TypeList<Args...>, NoExpandPolicy>::kValid) &&
+            (!detail::invocable_combinator<typename ExpandArgToLVRef<F>::type, detail::TypeList<>,
+                                           detail::TypeList<Args...>, NoExpandPolicy>::kValid) &&
+            detail::invocable_combinator<typename ExpandArgToRVRef<F>::type, detail::TypeList<>,
+                                         detail::TypeList<Args...>, NoExpandPolicy>::kValid
+constexpr decltype(auto) invoke_any_compatible(
+    F&& f, Args&&... args) noexcept(  // NOLINT(cppcoreguidelines-missing-std-forward)
+    detail::invocable_combinator<typename ExpandArgToRVRef<F>::type, detail::TypeList<>,
+                                 detail::TypeList<Args...>, NoExpandPolicy>::kNoThrow) {
+    using Selection =
+        detail::invocable_combinator<typename ExpandArgToRVRef<F>::type, detail::TypeList<>,
+                                     detail::TypeList<Args...>, NoExpandPolicy>;
+    auto references = std::forward_as_tuple(unwrap_arg_on_invocation(std::forward<Args>(args))...);
+    return detail::invoke_selected(
+        unwrap_arg_on_invocation(std::forward<F>(f)), references,  // NOLINT
+        typename Selection::Selected{}, std::index_sequence_for<Args...>{});
 }
 
 template <auto F, template <typename> typename NoExpandPolicy = IsCallArg, typename... Args>
@@ -462,35 +514,6 @@ struct unwrap_reference_qualifiers<const std::reference_wrapper<T>&> {
 template <typename T>
 using unwrap_reference_qualifiers_t = typename unwrap_reference_qualifiers<T>::type;
 
-template <bool Ignore = false>
-constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
-    requires((!IsBoundRefWrapper<std::remove_cvref_t<decltype(arg)>>::value &&
-              !IsCallArg<std::remove_cvref_t<decltype(arg)>>::value) ||
-             Ignore)
-{
-    return std::forward<decltype(arg)>(arg);
-}
-
-template <bool Ignore = false>
-constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
-    requires(IsCallArg<std::decay_t<decltype(arg)>>::value && !Ignore)
-{
-    static_assert(std::is_rvalue_reference_v<decltype(arg)>);
-    return arg.operator typename std::decay_t<decltype(arg)>::type();
-}
-
-template <bool Ignore = false>
-    requires(!Ignore)
-constexpr decltype(auto) unwrap_arg_on_invocation(auto&& arg) noexcept
-    requires(IsBoundRefWrapper<std::remove_cvref_t<decltype(arg)>>::value)
-{  // NOLINT
-    if constexpr (std::is_lvalue_reference_v<decltype(arg)>) {
-        return arg.get();
-    } else {
-        return std::move(arg).move();  // NOLINT
-    }
-}
-
 template <>
 struct PayloadTuple<> {
     constexpr PayloadTuple() = default;
@@ -507,8 +530,7 @@ struct PayloadTuple<> {
               typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAnyCompatible([[maybe_unused]] this auto&& /*self*/,
                                                              ArgsSoFar&&... args) {
-        return fn::invoke_any_compatible<F, NoExpandPolicy>(
-            unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...);
+        return fn::invoke_any_compatible<F, NoExpandPolicy>(std::forward<ArgsSoFar>(args)...);
     }
 
     template <auto F, bool Ignore = false, typename... ArgsSoFar>
@@ -521,8 +543,7 @@ struct PayloadTuple<> {
     template <auto F, template <typename> typename NoExpandPolicy = IsCallArg,
               typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgsAnyCompatible(ArgsSoFar&&... args) && {
-        return fn::invoke_any_compatible<F, NoExpandPolicy>(
-            unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...);
+        return fn::invoke_any_compatible<F, NoExpandPolicy>(std::forward<ArgsSoFar>(args)...);
     }
 
     template <auto F, typename... ArgsSoFar>
@@ -656,9 +677,8 @@ struct PayloadTuple<> {
               typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAnyCompatible([[maybe_unused]] this auto&& /*self*/,
                                                              F&& f, ArgsSoFar&&... args) {
-        return fn::invoke_any_compatible<NoExpandPolicy>(
-            unwrap_arg_on_invocation(std::forward<F>(f)),
-            unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...);
+        return fn::invoke_any_compatible<NoExpandPolicy>(std::forward<F>(f),
+                                                         std::forward<ArgsSoFar>(args)...);
     }
 
     template <bool Ignore = false, typename F, typename... ArgsSoFar>
@@ -674,9 +694,8 @@ struct PayloadTuple<> {
     template <template <typename> typename NoExpandPolicy = IsCallArg, typename F,
               typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgsAnyCompatible(F&& f, ArgsSoFar&&... args) && {
-        return fn::invoke_any_compatible<NoExpandPolicy>(
-            unwrap_arg_on_invocation(std::forward<F>(f)),
-            unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...);
+        return fn::invoke_any_compatible<NoExpandPolicy>(std::forward<F>(f),
+                                                         std::forward<ArgsSoFar>(args)...);
     }
 
     template <typename F, typename... ArgsSoFar>
@@ -744,8 +763,7 @@ struct PayloadTuple<T, Ts...> {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
             return fn::invoke_any_compatible<F, NoExpandPolicy>(
-                unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)));
+                std::forward<ArgsSoFar>(args)..., forward_like_custom<Self, T>(self.head));
         } else {
             return std::forward_like<Self>(self.tail)
                 .template applyAnyCompatible<F, NoExpandPolicy>(
@@ -774,9 +792,8 @@ struct PayloadTuple<T, Ts...> {
               typename... ArgsSoFar>
     FORCE_INLINE constexpr decltype(auto) applyAsArgsAnyCompatible(ArgsSoFar&&... args) && {
         if constexpr (sizeof...(Ts) == 0) {
-            return fn::invoke_any_compatible<F, NoExpandPolicy>(
-                unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                unwrap_arg_on_invocation(std::forward<T>(head)));
+            return fn::invoke_any_compatible<F, NoExpandPolicy>(std::forward<ArgsSoFar>(args)...,
+                                                                std::forward<T>(head));
         } else {
             return std::move(tail).template applyAsArgsAnyCompatible<F, NoExpandPolicy>(
                 std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
@@ -1042,16 +1059,9 @@ struct PayloadTuple<T, Ts...> {
                                                              ArgsSoFar&&... args) {
         using Self = decltype(self);
         if constexpr (sizeof...(Ts) == 0) {
-            static_assert(
-                is_any_compatible_invocable_b<
-                    NoExpandPolicy, decltype(unwrap_arg_on_invocation(std::forward<F>(f))),
-                    decltype(unwrap_arg_on_invocation(std::declval<decltype(args)>()))...,
-                    decltype(unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)))>,
-                "F is not callable with given arguments");
             return fn::invoke_any_compatible<NoExpandPolicy>(
-                unwrap_arg_on_invocation(std::forward<F>(f)),
-                unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                unwrap_arg_on_invocation(forward_like_custom<Self, T>(self.head)));
+                std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
+                forward_like_custom<Self, T>(self.head));
         } else {
             return std::forward_like<Self>(self.tail).template applyAnyCompatible<NoExpandPolicy>(
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)...,
@@ -1082,9 +1092,7 @@ struct PayloadTuple<T, Ts...> {
     FORCE_INLINE constexpr decltype(auto) applyAsArgsAnyCompatible(F&& f, ArgsSoFar&&... args) && {
         if constexpr (sizeof...(Ts) == 0) {
             return fn::invoke_any_compatible<NoExpandPolicy>(
-                unwrap_arg_on_invocation(std::forward<F>(f)),
-                unwrap_arg_on_invocation(std::forward<ArgsSoFar>(args))...,
-                unwrap_arg_on_invocation(std::forward<T>(head)));
+                std::forward<F>(f), std::forward<ArgsSoFar>(args)..., std::forward<T>(head));
         } else {
             return std::move(tail).template applyAsArgsAnyCompatible<NoExpandPolicy>(
                 std::forward<F>(f), std::forward<ArgsSoFar>(args)..., std::forward<T>(head));

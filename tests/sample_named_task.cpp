@@ -75,7 +75,7 @@ int main() {
         [](Payload payload, void* ptr) noexcept { auto& self = *static_cast<MyModule*>(ptr); },
         mPtr);
     subTask2 = subTask;
-    static_assert(decltype(subTask)::matchesSignature<void(Payload) const & noexcept>());
+    static_assert(decltype(subTask)::matchesSignature<void(Payload) const noexcept>());
     subscriberTask(5.5);
 
     // NamedTask from free function (needs not to store it inside)

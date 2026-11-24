@@ -216,7 +216,7 @@ struct rebind_search_call_and_bound<
         rebind_search_call_and_bound<
             std::tuple<SelectedArgs..., NextBoundArg>, std::tuple<NextArg, RemainingArgs...>,
             std::tuple<RemainingBoundArgs...>, IndicesHolder<Is...>, curIdx + 1>,
-        rebind_search_call_and_bound<std::tuple<SelectedArgs..., NextArg>,
+        rebind_search_call_and_bound<std::tuple<SelectedArgs..., CallArgTag<NextArg&&>>,
                                      std::tuple<RemainingArgs...>,
                                      std::tuple<NextBoundArg, RemainingBoundArgs...>,
                                      IndicesHolder<nextBoundIdx, Is...>, curIdx + 1>>;
@@ -348,7 +348,7 @@ struct NamedDeductorSettings {
         requires(sizeof...(Is) == 0)
         : binding{b} {}
 
-    [[nodiscard]] constexpr const auto toDeductorSettings() const noexcept {
+    [[nodiscard]] constexpr auto toDeductorSettings() const noexcept {
         return DeductorSettings<S, Is...>{*this};
     }
 
@@ -569,12 +569,12 @@ template <typename RequestedSig, std::size_t... Is, DeductorSettings<RequestedSi
              HasFunctionTraits<
                  std::remove_reference_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<Ft>>>>)
 struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
-    using F = std::unwrap_reference_t<UnwrapBoundRefWrapT<GetCallableT<Ft>>>;
-    static_assert(!std::is_rvalue_reference_v<F>);
-    static constexpr auto kFIsReference = std::is_lvalue_reference_v<F>;
+    using F = GetCallableT<Ft>;
+    static constexpr auto kFIsReference = kIsBoundRefWrapper<F> || kIsRefWrapper<F>;
     static constexpr auto kSettings = settings;
     struct StripBoundArgs {
-        using Traits = FunctionTraits<std::remove_cvref_t<F>>;
+        using Traits =
+            FunctionTraits<std::remove_cvref_t<std::unwrap_reference_t<UnwrapBoundRefWrapT<F>>>>;
         using AllArgs = Traits::args_tuple;
         using InternalFuncPtr = Traits::func_ptr;
 
@@ -584,10 +584,10 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         using SlicedTuple = slice_first<kRemainingCount, AllArgs>::type;
         using SlicedTupleReverse = slice_last<kRemainingCount, AllArgs>::type;
 
-        template <typename Ret, typename Tuple, typename TupleReverse, typename FilteredBoundArgs>
+        template <typename Ret, typename Tuple, typename TupleReverse>
         struct rebuild;
-        template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
-        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
+        template <typename Ret, typename... Ts, typename... TsR>
+        struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>> {
             template <auto binder,
                       template <template <typename> typename, typename...> typename Tester,
                       template <typename> typename Modifier,
@@ -600,10 +600,10 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             struct ArgumentProcessor<binder, Tester, Modifier, Policy> {
                 static constexpr auto kBindingProcess = Binding{binder};
                 static constexpr bool kTestFront =
-                    Tester<Policy, Modifier<F>, Modifier<FiltBoundArgs>...,
+                    Tester<Policy, Modifier<F>, Modifier<BoundArgs>...,
                            CallArgTag<TsR&&>...>::value;
-                static constexpr bool kTestBack = Tester<Policy, Modifier<F>, CallArgTag<Ts&&>...,
-                                                         Modifier<FiltBoundArgs>...>::value;
+                static constexpr bool kTestBack =
+                    Tester<Policy, Modifier<F>, CallArgTag<Ts&&>..., Modifier<BoundArgs>...>::value;
                 static constexpr auto kBindDeduct =
                     (kTestBack && kTestBack)
                         ? (kBindingProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
@@ -628,7 +628,7 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
                       template <typename> typename Modifier, template <typename> typename Policy>
                 requires(sizeof...(is) > 0 && sizeof...(is) == sizeof...(BoundArgs))
             struct ArgumentProcessor<binder, Tester, Modifier, Policy> {
-                using rebinder = rebind<AllArgs, std::tuple<Modifier<FiltBoundArgs>...>, is...>;
+                using rebinder = rebind<AllArgs, std::tuple<Modifier<BoundArgs>...>, is...>;
                 using TestTuple = rebinder::type;
                 using CallTuple = rebinder::CallTuple;
 
@@ -695,13 +695,14 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
                 ArgumentProcessor<kBinderDeduct, is_any_compatible_invocable,
                                   std::add_const_t>::kIsValid;
             static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef &&
+                (Traits::kIsRValueRef || kFIsReference) &&
                 ArgumentProcessor<kBinderDeduct, is_any_compatible_invocable, NonRefMovable,
-                                  NotBoundLValueReference>::kIsValid;
+                                  IgnoreExpansionPolicyOnRefInvocation>::kIsValid;
             static constexpr bool kIsLValRef =
                 (Traits::kIsLValueRef || kFIsReference) &&
                 ArgumentProcessor<kBinderDeduct, is_any_compatible_invocable,
-                                  std::add_lvalue_reference_t, NotBoundLValueReference>::kIsValid;
+                                  std::add_lvalue_reference_t,
+                                  IgnoreExpansionPolicyOnRefInvocation>::kIsValid;
 
             static constexpr bool kBothRefValid = kIsLValRef && kIsRValRef;
             static constexpr bool kLValRefEffective = kIsLValRef && !kBothRefValid;
@@ -710,8 +711,7 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
                                               kRValRefEffective, Traits::kIsNoExcept>::Signature;
         };
 
-        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,
-                             std::tuple<UnwrapBoundRefWrapT<BoundArgs>...>>;
+        using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse>;
     };
 
     // To complete one needs case where F is static (no decay), but in that case it would be trivial
