@@ -32,7 +32,7 @@ include(FetchContent)
 FetchContent_Declare(
     task
     GIT_REPOSITORY [https://github.com/Ridrik/fn-task.git](https://github.com/Ridrik/fn-task.git)
-    GIT_TAG v1.5.0
+    GIT_TAG v1.5.1
 )
 FetchContent_MakeAvailable(task)
 
