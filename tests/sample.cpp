@@ -145,7 +145,9 @@ int main() {
     double temp{};
     auto mutLambda = [temp](int a) mutable {};
     mutLambda(2);
-    auto bindBack = std::bind_back([temp](int a) mutable {}, 42);
+    auto tmpLambda = [temp](int a) mutable {};
+    static_assert(fn::HasFunctionTraits<std::reference_wrapper<decltype(tmpLambda)>>);
+    auto bindBack = std::bind_back(std::ref(tmpLambda), 42);
     auto bindBackTask = fn::makeTask(bindBack);
     bindBackTask();
 
@@ -154,12 +156,12 @@ int main() {
         struct Functor {
             std::string data;
 
-            void operator()(std::string&& other) {
+            void operator()(std::string&& other) const {
                 // data += other;
             }
         };
         auto functor = Functor{};
-        auto funcTask = fn::makeTask(fn::ref(functor), fn::ref(s));
+        auto funcTask = fn::makeTask(fn::cref(functor), fn::ref(s));
         funcTask();
         auto funcTask2 = fn::makeTask(Functor{}, s);
     }
@@ -224,16 +226,9 @@ int main() {
 
         {
             auto str = std::string{"hello"};
-<<<<<<< HEAD
-            auto customBindTask = fn::buildTask([](int, std::string& a, std::string&) {}, 2,
-                                                fn::ref(str), fn::ref(str))
-                                      .withSignature<void() &&>()
-                                      .bindFrom<0>()
-=======
             auto customBindTask = fn::buildTask([](const int&, std::string a, std::string) {},
                                                 fn::ref(str), fn::ref(str))
                                       .bindFrom<1>()
->>>>>>> 25597b2 (bindFrom method)
                                       .build();
             auto task = fn::FlexTask<void() noexcept>([](auto&& b) noexcept {}, fn::ref(str));
         }

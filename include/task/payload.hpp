@@ -35,23 +35,29 @@ struct CallArgTag {
 template <typename T, bool Invocable = false>
     requires(std::is_lvalue_reference_v<T>)
 struct BoundRefWrapTag {
+    std::remove_reference_t<T>* val;
+
     using type = T;
-    std::reference_wrapper<std::remove_reference_t<T>> val;
+
+    constexpr BoundRefWrapTag(T v) noexcept : val{&v} {}
+
+    constexpr BoundRefWrapTag(const std::reference_wrapper<std::remove_reference_t<T>>& v) noexcept
+        : val{&v.get()} {}
 
     constexpr operator T() const noexcept {
-        return val.get();
+        return *val;
     }
 
     constexpr operator std::remove_reference_t<T>&&() const noexcept {
-        return std::move(val.get());
+        return std::move(*val);
     }
 
     constexpr std::remove_reference_t<T>&& move() const&& noexcept {
-        return std::move(val.get());
+        return std::move(*val);
     }
 
     constexpr T get() const noexcept {
-        return val.get();
+        return *val;
     }
 };
 

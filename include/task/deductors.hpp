@@ -1086,7 +1086,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
 
 template <template <typename, typename...> typename T, typename Fd, typename... BoundArgs>
     requires(!IsTask<T<Fd, BoundArgs...>>::value && !IsNamedTask<T<Fd, BoundArgs...>>::value &&
-             HasFunctionTraits<std::decay_t<Fd>> &&
+             HasFunctionTraits<std::remove_cvref_t<std::unwrap_reference_t<Fd>>> &&
              TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<Fd, BoundArgs...>>
     : FunctionTraits<
@@ -1095,9 +1095,20 @@ struct FunctionTraits<T<Fd, BoundArgs...>>
 template <template <bool, typename, typename...> typename T, bool B, typename Fd,
           typename... BoundArgs>
     requires(!IsTask<T<B, Fd, BoundArgs...>>::value &&
-             !IsNamedTask<T<B, Fd, BoundArgs...>>::value && HasFunctionTraits<std::decay_t<Fd>> &&
+             !IsNamedTask<T<B, Fd, BoundArgs...>>::value &&
+             HasFunctionTraits<std::remove_cvref_t<std::unwrap_reference_t<Fd>>> &&
              TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::kIsValid)
 struct FunctionTraits<T<B, Fd, BoundArgs...>>
+    : FunctionTraits<
+          typename TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::Signature> {};
+
+// libc++ implementation
+template <template <typename, typename> typename T, typename Fd, typename... BoundArgs>
+    requires(!IsTask<T<Fd, std::tuple<BoundArgs...>>>::value &&
+             !IsNamedTask<T<Fd, std::tuple<BoundArgs...>>>::value &&
+             HasFunctionTraits<std::remove_cvref_t<std::unwrap_reference_t<Fd>>> &&
+             TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::kIsValid)
+struct FunctionTraits<T<Fd, std::tuple<BoundArgs...>>>
     : FunctionTraits<
           typename TaskTypeDeductor<DeductorSettings<void>{}, Fd, BoundArgs...>::Signature> {};
 
