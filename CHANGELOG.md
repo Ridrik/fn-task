@@ -1,3 +1,8 @@
+## v1.5.1 - November 2026
+### Fixed
+- Fixed signature deduction and invocation on complex cases that involve references being called with different qualifiers
+- Added permissive signature conversion requests during factory build when arguments can be called with multiple possible cv-ref qualifiers.
+
 ## v1.5.0 - November 2026
 ### Added
 - Added index binding, extending options to bind from just front/back binding. This allows bound arguments to bind to any localized argument of the inner callable. Use `bintTo` on build factory to bind to specific indices (example below):
