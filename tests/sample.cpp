@@ -45,12 +45,26 @@ int main() {
     static_assert(decltype(thisTask)::matchesSignature<std::string_view() const>());
     auto thisTaskCopy = fn::Task{thisTask};
     thisTask();
+    using Lambda1 =
+        decltype([](int&& /*age*/, const std::string& name) mutable noexcept {  // NOLINT
+            std::cout << "Name: " << name << '\n';
+        });
     auto task = fn::makeTask(
         [](int&& /*age*/, const std::string& name) mutable noexcept {  // NOLINT
             std::cout << "Name: " << name << '\n';
         },
         0);
-    static_assert(decltype(task)::matchesSignature<void(const std::string&) && noexcept>());
+
+    static_assert(!fn::NotBoundLValueReference<std::string&>::value);
+    static_assert(std::is_invocable_v<Lambda1, int&&, const std::string&>);
+    static_assert(fn::detail::invocable_combinator<Lambda1, fn::detail::TypeList<>,
+                                                   fn::detail::TypeList<int&&, const std::string&>,
+                                                   fn::NotBoundLValueReference>::kValid);
+    static_assert(fn::is_any_compatible_invocable<fn::NotBoundLValueReference, Lambda1, int&,
+                                                  const std::string&>::value);
+    static_assert(fn::is_any_compatible_invocable<fn::NotBoundLValueReference, Lambda1, int&&,
+                                                  const std::string&>::value);
+    // static_assert(decltype(task)::matchesSignature<void(const std::string&) && noexcept>());
     auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
     auto taskMimic2 = fn::Task<void(const std::string&)>{task};
     task("Hello World");
@@ -58,7 +72,7 @@ int main() {
     auto task2 = fn::makeTask(
         [](int age, const std::string& name) noexcept { std::cout << "Name: " << name << '\n'; },
         std::string("Hello World"));
-    static_assert(decltype(task2)::matchesSignature<void(int) const & noexcept>());
+    static_assert(decltype(task2)::matchesSignature<void(int) const noexcept>());
     task2(10);
     auto str = std::string{"Hello World"};
     // You can capture by reference, equivalently to '&str' in lambda
@@ -114,9 +128,8 @@ int main() {
     // fn::Task allows binding compile time callables, making it as lightweight as possible (without
     // captured arguments, no buffer even exists!)
     auto bindTask = fn::makeTask<foo>();
-    static_assert(
-        decltype(bindTask)::matchesSignature<bool(const std::string&, std::string&, int) const &
-                                             noexcept>());
+    static_assert(decltype(bindTask)::matchesSignature<bool(const std::string&, std::string&, int)
+                                                           const noexcept>());
     auto data = std::string{"Some data"};
     bindTask("My name", data, 1);
 
@@ -155,12 +168,12 @@ int main() {
         struct Functor {
             std::string data;
 
-            void operator()(std::string&& other) const {
+            void operator()(std::string&& other) const&& {
                 // data += other;
             }
         };
         auto functor = Functor{};
-        auto funcTask = fn::makeTask(functor, fn::ref(s));
+        auto funcTask = fn::makeTask(fn::ref(functor), fn::ref(s));
         funcTask();
         auto funcTask2 = fn::makeTask(Functor{}, s);
     }

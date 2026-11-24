@@ -53,7 +53,7 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
     template <typename Ft, typename... Argst>
     static constexpr bool kInvocableVerifierV =
         kRefLess ? (IsNoExcept ? is_any_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
-                               : is_any_compatible_invocable_b<Ft, Argst...>)
+                               : is_any_compatible_invocable_b<IsCallArg, Ft, Argst...>)
                  : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, UndoIfCallArgT<Argst>...>
                                : std::is_invocable_v<Ft, UndoIfCallArgT<Argst>...>);
 
@@ -76,21 +76,29 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                 if constexpr (Compatible) {
                     return std::forward_like<ApplyQualifiers<PayloadType>>(
                                **static_cast<PayloadType**>(s))
-                        .template invokeCompatible<Is...>(std::forward<Args>(args)...);
+                        .template invokeCompatible<IsCallArg, Is...>(std::forward<Args>(args)...);
                 } else {
                     return std::forward_like<ApplyQualifiers<PayloadType>>(
                                **static_cast<PayloadType**>(s))
-                        .template invoke<Is...>(std::forward<Args>(args)...);
+                        .template invokeCompatible<NotBoundLValueReference, Is...>(
+                            std::forward<Args>(args)...);
+                    /*return std::forward_like<ApplyQualifiers<PayloadType>>(
+                               **static_cast<PayloadType**>(s))
+                        .template invoke<Is...>(std::forward<Args>(args)...);*/
                 }
             } else {
                 if constexpr (Compatible) {
                     return std::forward_like<ApplyQualifiers<PayloadType>>(
                                *static_cast<PayloadType*>(s))
-                        .template invokeCompatible<Is...>(std::forward<Args>(args)...);
+                        .template invokeCompatible<IsCallArg, Is...>(std::forward<Args>(args)...);
                 } else {
                     return std::forward_like<ApplyQualifiers<PayloadType>>(
                                *static_cast<PayloadType*>(s))
-                        .template invoke<Is...>(std::forward<Args>(args)...);
+                        .template invokeCompatible<NotBoundLValueReference, Is...>(
+                            std::forward<Args>(args)...);
+                    /*return std::forward_like<ApplyQualifiers<PayloadType>>(
+                               *static_cast<PayloadType*>(s))
+                        .template invoke<Is...>(std::forward<Args>(args)...);*/
                 }
             }
         }
@@ -137,7 +145,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    *static_cast<PayloadType*>(s))
-                            .invoke(std::forward<Args>(args)...);
+                            .template invokeCompatible<NotBoundLValueReference>(
+                                std::forward<Args>(args)...);
                     }
                 } else {
                     if constexpr (kRefLess) {
@@ -146,7 +155,8 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
-                            .invoke(std::forward<Args>(args)...);
+                            .template invokeCompatible<NotBoundLValueReference>(
+                                std::forward<Args>(args)...);
                     }
                 }
             } else if constexpr (binder != Binding::kBack &&
@@ -169,14 +179,16 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     } else {
                         return std::forward_like<ApplyQualifiers<PayloadType>>(
                                    **static_cast<PayloadType**>(s))
-                            .invokeFront(std::forward<Args>(args)...);
+                            .template invokeFrontCompatible<NotBoundLValueReference>(
+                                std::forward<Args>(args)...);
                     }
                 }
             } else if constexpr (is_any_compatible_invocable_b<
-                                     UnwrapBoundRefWrapT<F>, UnwrapBoundRefWrapT<BoundArgs>...,
+                                     IsCallArg, UnwrapBoundRefWrapT<F>,
+                                     UnwrapBoundRefWrapT<BoundArgs>...,
                                      CallArgTag<decltype(std::forward<Args>(args))>...> ||
                                  is_any_compatible_invocable_b<
-                                     UnwrapBoundRefWrapT<F>,
+                                     IsCallArg, UnwrapBoundRefWrapT<F>,
                                      CallArgTag<decltype(std::forward<Args>(args))>...,
                                      UnwrapBoundRefWrapT<BoundArgs>...>) {
                 static_assert(AlwaysFalse<F>::value,
@@ -254,10 +266,10 @@ struct InvokerBuilder<Ret(Args...), Task, size, IsConst, LVRef, RVRef, IsNoExcep
                     }
                 }
             } else if constexpr (is_any_compatible_invocable_b<
-                                     std::unwrap_reference_t<decltype(F)>,
+                                     IsCallArg, std::unwrap_reference_t<decltype(F)>,
                                      std::unwrap_reference_t<BoundArgs>..., Args...> ||
                                  is_any_compatible_invocable_b<
-                                     std::unwrap_reference_t<decltype(F)>, Args...,
+                                     IsCallArg, std::unwrap_reference_t<decltype(F)>, Args...,
                                      std::unwrap_reference_t<BoundArgs>...>) {
                 static_assert(AlwaysFalse<decltype(F)>::value,
                               "F is not callable with the provided arguments since it wouldn't "

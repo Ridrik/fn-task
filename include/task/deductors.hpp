@@ -162,8 +162,9 @@ struct rebind_search<
         rebind_search<std::tuple<SelectedArgs..., NextBoundArg>, std::tuple<CallArgs...>,
                       std::tuple<RemainingArgs...>, std::tuple<RemainingBoundArgs...>,
                       IndicesHolder<Is...>, curIdx + 1>,
-        rebind_search<std::tuple<SelectedArgs..., NextArg>, std::tuple<CallArgs..., NextArg>,
-                      std::tuple<RemainingArgs...>, std::tuple<NextBoundArg, RemainingBoundArgs...>,
+        rebind_search<std::tuple<SelectedArgs..., CallArgTag<NextArg&&>>,
+                      std::tuple<CallArgs..., NextArg>, std::tuple<RemainingArgs...>,
+                      std::tuple<NextBoundArg, RemainingBoundArgs...>,
                       IndicesHolder<nextBoundIdx, Is...>, curIdx + 1>>;
     using type = typename Next::type;
     using CallTuple = Next::CallTuple;
@@ -587,18 +588,22 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         struct rebuild;
         template <typename Ret, typename... Ts, typename... TsR, typename... FiltBoundArgs>
         struct rebuild<Ret, std::tuple<Ts...>, std::tuple<TsR...>, std::tuple<FiltBoundArgs...>> {
-            template <auto binder, template <typename...> typename Tester,
-                      template <typename> typename Modifier>
+            template <auto binder,
+                      template <template <typename> typename, typename...> typename Tester,
+                      template <typename> typename Modifier,
+                      template <typename> typename Policy = IsCallArg>
             struct ArgumentProcessor;
 
-            template <Binder<> binder, template <typename...> typename Tester,
-                      template <typename> typename Modifier>
-            struct ArgumentProcessor<binder, Tester, Modifier> {
+            template <Binder<> binder,
+                      template <template <typename> typename, typename...> typename Tester,
+                      template <typename> typename Modifier, template <typename> typename Policy>
+            struct ArgumentProcessor<binder, Tester, Modifier, Policy> {
                 static constexpr auto kBindingProcess = Binding{binder};
                 static constexpr bool kTestFront =
-                    Tester<Modifier<F>, Modifier<FiltBoundArgs>..., TsR...>::value;
-                static constexpr bool kTestBack =
-                    Tester<Modifier<F>, Ts..., Modifier<FiltBoundArgs>...>::value;
+                    Tester<Policy, Modifier<F>, Modifier<FiltBoundArgs>...,
+                           CallArgTag<TsR&&>...>::value;
+                static constexpr bool kTestBack = Tester<Policy, Modifier<F>, CallArgTag<Ts&&>...,
+                                                         Modifier<FiltBoundArgs>...>::value;
                 static constexpr auto kBindDeduct =
                     (kTestBack && kTestBack)
                         ? (kBindingProcess ==  // NOLINT(readability-avoid-nested-conditional-operator)
@@ -619,9 +624,10 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
             };
 
             template <std::size_t... is, Binder<is...> binder,
-                      template <typename...> typename Tester, template <typename> typename Modifier>
+                      template <template <typename> typename, typename...> typename Tester,
+                      template <typename> typename Modifier, template <typename> typename Policy>
                 requires(sizeof...(is) > 0 && sizeof...(is) == sizeof...(BoundArgs))
-            struct ArgumentProcessor<binder, Tester, Modifier> {
+            struct ArgumentProcessor<binder, Tester, Modifier, Policy> {
                 using rebinder = rebind<AllArgs, std::tuple<Modifier<FiltBoundArgs>...>, is...>;
                 using TestTuple = rebinder::type;
                 using CallTuple = rebinder::CallTuple;
@@ -631,7 +637,7 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
 
                 template <typename... TestArgs, typename... CallArgs>
                 struct UnwrapTester<std::tuple<TestArgs...>, std::tuple<CallArgs...>> {
-                    static constexpr auto kValid = Tester<Modifier<F>, TestArgs...>::value;
+                    static constexpr auto kValid = Tester<Policy, Modifier<F>, TestArgs...>::value;
                     using base_signature = Ret(CallArgs...);
                 };
 
@@ -689,14 +695,19 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
                 ArgumentProcessor<kBinderDeduct, is_any_compatible_invocable,
                                   std::add_const_t>::kIsValid;
             static constexpr bool kIsRValRef =
-                Traits::kIsRValueRef && ArgumentProcessor<kBinderDeduct, is_compatible_invocable,
-                                                          MakeReferencesMovable>::kIsValid;
+                Traits::kIsRValueRef &&
+                ArgumentProcessor<kBinderDeduct, is_any_compatible_invocable, NonRefMovable,
+                                  NotBoundLValueReference>::kIsValid;
             static constexpr bool kIsLValRef =
                 (Traits::kIsLValueRef || kFIsReference) &&
-                ArgumentProcessor<kBinderDeduct, is_compatible_invocable,
-                                  std::add_lvalue_reference_t>::kIsValid;
-            using Signature = ToFullSignature<base_signature, kIsConst, kIsLValRef, kIsRValRef,
-                                              Traits::kIsNoExcept>::Signature;
+                ArgumentProcessor<kBinderDeduct, is_any_compatible_invocable,
+                                  std::add_lvalue_reference_t, NotBoundLValueReference>::kIsValid;
+
+            static constexpr bool kBothRefValid = kIsLValRef && kIsRValRef;
+            static constexpr bool kLValRefEffective = kIsLValRef && !kBothRefValid;
+            static constexpr bool kRValRefEffective = kIsRValRef && !kBothRefValid;
+            using Signature = ToFullSignature<base_signature, kIsConst, kLValRefEffective,
+                                              kRValRefEffective, Traits::kIsNoExcept>::Signature;
         };
 
         using type = rebuild<typename Traits::return_type, SlicedTuple, SlicedTupleReverse,

@@ -47,7 +47,7 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
     static constexpr bool kInvocableVerifierV =
         kRefLess ? (IsNoExcept                                                 // NOLINT
                         ? is_any_compatible_nothrow_invocable_b<Ft, Argst...>  // NOLINT
-                        : is_any_compatible_invocable_b<Ft, Argst...>)
+                        : is_any_compatible_invocable_b<IsCallArg, Ft, Argst...>)
                  : (IsNoExcept ? std::is_nothrow_invocable_v<Ft, Argst...>
                                : std::is_invocable_v<Ft, Argst...>);
 
@@ -69,10 +69,14 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
             static constexpr auto kInvokeCompatible = kRefLess;
             if constexpr (kInvokeCompatible) {
                 return std::move((const_cast<Task&>(self)).payload_)
-                    .template invokeCompatible<Is...>(std::forward<Args>(args)...);
+                    .template invokeCompatible<IsCallArg, Is...>(std::forward<Args>(args)...);
             } else {
-                return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
-                    .template invoke<Is...>(std::forward<Args>(args)...);
+                return std::move((const_cast<Task&>(self)).payload_)
+                    .template invokeCompatible<NotBoundLValueReference, Is...>(
+                        std::forward<Args>(args)...);
+                // return
+                // std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
+                //    .template invoke<Is...>(std::forward<Args>(args)...);
             }
         } else if constexpr (binder != Binding::kFront &&
                              kInvocableVerifierV<Convert<F>,
