@@ -1324,6 +1324,15 @@ struct PayloadImplArgs {
     }
 };
 
+template <typename Payload>
+struct IsStaticFNoArgsPayload : std::false_type {};
+
+template <auto F>
+struct IsStaticFNoArgsPayload<PayloadImplArgs<F>> : std::true_type {};
+
+template <typename Payload>
+static constexpr auto kIsStaticFNoArgsPayload = IsStaticFNoArgsPayload<Payload>::value;
+
 template <typename... Args>
 struct PayloadNoRvalueRef : std::false_type {};
 
