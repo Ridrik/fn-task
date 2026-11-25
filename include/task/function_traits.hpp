@@ -38,7 +38,9 @@ struct FunctionTraits {
 };
 
 template <typename T>
-    requires(!ConvertibleToPtr<T> && requires { &T::operator(); })
+    requires(
+        !ConvertibleToPtr<T> && !requires { typename T::Signature; } &&
+        requires { &T::operator(); })
 struct FunctionTraits<T> : FunctionTraits<decltype(&T::operator())> {};
 
 template <typename Ret, typename... Args>

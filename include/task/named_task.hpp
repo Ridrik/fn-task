@@ -13,7 +13,6 @@
 
 namespace fn {
 
-
 template <auto binder, typename Task, typename Payload, typename BaseSignature,
           bool IsConst = false, bool LVRef = false, bool RVRef = false, bool IsNoExcept = false>
 struct NamedTaskInvoker;
@@ -54,7 +53,7 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
         static constexpr auto kValid = kInvocableVerifierV<F, TestArgs...>;
     };
 
-    FORCE_INLINE Ret operator()(this auto&& self, Args... args) noexcept(IsNoExcept) {
+    FORCE_INLINE Ret operator()(Args... args) const noexcept(IsNoExcept) {
         if constexpr (!kIsIndicelessBinder<binder>) {
             using ArgsOrderTuple =
                 rebind_call_and_bound<std::tuple<Args...>, std::tuple<Convert<BoundArgs>...>,
@@ -63,10 +62,10 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
                           "F is not callable with the provided arguments.");
             static constexpr auto kInvokeCompatible = kRefLess;
             if constexpr (kInvokeCompatible) {
-                return std::move((const_cast<Task&>(self)).payload_)
+                return std::move((static_cast<const Task&>(*this)).payload_)
                     .template invokeCompatible<IsCallArg, Is...>(std::forward<Args>(args)...);
             } else {
-                return std::move((const_cast<Task&>(self)).payload_)
+                return std::move((static_cast<const Task&>(*this)).payload_)
                     .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation, Is...>(
                         std::forward<Args>(args)...);
             }
@@ -75,10 +74,11 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
                                                  CallArgTag<decltype(std::forward<Args>(args))>...,
                                                  Convert<BoundArgs>...>) {
             if constexpr (kRefLess) {
-                return std::move((const_cast<Task&>(self)).payload_)
+                return std::move((static_cast<const Task&>(*this)).payload_)
                     .invokeCompatible(std::forward<Args>(args)...);
             } else {
-                return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
+                return std::forward_like<ApplyQualifiers<Task>>(
+                           (static_cast<const Task&>(*this)).payload_)
                     .template invokeCompatible<IgnoreExpansionPolicyOnRefInvocation>(
                         std::forward<Args>(args)...);
             }
@@ -87,10 +87,11 @@ struct NamedTaskInvoker<binder, Task, PayloadImpl<F, BoundArgs...>, Ret(Args...)
                                  Convert<F>, Convert<BoundArgs>...,
                                  CallArgTag<decltype(std::forward<Args>(args))>...>) {
             if constexpr (kRefLess) {
-                return std::move((const_cast<Task&>(self)).payload_)
+                return std::move((static_cast<const Task&>(*this)).payload_)
                     .invokeFrontCompatible(std::forward<Args>(args)...);
             } else {
-                return std::forward_like<ApplyQualifiers<Task>>((const_cast<Task&>(self)).payload_)
+                return std::forward_like<ApplyQualifiers<Task>>(
+                           (static_cast<const Task&>(*this)).payload_)
                     .template invokeFrontCompatible<IgnoreExpansionPolicyOnRefInvocation>(
                         std::forward<Args>(args)...);
             }

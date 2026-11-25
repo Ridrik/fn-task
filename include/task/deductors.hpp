@@ -133,9 +133,10 @@ template <typename SelectedTuple, typename CallTuple, typename RemainingTuple,
           typename RemainingBoundTuple, typename Indices, std::size_t curIdx>
 struct rebind_search;
 
-template <typename... SelectedArgs, typename CallArgsTuple, std::size_t curIdx>
-struct rebind_search<std::tuple<SelectedArgs...>, CallArgsTuple, std::tuple<>, std::tuple<>,
-                     IndicesHolder<>, curIdx> {
+template <typename... SelectedArgs, typename CallArgsTuple, typename BoundArgsTuple,
+          typename IndicesHolder, std::size_t curIdx>
+struct rebind_search<std::tuple<SelectedArgs...>, CallArgsTuple, std::tuple<>, BoundArgsTuple,
+                     IndicesHolder, curIdx> {
     using type = std::tuple<SelectedArgs...>;
     using CallTuple = CallArgsTuple;
 };
@@ -147,6 +148,23 @@ struct rebind_search<std::tuple<SelectedArgs...>, std::tuple<CallArgs...>,
                      std::tuple<RemainingArgs...>, std::tuple<>, IndicesHolder<>, curIdx> {
     using type = std::tuple<SelectedArgs..., RemainingArgs...>;
     using CallTuple = std::tuple<CallArgs..., RemainingArgs...>;
+};
+
+template <typename... SelectedArgs, typename... CallArgs, typename... RemainingArgs,
+          typename... RemainingBoundArgs, std::size_t curIdx>
+    requires(sizeof...(RemainingBoundArgs) > 0)
+struct rebind_search<std::tuple<SelectedArgs...>, std::tuple<CallArgs...>,
+                     std::tuple<RemainingArgs...>, std::tuple<RemainingBoundArgs...>,
+                     IndicesHolder<>, curIdx> {
+    static_assert(false);
+};
+
+template <typename... SelectedArgs, typename... CallArgs, typename... RemainingArgs,
+          std::size_t... Is, std::size_t curIdx>
+    requires(sizeof...(Is) > 0)
+struct rebind_search<std::tuple<SelectedArgs...>, std::tuple<CallArgs...>,
+                     std::tuple<RemainingArgs...>, std::tuple<>, IndicesHolder<Is...>, curIdx> {
+    static_assert(false);
 };
 
 template <typename... SelectedArgs, typename... CallArgs, typename NextArg,
@@ -578,6 +596,9 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         using AllArgs = Traits::args_tuple;
         using InternalFuncPtr = Traits::func_ptr;
 
+        static_assert(
+            std::tuple_size_v<AllArgs> >= sizeof...(BoundArgs),
+            "Number of Bound arguments cannot exceed number of arguments taken by inner callable");
         static constexpr std::size_t kRemainingCount =
             std::tuple_size_v<AllArgs> - sizeof...(BoundArgs);
 
@@ -742,7 +763,8 @@ struct TaskTypeDeductor<settings, Ft, BoundArgs...> {
         !settings.alg.has_value() || *settings.alg >= alignof(PayloadType);
     static constexpr auto kAlignment =
         settings.alg.has_value() ? Alignment{*settings.alg} : kPayloadAlignment;
-    static constexpr auto kPayloadSize = sizeof(PayloadType);
+    static constexpr auto kPayloadSize =
+        kIsStaticFNoArgsPayload<PayloadType> ? 0 : sizeof(PayloadType);
     static constexpr auto kSizeValid =
         !settings.size.has_value() || *settings.size >= kPayloadSize ||
         (settings.hp.has_value() && *settings.hp == HeapPolicy::kAllow &&
@@ -931,7 +953,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
     }
 
     template <std::size_t... Is>
-        requires(sizeof...(Is) > 0)
+        requires(sizeof...(Is) > 0 && sizeof...(Is) == sizeof...(BoundArgs))
     FORCE_INLINE constexpr auto bindTo() && noexcept {
         return TaskBuilder<settings.template bindTo<Is...>(), Ft, BoundArgs...>{
             std::move(transitPayload)};
@@ -989,7 +1011,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         return TaskBuilder<newSettings, Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
-    template<typename T>
+    template <typename T>
     FORCE_INLINE constexpr auto like() && noexcept
         requires(!kNamedTaskBuilder && IsTask<std::remove_cvref_t<T>>::value)
     {
@@ -1010,7 +1032,7 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         return TaskBuilder<tmp.getSettings(), Ft, BoundArgs...>{std::move(tmp.transitPayload)};
     }
 
-    FORCE_INLINE constexpr auto like(auto& task) && noexcept
+    FORCE_INLINE constexpr auto like(const auto& task) && noexcept
         requires(!kNamedTaskBuilder && IsTask<std::remove_cvref_t<decltype(task)>>::value)
     {
         return std::move(*this).template like<decltype(task)>();
