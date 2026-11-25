@@ -1358,7 +1358,7 @@ template <typename T, bool Const, bool Invocable>
 using AddRefWrapperToRef_t = typename AddRefWrapperToRef<T, Const, Invocable>::Type;
 
 template <typename F, typename... Args>
-using PayloadT = PayloadImpl<std::decay_t<F>, std::decay_t<Args>...>;
+using PayloadDecayed = PayloadImpl<std::decay_t<F>, std::decay_t<Args>...>;
 
 template <auto F, typename... Args>
 using PayloadArgsT = PayloadImplArgs<F, std::decay_t<Args>...>;

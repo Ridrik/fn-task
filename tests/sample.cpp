@@ -222,6 +222,8 @@ int main() {
         newTask.swap(taskMimic);
 
         auto otherTask = fn::buildTask([](int, std::string&&) noexcept {}, fn::ref(hi)).build();
+        auto otherTask2 = fn::buildTask([](int) noexcept{}).like(otherTask).build();
+        static_assert(otherTask.matchesSignature<decltype(otherTask2)::Signature>());
         otherTask(3);
 
         {

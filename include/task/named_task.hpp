@@ -13,15 +13,6 @@
 
 namespace fn {
 
-template <auto F, typename... Args>
-struct StaticPayloadSelector {
-    using type = PayloadArgsT<F, Args...>;
-};
-
-template <typename F, typename... Args>
-struct TypePayloadSelector {
-    using type = PayloadT<F, Args...>;
-};
 
 template <auto binder, typename Task, typename Payload, typename BaseSignature,
           bool IsConst = false, bool LVRef = false, bool RVRef = false, bool IsNoExcept = false>
@@ -253,7 +244,7 @@ struct NamedTask<S, binder, FHolder, BoundArgs...>
 template <typename F, typename... BoundArgs>
     requires(sizeof...(BoundArgs) > 0 || !IsNamedTask<std::decay_t<F>>::value)
 NamedTask(F&&, BoundArgs&&...)
-    -> NamedTask<typename TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto}, std::decay_t<F>,
+    -> NamedTask<typename TaskTypeDeductor<DeductorSettings<void>{}, std::decay_t<F>,
                                            std::decay_t<BoundArgs>...>::Signature,
                  Binder<>{}, std::decay_t<F>, std::decay_t<BoundArgs>...>;
 

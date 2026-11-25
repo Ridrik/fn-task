@@ -1189,10 +1189,10 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                  template getInvoker<Binder<>{}, PayloadT<decltype(f), BoundArgs...>,
+                  template getInvoker<Binder<>{}, PayloadDecayed<decltype(f), BoundArgs...>,
                                       std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
-        using PayloadType = PayloadT<F, BoundArgs...>;
+        using PayloadType = PayloadDecayed<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
         static_assert(sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
                       "Size exceeds buffer. Increase Stack size or activate option to allow heap "
@@ -1243,10 +1243,10 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
                  (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(f)>>::value))
         : storage_{
               .invoker = InvokerBuilder<Signature, std::remove_cv_t<decltype(*this)>, size>::
-                  template getInvoker<binder, PayloadT<decltype(f), BoundArgs...>,
+                  template getInvoker<binder, PayloadDecayed<decltype(f), BoundArgs...>,
                                       std::decay_t<decltype(f)>, std::decay_t<BoundArgs>...>()} {
         using F = decltype(f);
-        using PayloadType = PayloadT<F, BoundArgs...>;
+        using PayloadType = PayloadDecayed<F, BoundArgs...>;
         static_assert(PayloadNoRvalueRef<PayloadType>::value);
         static_assert(sizeof(PayloadType) <= size || (kAllowHeap && sizeof(PayloadType*) <= size),
                       "Size exceeds buffer. Increase Stack size or activate option to allow heap "
@@ -1527,62 +1527,57 @@ struct Task : public InvokerBuilder<S, Task<S, cb, size, t, Extended, hp, align>
     }
 };
 
-template <typename Signature, InlineSize size = 64, Triviality t = Triviality::kNonTrivial,
-          bool Extended = false, HeapPolicy hp = HeapPolicy::kDisallow,
+template <typename Signature, InlineSize size = 16, Triviality t = Triviality::kNonTrivial, HeapPolicy hp = HeapPolicy::kDisallow,
           Alignment alignment = alignof(std::max_align_t)>
-using CopyableTask = Task<Signature, Copyability::kCopyable, size, t, Extended, hp, alignment>;
+using CopyableTask = Task<Signature, Copyability::kCopyable, size, t, false, hp, alignment>;
 
-template <typename Signature, InlineSize size = 64, Triviality t = Triviality::kNonTrivial,
-          bool Extended = false, HeapPolicy hp = HeapPolicy::kDisallow,
+template <typename Signature, InlineSize size = 16, Triviality t = Triviality::kNonTrivial, HeapPolicy hp = HeapPolicy::kDisallow,
           Alignment alignment = alignof(std::max_align_t)>
-using UniqueTask = Task<Signature, Copyability::kNonCopyable, size, t, Extended, hp, alignment>;
+using UniqueTask = Task<Signature, Copyability::kNonCopyable, size, t, false, hp, alignment>;
 
 template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial, bool Extended = false>
-using Task16 = Task<Signature, cp, 16, t, Extended, HeapPolicy::kDisallow>;
+          Triviality t = Triviality::kNonTrivial, Alignment alg = alignof(std::max_align_t)>
+using Task8 = Task<Signature, cp, 16, t, false, HeapPolicy::kDisallow, alg>;
 template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial, bool Extended = false>
-using Task32 = Task<Signature, cp, 32, t, Extended, HeapPolicy::kDisallow>;
+          Triviality t = Triviality::kNonTrivial, Alignment alg = alignof(std::max_align_t)>
+using Task16 = Task<Signature, cp, 16, t, false, HeapPolicy::kDisallow, alg>;
 template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial, bool Extended = false>
-using Task48 = Task<Signature, cp, 48, t, Extended, HeapPolicy::kDisallow>;
+          Triviality t = Triviality::kNonTrivial, Alignment alg = alignof(std::max_align_t)>
+using Task32 = Task<Signature, cp, 32, t, false, HeapPolicy::kDisallow, alg>;
 template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial, bool Extended = false>
-using Task64 = Task<Signature, cp, 64, t, Extended, HeapPolicy::kDisallow>;
+          Triviality t = Triviality::kNonTrivial, Alignment alg = alignof(std::max_align_t)>
+using Task48 = Task<Signature, cp, 48, t, false, HeapPolicy::kDisallow, alg>;
 template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial, bool Extended = false>
-using Task128 = Task<Signature, cp, 128, t, Extended, HeapPolicy::kDisallow>;
+          Triviality t = Triviality::kNonTrivial, Alignment alg = alignof(std::max_align_t)>
+using Task64 = Task<Signature, cp, 64, t, false, HeapPolicy::kDisallow, alg>;
 template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial, bool Extended = false>
-using Task256 = Task<Signature, cp, 256, t, Extended, HeapPolicy::kDisallow>;
+          Triviality t = Triviality::kNonTrivial, Alignment alg = alignof(std::max_align_t)>
+using Task128 = Task<Signature, cp, 128, t, false, HeapPolicy::kDisallow, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable,
+          Triviality t = Triviality::kNonTrivial, Alignment alg = alignof(std::max_align_t)>
+using Task256 = Task<Signature, cp, 256, t, false, HeapPolicy::kDisallow, alg>;
 
-template <typename Signature, Copyability cp = Copyability::kCopyable>
-using TrivialTask16 = Task16<Signature, cp, Triviality::kTrivial, false>;
-template <typename Signature, Copyability cp = Copyability::kCopyable>
-using TrivialTask32 = Task32<Signature, cp, Triviality::kTrivial, false>;
-template <typename Signature, Copyability cp = Copyability::kCopyable>
-using TrivialTask48 = Task48<Signature, cp, Triviality::kTrivial, false>;
-template <typename Signature, Copyability cp = Copyability::kCopyable>
-using TrivialTask64 = Task64<Signature, cp, Triviality::kTrivial, false>;
-template <typename Signature, Copyability cp = Copyability::kCopyable>
-using TrivialTask128 = Task128<Signature, cp, Triviality::kTrivial, false>;
-template <typename Signature, Copyability cp = Copyability::kCopyable>
-using TrivialTask256 = Task256<Signature, cp, Triviality::kTrivial, false>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using TrivialTask16 = Task16<Signature, cp, Triviality::kTrivial, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using TrivialTask32 = Task32<Signature, cp, Triviality::kTrivial, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using TrivialTask48 = Task48<Signature, cp, Triviality::kTrivial, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using TrivialTask64 = Task64<Signature, cp, Triviality::kTrivial, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using TrivialTask128 = Task128<Signature, cp, Triviality::kTrivial, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using TrivialTask256 = Task256<Signature, cp, Triviality::kTrivial, alg>;
 
-template <typename Signature, Copyability cp = Copyability::kCopyable, bool Extended = false>
-using SmallTask = Task<Signature, cp, 16, Triviality::kNonTrivial, Extended, HeapPolicy::kDisallow>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using SmallTask = Task<Signature, cp, 8, Triviality::kNonTrivial, false, HeapPolicy::kDisallow, alg>;
 
-template <typename Signature, Copyability cp = Copyability::kCopyable, InlineSize size = 64,
-          HeapPolicy hp = HeapPolicy::kDisallow>
-using TrivialTask = Task<Signature, cp, size, Triviality::kTrivial, false, hp>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, InlineSize size = 16, Alignment alg = alignof(std::max_align_t)>
+using TrivialTask = Task<Signature, cp, size, Triviality::kTrivial, false, HeapPolicy::kDisallow, alg>;
 
-template <typename Signature, Copyability cp = Copyability::kCopyable,
-          HeapPolicy hp = HeapPolicy::kDisallow>
-using TrivialSmallTask = TrivialTask<Signature, cp, 16, hp>;
-
-template <typename Signature, Copyability cp = Copyability::kCopyable,
-          HeapPolicy hp = HeapPolicy::kDisallow>
-using TrivialSmallTaskMut = TrivialTask<Signature, cp, 16, hp>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using TrivialSmallTask = TrivialTask<Signature, cp, 8, alg>;
 
 template <typename Signature, Copyability cp = Copyability::kCopyable>
 using TrivialTaskCaptureless = TrivialTask<Signature, cp, 1>;
@@ -1590,56 +1585,51 @@ using TrivialTaskCaptureless = TrivialTask<Signature, cp, 1>;
 template <typename Signature, Copyability cp = Copyability::kCopyable>
 using StaticTrivialTask = TrivialTask<Signature, cp, 0>;
 
-template <typename Signature, Copyability cp = Copyability::kCopyable, InlineSize size = 64,
-          Triviality t = Triviality::kNonTrivial>
-using FlexTask = Task<Signature, cp, size, t, false, HeapPolicy::kAllow>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, InlineSize size = 16, Alignment alg = alignof(std::max_align_t)>
+using FlexTask = Task<Signature, cp, size, Triviality::kNonTrivial, false, HeapPolicy::kAllow, alg>;
 
-template <typename Signature, InlineSize size = 64, Triviality t = Triviality::kNonTrivial>
-using UniqueFlexTask = FlexTask<Signature, Copyability::kNonCopyable, size, t>;
+template <typename Signature, InlineSize size = 16, Alignment alg = alignof(std::max_align_t)>
+using UniqueFlexTask = FlexTask<Signature, Copyability::kNonCopyable, size, alg>;
 
-template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial>
-using FlexTask16 = FlexTask<Signature, cp, 16, t>;
-template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial>
-using FlexTask32 = FlexTask<Signature, cp, 32, t>;
-template <typename Signature, Copyability cp = Copyability::kCopyable,
-          Triviality t = Triviality::kNonTrivial>
-using FlexTask64 = FlexTask<Signature, cp, 64, t>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using FlexTask8 = FlexTask<Signature, cp, 8, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using FlexTask16 = FlexTask<Signature, cp, 16, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using FlexTask32 = FlexTask<Signature, cp, 32, alg>;
+template <typename Signature, Copyability cp = Copyability::kCopyable, Alignment alg = alignof(std::max_align_t)>
+using FlexTask64 = FlexTask<Signature, cp, 64, alg>;
 
 static_assert(TrivialTask<void(), Copyability::kCopyable, 0>::getSize() == sizeof(void*));
-
-template <typename Signature, Copyability cp = Copyability::kCopyable>
-using TrivialTaskCapturelessMut = TrivialTask<Signature, cp, 1>;
 
 template <typename Sig, Copyability cp, InlineSize size, Triviality t, bool Ext, HeapPolicy hp,
           Alignment align>
 Task(Task<Sig, cp, size, t, Ext, hp, align>) -> Task<Sig, cp, size, t, Ext, hp, align>;
 
-/*template <auto F, typename... BoundArgs>
+template <auto F, typename... BoundArgs>
     requires((sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<decltype(F)>>::value) &&
              FunctionTraits<decltype(F)>::kValid &&
-             TaskTypeDeductorAuto<F, DeductorSettings<void>{}, BoundArgs...>::kIsValid)
+             TaskTypeDeductor<DeductorSettings<void>{}, FunctionTag<F>, TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kIsValid)
 Task(FunctionTag<F>, BoundArgs&&...) -> Task<
-    typename TaskTypeDeductorAuto<
-        F, DeductorSettings<void>{},
+    typename TaskTypeDeductor<DeductorSettings<void>{},
+        FunctionTag<F>,
         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::Signature,
-    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+    TaskTypeDeductor<DeductorSettings<void>{}, FunctionTag<F>,
                          TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kCopyable,
-    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+    TaskTypeDeductor<DeductorSettings<void>{}, FunctionTag<F>,
                          TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kPayloadSize,
-    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
+    TaskTypeDeductor<DeductorSettings<void>{}, FunctionTag<F>,
                          TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kTriviality,
     false, HeapPolicy::kDisallow,
-    TaskTypeDeductorAuto<F, DeductorSettings<void>{},
-                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kAlignment>;*/
+    TaskTypeDeductor<DeductorSettings<void>{}, FunctionTag<F>,
+                         TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kAlignment>;
 
 template <typename F, typename... BoundArgs>
     requires(!std::is_same_v<F, RefTag> && !IsFunctionTag<F>::value &&
              FunctionTraits<std::remove_reference_t<
                  std::unwrap_reference_t<TaskBuilderRefFilterT<RefQualifier::kNone, F>>>>::kValid &&
              (sizeof...(BoundArgs) > 0 || !IsTask<std::remove_cvref_t<F>>::value) &&
-             TaskTypeDeductor<DeductorSettings<void>{Binding::kAuto},
+             TaskTypeDeductor<DeductorSettings<void>{},
                               TaskBuilderRefFilterT<RefQualifier::kNone, F>,
                               TaskBuilderRefFilterT<RefQualifier::kNone, BoundArgs>...>::kIsValid)
 Task(F&&, BoundArgs&&...) -> Task<

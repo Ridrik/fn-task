@@ -989,6 +989,33 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         return TaskBuilder<newSettings, Ft, BoundArgs...>{std::move(transitPayload)};
     }
 
+    template<typename T>
+    FORCE_INLINE constexpr auto like() && noexcept
+        requires(!kNamedTaskBuilder && IsTask<std::remove_cvref_t<T>>::value)
+    {
+        using TaskSrc = std::remove_cvref_t<T>;
+        auto tmp = std::move(*this)
+                       .template withSignature<typename TaskSrc::Signature>()
+                       .template withInlineSize<TaskSrc::kSize>()
+                       .template withAlignment<TaskSrc::kAlignment>();
+        if constexpr (!TaskSrc::kCopyable) {
+            tmp = std::move(tmp).moveOnly();
+        }
+        if constexpr (!TaskSrc::kIsTrivial) {
+            tmp = std::move(tmp).makeNonTrivial();
+        }
+        if constexpr (TaskSrc::kAllowHeap) {
+            tmp = std::move(tmp).allowHeap();
+        }
+        return TaskBuilder<tmp.getSettings(), Ft, BoundArgs...>{std::move(tmp.transitPayload)};
+    }
+
+    FORCE_INLINE constexpr auto like(auto& task) && noexcept
+        requires(!kNamedTaskBuilder && IsTask<std::remove_cvref_t<decltype(task)>>::value)
+    {
+        return std::move(*this).template like<decltype(task)>();
+    }
+
     FORCE_INLINE constexpr auto build() && noexcept
         requires kNamedTaskBuilder
     {
@@ -1043,38 +1070,23 @@ struct TaskBuilder<settings, Ft, BoundArgs...>
         if constexpr (kIsFunctionTag<Ft>) {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
                 []<typename... Args>(Args&&... args) {  // NOLINT
-                    if constexpr (settings.ref != RefQualifier::kNone) {
-                        return typename Deductor::template Type<>{
-                            RefTag{}, Ft{}, BinderTag<settings.binding>{},
-                            std::forward<decltype(args)>(args)...};
-                    } else {
-                        return typename Deductor::template Type<>{
-                            Ft{}, BinderTag<settings.binding>{},
-                            std::forward<decltype(args)>(args)...};
-                    }
+                    return typename Deductor::template Type<>{
+                        Ft{}, BinderTag<settings.binding>{}, std::forward<decltype(args)>(args)...};
                 });
         } else {
             return std::move(args).template applyAsArgs<kIgnoreRefWrapperRValueConversion>(
                 [this]<typename... Args>(Args&&... args) {  // NOLINT
-                    if constexpr (settings.ref != RefQualifier::kNone) {
+                    if constexpr (sizeof...(BoundArgs) ==
+                                  0) {  // Accounts for 'f' being a Task, where one
+                                        // shouldn't put BindingTag in it but let
+                                        // constructor Task to Task trigger
                         return typename Deductor::template Type<>{
-                            RefTag{}, BinderTag<settings.binding>{},
+                            std::forward<decltype(transitPayload.f)>(transitPayload.f)};
+                    } else {
+                        return typename Deductor::template Type<>{
+                            BinderTag<settings.binding>{},
                             std::forward<decltype(transitPayload.f)>(transitPayload.f),
                             std::forward<decltype(args)>(args)...};
-
-                    } else {
-                        if constexpr (sizeof...(BoundArgs) ==
-                                      0) {  // Accounts for 'f' being a Task, where one
-                                            // shouldn't put BindingTag in it but let
-                                            // constructor Task to Task trigger
-                            return typename Deductor::template Type<>{
-                                std::forward<decltype(transitPayload.f)>(transitPayload.f)};
-                        } else {
-                            return typename Deductor::template Type<>{
-                                BinderTag<settings.binding>{},
-                                std::forward<decltype(transitPayload.f)>(transitPayload.f),
-                                std::forward<decltype(args)>(args)...};
-                        }
                     }
                 });
         }
