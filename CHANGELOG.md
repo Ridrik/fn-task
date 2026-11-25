@@ -1,3 +1,14 @@
+## v1.5.2 - November 2026
+### Added
+- Factory bindFrom() method, allowing to bind all BoundArgs from a certain index on the given callable
+- Factory like() method, which takes a `fn::Task` and enforces its type onto the factory for the new task.
+- Bind support for std::bind_back/std::bind_front for libc++
+### Updated
+- Updated alias of `fn::Task` to better simplify different alias and template options.
+### Fixed
+- Fixed an issue where index binding could freeze clangd parsing given wrong user input.
+- Added better assertions for error handling, specially with index binding
+
 ## v1.5.1 - November 2026
 ### Fixed
 - Fixed signature deduction and invocation on complex cases that involve references being called with different qualifiers
