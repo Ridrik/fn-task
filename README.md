@@ -32,7 +32,7 @@ include(FetchContent)
 FetchContent_Declare(
     task
     GIT_REPOSITORY [https://github.com/Ridrik/fn-task.git](https://github.com/Ridrik/fn-task.git)
-    GIT_TAG v1.5.1
+    GIT_TAG v1.5.2
 )
 FetchContent_MakeAvailable(task)
 
@@ -61,102 +61,122 @@ bool foo(std::string /*name*/, std::string& /*data*/, int /*version*/) {
 }
 
 int main() {
-    // Task takes a callable and optionally capture arguments, which are expected to be part of the
-    // erased callable. It automatically detects the task signature, mutability, copiability, and
-    // size. Here, integer is captured (bind_front like), hence signature is Task<void(std::string)>
-    auto task = fn::makeTask(
-        [](int&& age, const std::string& name) mutable noexcept {
-            std::cout << "Name: {}" << name << '\n';
-        },
-        0);
-    static_assert(decltype(task)::matchesSignature<void(const std::string&) noexcept>());
-    auto taskMimic = fn::Task<void(const std::string&) noexcept>{task};
-    auto taskMimic2 = fn::Task<void(const std::string&)>{task};
-    task("Hello World");
-    // Same body, but now it captured the string, hence the callable becomes Task<void(int)>
-    auto task2 = fn::makeTask(
-        [](int age, const std::string& name) noexcept { std::cout << "Name: {}" << name << '\n'; },
-        std::string("Hello World"));
-    static_assert(decltype(task2)::matchesSignature<void(int) const noexcept>());
-    task2(10);
-    auto str = std::string{"Hello World"};
-    // You can capture by reference, equivalently to '&str' in lambda
-    auto task2_half = fn::makeTask(
-        [](int age, std::reference_wrapper<const std::string> name) {
-            std::cout << "Name: {}" << name.get() << '\n';
-        },
-        std::cref(str));  // Or std::ref if one wishes to mutate
+    // A Task is constructed with a callable, and optionally bound arguments that will bind to the
+    // callable. The bind direction (back, front) is deducted, as well as the signature, size and
+    // other settings
+
+    // captures integer, is being taken as rvalue-ref by the callable. Signature is hence void(const
+    // std::string&) && noexcept
+    auto task = fn::makeTask([](int&& /*age*/, const std::string& name) noexcept {}, 0);
+    static_assert(decltype(task)::matchesSignature<void(const std::string&) && noexcept>());
+
+    // If you want better control of settings and to convert signatures, you can use factory builder
+
+    // Here, we strip '&&' and noexcept from the signature. This is allowed. The other way around
+    // would be illegal (par one exception).
+    auto taskWithBuilder =
+        fn::buildTask([](int&& /*unused*/, const std::string& /*unused*/) noexcept {}, 0)
+            .withSignature<void(const std::string&)>()
+            .build();
+
+    // You can also control size, heap policy, etc, directly with factory functions or directly
+    // given type
+
+    // Alias with heap policy and 8 bytes of inline size
+    auto flexTask = fn::FlexTask8<void(double) &>{[](std::string& /*unused*/, double /*unused*/) {},
+                                                  std::string{"hey"}};
+    // Or
+    auto flexTaskCopy = fn::buildTask([](std::string& str, double number) {}, std::string{"hey"})
+                            .allowHeap()
+                            .withInlineSize<8>()
+                            .build();
+    static_assert(std::is_same_v<decltype(flexTask), decltype(flexTaskCopy)>);
+
+    // References: Task allows taking the callable or bound arguments as references, via
+    // fn::ref/fn::cref, or globally with factory method
+    auto s = std::string{"hi there"};
+    // Note that signature is void() const, since we don't own the string, just a reference. In this
+    // case, all qualifiers would be possible, hence it's allowed to convert to '&' and '&&'
+    auto taskWithRef = fn::buildTask([](std::string&& /*unused*/) {}, fn::ref(s)).build();
+    static_assert(decltype(taskWithRef)::matchesSignature<void() const>());
+    auto taskWithRef2 = fn::buildTask([](std::string&& /*unused*/) {}, fn::ref(s))
+                            .withSignature<void() &>()
+                            .build();
+    // byRef() stores references of any lvalue-ref argument forward by the constructor
+    auto taskWithRef3 =
+        fn::buildTask([](std::string&& /*unused*/) {}, s).byRef().withSignature<void() &>().build();
+
+    // What about std::reference_wrapper? You can also use them, but C++ rules apply:
+
+    // Error: std::reference_wrapper cannot implicitly convert to rvalue-ref of the referenced type
+    // auto taskWithRef4 = fn::buildTask([](std::string&& str) {}, std::ref(s)).build();
+
+    // This works
+    auto taskWithRef5 = fn::buildTask([](std::string& str) {}, std::ref(s)).build();
+
     // You can still use lambdas alone with captured list
     // Note: fn::Task has similar deduction guides as to fn::makeTask
     auto task3 = fn::Task{
-        [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
+        [name = std::string("Hello World")](int age) { std::cout << "Name: " << name << '\n'; }};
     task3(10);
 
-    // You can also explicitly initialize it:
-    // If you want to allow heap (similar to std::function), you may use 'FlexTask' alias.
-    auto task4 = fn::FlexTask<void(int)>{
-        [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
-    auto flexTask = fn::makeFlexTask<void(int) const>(
-        [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; });
-
-    // Or, have it on the stack -> way faster copies and moves if you frequently transfer tasks (e.g
-    // thread pools, producer/consumer schemes)
-    auto task5 = fn::Task64<void(int)>{
-        [name = std::string("Hello World")](int age) { std::cout << "Name: {}" << name << '\n'; }};
-
-    auto _ = fn::Task64<void(int&) &>{
-        [name = std::string("Hello World")](int& age) mutable { name = "Hi"; }};  // Error,
-    //    fn::Task are immutable by default
-
-    // auto _ = fn::Task64<void(int&)>{[](int& age, std::string& name) mutable { name = "Hi"; },
-    //                                 std::string("Hello World")}; Similar error
-
-    // This works
-    auto _ = fn::Task64<void(int&) &>{[](int& age, std::string& name) mutable { name = "Hi"; },
-                                      std::string("Hello World")};
-
+    // fn::Task and its factories have various deductors for size, copyability, bind, signature, etc
     // Deducts move only tasks
     auto uniqueTask = fn::makeTask([](std::unique_ptr<int>& a) { return *a; },
                                    std::make_unique<int>(5));  // Makes it mutable
-    // OR
+    // OR, with alias
     auto uniqueTask2 = fn::UniqueTask<int()>{[](const std::unique_ptr<int>& a) { return *a; },
                                              std::make_unique<int>(5)};
     static_assert(!decltype(uniqueTask)::isCopyable());
-    // This would fail
-    // auto _ =
-    //    fn::makeImmutTask([](std::unique_ptr<int>& a) { return *a; }, std::make_unique<int>(5));
-
-    using sig = fn::FunctionTraits<decltype([a = std::string{}]() {})>::signature;
 
     constexpr int kVersion{1};
     // fn::Task allows binding compile time callables, making it as lightweight as possible (without
     // captured arguments, no buffer even exists!)
-    auto bindTask = fn::makeTask<foo>();
-    static_assert(
-        decltype(bindTask)::matchesSignature<bool(const std::string&, std::string&, int) const &
-                                             noexcept>());
+    auto bindTask = fn::buildTask<foo>().build();
     auto data = std::string{"Some data"};
-    bindTask("My name", data, 1);
+    bindTask("My name", data, kVersion);
 
-    // Gets deducted as void(int) const, since lambdas are usually either const or mutable in
-    // qualifications
-    auto taskk = fn::Task{[](int a, double b) {}, 3.0};
+    // Explict binding and full settings
 
-    class Wrapper {
-       public:
-        std::string str;
+    {
+        auto hi = std::string{"hi"};
+        auto hey = std::string{"hey"};
+        auto task =
+            fn::buildTask(
+                [](std::string& a, const std::string& b) noexcept -> int {
+                    a = "Hi There";
+                    return 3;
+                },
+                hi)
+                .withSignature<double(std::string)>()  // int can convert to double, std::string
+                                                       // can convert to const std::string&
+                .withInlineSize<8>()
+                .moveOnly()
+                .withAlignment<8>()
+                .allowHeap()
+                .bindFront()
+                .byRef()
+                .build();
+    }
 
-        std::string operator()(std::size_t& s) && {
-            s += str.size();
-            return std::move(str);
-        }
-    };
+    // like() factory method
+    {
+        auto hi = std::string{"hi"};
+        auto otherTask = fn::buildTask([](int, std::string&&) noexcept {}, fn::ref(hi)).build();
+        // like() to ensure it will match the type of another Task
+        auto otherTask2 = fn::buildTask([](int) noexcept {}).like(otherTask).build();
+        static_assert(decltype(otherTask)::matchesSignature<decltype(otherTask2)::Signature>());
+        otherTask(3);
+    }
 
-    // operator itself is &&, while captured argument std::size_t is taken as '&', hence signature
-    // is a cv-less std::string()
-    auto taskk2 = fn::makeTask(Wrapper{"Hello World"}, std::size_t{5});
-    static_assert(decltype(taskk2)::matchesSignature<std::string()>());
-    std::cout << "Message is " << taskk2() << '\n';
+    // bind_to - Explicit binding, a new feature with fn::Task (and fn::NamedTask)
+    {
+        auto str = std::string{"hello"};
+        auto customBindTask =
+            fn::buildTask([](std::string, const int&, std::string&) {}, str, fn::ref(str))
+                .bindTo<0, 2>()
+                .build();
+    }
 }
 
 ```
